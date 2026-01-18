@@ -6,6 +6,45 @@ import { api } from "../../convex/_generated/api";
 import { useState } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 
+function NavBar() {
+  const { signOut } = useAuthActions();
+  const user = useQuery(api.todos.currentUser);
+
+  return (
+    <nav className="fixed top-0 left-0 right-0 bg-[var(--card-bg)] border-b border-[var(--card-border)] z-50">
+      <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+        <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+          Tasky
+        </h1>
+        <div className="flex items-center gap-4">
+          {user && (
+            <div className="flex items-center gap-3">
+              {user.image && (
+                <img
+                  src={user.image}
+                  alt={user.name || "User"}
+                  className="w-8 h-8 rounded-full border border-[var(--card-border)]"
+                />
+              )}
+              {user.name && (
+                <span className="text-sm text-[var(--foreground)] hidden sm:block">
+                  {user.name}
+                </span>
+              )}
+            </div>
+          )}
+          <button
+            onClick={() => void signOut()}
+            className="text-[var(--muted)] hover:text-[var(--foreground)] transition-colors text-sm px-3 py-1.5 rounded-lg hover:bg-[var(--card-border)]"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
 function SignIn() {
   const { signIn } = useAuthActions();
 
@@ -101,7 +140,6 @@ function TodoItem({
 }
 
 function TodoList() {
-  const { signOut } = useAuthActions();
   const todos = useQuery(api.todos.list);
   const create = useMutation(api.todos.create).withOptimisticUpdate(
     (localStore, args) => {
@@ -132,66 +170,58 @@ function TodoList() {
   const totalCount = todos?.length ?? 0;
 
   return (
-    <div className="min-h-screen py-12 px-4">
-      <div className="max-w-xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
-              Tasky
-            </h1>
-            <p className="text-[var(--muted)] text-sm mt-1">
+    <>
+      <NavBar />
+      <div className="min-h-screen pt-24 pb-12 px-4">
+        <div className="max-w-xl mx-auto">
+          <div className="mb-6">
+            <p className="text-[var(--muted)] text-sm">
               {totalCount === 0
                 ? "No tasks yet"
                 : `${completedCount} of ${totalCount} completed`}
             </p>
           </div>
-          <button
-            onClick={() => void signOut()}
-            className="text-[var(--muted)] hover:text-[var(--foreground)] transition-colors text-sm"
-          >
-            Sign out
-          </button>
-        </div>
 
-        <form onSubmit={handleSubmit} className="mb-6">
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={newTodo}
-              onChange={(e) => setNewTodo(e.target.value)}
-              placeholder="Add a new task..."
-              className="flex-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl px-4 py-3 focus:outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--muted)]"
-            />
-            <button
-              type="submit"
-              className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white px-6 py-3 rounded-xl font-medium transition-colors"
-            >
-              Add
-            </button>
-          </div>
-        </form>
-
-        <div className="space-y-3">
-          {todos === undefined ? (
-            <div className="text-center py-8 text-[var(--muted)]">Loading...</div>
-          ) : todos.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-[var(--muted)] mb-2">No tasks yet</p>
-              <p className="text-sm text-[var(--muted)]/60">Add your first task above</p>
-            </div>
-          ) : (
-            todos.map((todo) => (
-              <TodoItem
-                key={todo._id}
-                id={todo._id}
-                text={todo.text}
-                completed={todo.completed}
+          <form onSubmit={handleSubmit} className="mb-6">
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={newTodo}
+                onChange={(e) => setNewTodo(e.target.value)}
+                placeholder="Add a new task..."
+                className="flex-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl px-4 py-3 focus:outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--muted)]"
               />
-            ))
-          )}
+              <button
+                type="submit"
+                className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white px-6 py-3 rounded-xl font-medium transition-colors"
+              >
+                Add
+              </button>
+            </div>
+          </form>
+
+          <div className="space-y-3">
+            {todos === undefined ? (
+              <div className="text-center py-8 text-[var(--muted)]">Loading...</div>
+            ) : todos.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-[var(--muted)] mb-2">No tasks yet</p>
+                <p className="text-sm text-[var(--muted)]/60">Add your first task above</p>
+              </div>
+            ) : (
+              todos.map((todo) => (
+                <TodoItem
+                  key={todo._id}
+                  id={todo._id}
+                  text={todo.text}
+                  completed={todo.completed}
+                />
+              ))
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
