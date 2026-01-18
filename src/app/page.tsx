@@ -13,7 +13,7 @@ function SignIn() {
     <div className="min-h-screen flex items-center justify-center">
       <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
             Tasky
           </h1>
           <p className="text-[var(--muted)]">Your personal task manager</p>
@@ -41,8 +41,33 @@ function TodoItem({
   text: string;
   completed: boolean;
 }) {
-  const toggle = useMutation(api.todos.toggle);
-  const remove = useMutation(api.todos.remove);
+  const toggle = useMutation(api.todos.toggle).withOptimisticUpdate(
+    (localStore, args) => {
+      const todos = localStore.getQuery(api.todos.list, {});
+      if (todos !== undefined) {
+        localStore.setQuery(
+          api.todos.list,
+          {},
+          todos.map((todo) =>
+            todo._id === args.id ? { ...todo, completed: !todo.completed } : todo
+          )
+        );
+      }
+    }
+  );
+
+  const remove = useMutation(api.todos.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const todos = localStore.getQuery(api.todos.list, {});
+      if (todos !== undefined) {
+        localStore.setQuery(
+          api.todos.list,
+          {},
+          todos.filter((todo) => todo._id !== args.id)
+        );
+      }
+    }
+  );
 
   return (
     <div className="group flex items-center gap-3 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 transition-all duration-200 hover:border-[var(--accent)]/30">
@@ -78,7 +103,22 @@ function TodoItem({
 function TodoList() {
   const { signOut } = useAuthActions();
   const todos = useQuery(api.todos.list);
-  const create = useMutation(api.todos.create);
+  const create = useMutation(api.todos.create).withOptimisticUpdate(
+    (localStore, args) => {
+      const todos = localStore.getQuery(api.todos.list, {});
+      if (todos !== undefined) {
+        // Create a temporary todo - it will be replaced when the server responds
+        const tempTodo = {
+          _id: crypto.randomUUID() as Id<"todos">,
+          _creationTime: Date.now(),
+          userId: "" as Id<"users">,
+          text: args.text,
+          completed: false,
+        };
+        localStore.setQuery(api.todos.list, {}, [...todos, tempTodo]);
+      }
+    }
+  );
   const [newTodo, setNewTodo] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -96,7 +136,7 @@ function TodoList() {
       <div className="max-w-xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
               Tasky
             </h1>
             <p className="text-[var(--muted)] text-sm mt-1">
@@ -107,7 +147,7 @@ function TodoList() {
           </div>
           <button
             onClick={() => void signOut()}
-            className="text-[var(--muted)] hover:text-white transition-colors text-sm"
+            className="text-[var(--muted)] hover:text-[var(--foreground)] transition-colors text-sm"
           >
             Sign out
           </button>
