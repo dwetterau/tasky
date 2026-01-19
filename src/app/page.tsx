@@ -5,45 +5,7 @@ import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useState } from "react";
 import { Id } from "../../convex/_generated/dataModel";
-
-function NavBar() {
-  const { signOut } = useAuthActions();
-  const user = useQuery(api.todos.currentUser);
-
-  return (
-    <nav className="fixed top-0 left-0 right-0 bg-[var(--card-bg)] border-b border-[var(--card-border)] z-50">
-      <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-        <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
-          Tasky
-        </h1>
-        <div className="flex items-center gap-4">
-          {user && (
-            <div className="flex items-center gap-3">
-              {user.image && (
-                <img
-                  src={user.image}
-                  alt={user.name || "User"}
-                  className="w-8 h-8 rounded-full border border-[var(--card-border)]"
-                />
-              )}
-              {user.name && (
-                <span className="text-sm text-[var(--foreground)] hidden sm:block">
-                  {user.name}
-                </span>
-              )}
-            </div>
-          )}
-          <button
-            onClick={() => void signOut()}
-            className="text-[var(--muted)] hover:text-[var(--foreground)] transition-colors text-sm px-3 py-1.5 rounded-lg hover:bg-[var(--card-border)]"
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
-    </nav>
-  );
-}
+import { Navigation } from "../components/Navigation";
 
 function SignIn() {
   const { signIn } = useAuthActions();
@@ -171,7 +133,7 @@ function TodoList() {
 
   return (
     <>
-      <NavBar />
+      <Navigation />
       <div className="min-h-screen pt-24 pb-12 px-4">
         <div className="max-w-xl mx-auto">
           <div className="mb-6">
