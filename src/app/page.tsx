@@ -33,38 +33,38 @@ function SignIn() {
   );
 }
 
-function TodoItem({
+function CaptureItem({
   id,
   text,
   completed,
 }: {
-  id: Id<"todos">;
+  id: Id<"captures">;
   text: string;
   completed: boolean;
 }) {
-  const toggle = useMutation(api.todos.toggle).withOptimisticUpdate(
+  const toggle = useMutation(api.captures.toggle).withOptimisticUpdate(
     (localStore, args) => {
-      const todos = localStore.getQuery(api.todos.list, {});
-      if (todos !== undefined) {
+      const captures = localStore.getQuery(api.captures.list, {});
+      if (captures !== undefined) {
         localStore.setQuery(
-          api.todos.list,
+          api.captures.list,
           {},
-          todos.map((todo) =>
-            todo._id === args.id ? { ...todo, completed: !todo.completed } : todo
+          captures.map((capture) =>
+            capture._id === args.id ? { ...capture, completed: !capture.completed } : capture
           )
         );
       }
     }
   );
 
-  const remove = useMutation(api.todos.remove).withOptimisticUpdate(
+  const remove = useMutation(api.captures.remove).withOptimisticUpdate(
     (localStore, args) => {
-      const todos = localStore.getQuery(api.todos.list, {});
-      if (todos !== undefined) {
+      const captures = localStore.getQuery(api.captures.list, {});
+      if (captures !== undefined) {
         localStore.setQuery(
-          api.todos.list,
+          api.captures.list,
           {},
-          todos.filter((todo) => todo._id !== args.id)
+          captures.filter((capture) => capture._id !== args.id)
         );
       }
     }
@@ -101,35 +101,35 @@ function TodoItem({
   );
 }
 
-function TodoList() {
-  const todos = useQuery(api.todos.list);
-  const create = useMutation(api.todos.create).withOptimisticUpdate(
+function CaptureList() {
+  const captures = useQuery(api.captures.list);
+  const create = useMutation(api.captures.create).withOptimisticUpdate(
     (localStore, args) => {
-      const todos = localStore.getQuery(api.todos.list, {});
-      if (todos !== undefined) {
-        // Create a temporary todo - it will be replaced when the server responds
-        const tempTodo = {
-          _id: crypto.randomUUID() as Id<"todos">,
+      const captures = localStore.getQuery(api.captures.list, {});
+      if (captures !== undefined) {
+        // Create a temporary capture - it will be replaced when the server responds
+        const tempCapture = {
+          _id: crypto.randomUUID() as Id<"captures">,
           _creationTime: Date.now(),
           userId: "" as Id<"users">,
           text: args.text,
           completed: false,
         };
-        localStore.setQuery(api.todos.list, {}, [...todos, tempTodo]);
+        localStore.setQuery(api.captures.list, {}, [...captures, tempCapture]);
       }
     }
   );
-  const [newTodo, setNewTodo] = useState("");
+  const [newCapture, setNewCapture] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTodo.trim()) return;
-    create({ text: newTodo.trim() });
-    setNewTodo("");
+    if (!newCapture.trim()) return;
+    create({ text: newCapture.trim() });
+    setNewCapture("");
   };
 
-  const completedCount = todos?.filter((t) => t.completed).length ?? 0;
-  const totalCount = todos?.length ?? 0;
+  const completedCount = captures?.filter((c) => c.completed).length ?? 0;
+  const totalCount = captures?.length ?? 0;
 
   return (
     <>
@@ -148,9 +148,9 @@ function TodoList() {
             <div className="flex gap-3">
               <input
                 type="text"
-                value={newTodo}
-                onChange={(e) => setNewTodo(e.target.value)}
-                placeholder="Add a new task..."
+                value={newCapture}
+                onChange={(e) => setNewCapture(e.target.value)}
+                placeholder="Capture something..."
                 className="flex-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl px-4 py-3 focus:outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--muted)]"
               />
               <button
@@ -163,20 +163,20 @@ function TodoList() {
           </form>
 
           <div className="space-y-3">
-            {todos === undefined ? (
+            {captures === undefined ? (
               <div className="text-center py-8 text-[var(--muted)]">Loading...</div>
-            ) : todos.length === 0 ? (
+            ) : captures.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-[var(--muted)] mb-2">No tasks yet</p>
-                <p className="text-sm text-[var(--muted)]/60">Add your first task above</p>
+                <p className="text-[var(--muted)] mb-2">No captures yet</p>
+                <p className="text-sm text-[var(--muted)]/60">Add your first capture above</p>
               </div>
             ) : (
-              todos.map((todo) => (
-                <TodoItem
-                  key={todo._id}
-                  id={todo._id}
-                  text={todo.text}
-                  completed={todo.completed}
+              captures.map((capture) => (
+                <CaptureItem
+                  key={capture._id}
+                  id={capture._id}
+                  text={capture.text}
+                  completed={capture.completed}
                 />
               ))
             )}
@@ -198,5 +198,5 @@ export default function Home() {
     );
   }
 
-  return isAuthenticated ? <TodoList /> : <SignIn />;
+  return isAuthenticated ? <CaptureList /> : <SignIn />;
 }

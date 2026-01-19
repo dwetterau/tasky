@@ -4,7 +4,7 @@ import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
   ...authTables,
-  todos: defineTable({
+  captures: defineTable({
     userId: v.id("users"),
     text: v.string(),
     completed: v.boolean(),
