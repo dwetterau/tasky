@@ -1,23 +1,11 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { auth } from "./auth";
-
-export const currentUser = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await auth.getUserId(ctx);
-    if (!userId) {
-      return null;
-    }
-    const user = await ctx.db.get(userId);
-    return user;
-  },
-});
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (!userId) {
       return [];
     }
@@ -31,7 +19,7 @@ export const list = query({
 export const create = mutation({
   args: { text: v.string() },
   handler: async (ctx, args) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Not authenticated");
     }
@@ -46,7 +34,7 @@ export const create = mutation({
 export const toggle = mutation({
   args: { id: v.id("todos") },
   handler: async (ctx, args) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Not authenticated");
     }
@@ -61,7 +49,7 @@ export const toggle = mutation({
 export const remove = mutation({
   args: { id: v.id("todos") },
   handler: async (ctx, args) => {
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Not authenticated");
     }
