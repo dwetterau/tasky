@@ -1,11 +1,11 @@
 "use client";
 
-import { useAuthActions } from "@convex-dev/auth/react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { authClient } from "@/lib/auth-client";
 
 const navItems = [
   {
@@ -38,10 +38,13 @@ const navItems = [
 ];
 
 export function Navigation() {
-  const { signOut } = useAuthActions();
   const user = useQuery(api.tags.currentUser);
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    await authClient.signOut();
+  };
 
   return (
     <nav className="fixed top-0 left-0 right-0 bg-[var(--card-bg)] border-b border-[var(--card-border)] z-50">
@@ -108,7 +111,7 @@ export function Navigation() {
           </button>
           
           <button
-            onClick={() => void signOut()}
+            onClick={() => void handleSignOut()}
             className="hidden md:block text-[var(--muted)] hover:text-[var(--foreground)] transition-colors text-sm px-3 py-1.5 rounded-lg hover:bg-[var(--card-border)]"
           >
             Sign out
@@ -139,7 +142,7 @@ export function Navigation() {
               );
             })}
             <button
-              onClick={() => void signOut()}
+              onClick={() => void handleSignOut()}
               className="w-full flex items-center gap-3 px-3 py-3 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

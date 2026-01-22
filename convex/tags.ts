@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, MutationCtx } from "./_generated/server";
-import { getAuthUserId } from "@convex-dev/auth/server";
+import { getAuthUserId, authComponent } from "./auth";
 import { Id, Doc } from "./_generated/dataModel";
 
 // Get all ancestor tags from a parent ID up to root (null)
@@ -281,11 +281,7 @@ export const remove = mutation({
 export const currentUser = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      return null;
-    }
-    const user = await ctx.db.get(userId);
-    return user;
+    const user = await authComponent.safeGetAuthUser(ctx);
+    return user ?? null;
   },
 });

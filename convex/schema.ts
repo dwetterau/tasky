@@ -1,17 +1,17 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { authTables } from "@convex-dev/auth/server";
 
+// Note: better-auth manages its own tables (users, sessions, accounts, verifications)
+// through the component. Our app tables use string userId to reference better-auth users.
 export default defineSchema({
-  ...authTables,
   captures: defineTable({
-    userId: v.id("users"),
+    userId: v.string(),
     text: v.string(),
     completed: v.boolean(),
   }).index("by_user", ["userId"]),
 
   tags: defineTable({
-    userId: v.id("users"),
+    userId: v.string(),
     name: v.string(),
     parentId: v.union(v.id("tags"), v.null()),
     color: v.optional(v.string()),

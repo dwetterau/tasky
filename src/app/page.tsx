@@ -1,14 +1,18 @@
 "use client";
 
-import { useAuthActions } from "@convex-dev/auth/react";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useState } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { Navigation } from "../components/Navigation";
+import { authClient } from "@/lib/auth-client";
 
 function SignIn() {
-  const { signIn } = useAuthActions();
+  const handleGitHubSignIn = async () => {
+    await authClient.signIn.social({
+      provider: "github",
+    });
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -20,7 +24,7 @@ function SignIn() {
           <p className="text-[var(--muted)]">Your personal task manager</p>
         </div>
         <button
-          onClick={() => void signIn("github")}
+          onClick={() => void handleGitHubSignIn()}
           className="w-full flex items-center justify-center gap-3 bg-[#24292e] hover:bg-[#2f363d] text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium"
         >
           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -111,7 +115,7 @@ function CaptureList() {
         const tempCapture = {
           _id: crypto.randomUUID() as Id<"captures">,
           _creationTime: Date.now(),
-          userId: "" as Id<"users">,
+          userId: "",
           text: args.text,
           completed: false,
         };
@@ -188,9 +192,9 @@ function CaptureList() {
 }
 
 export default function Home() {
-  const { isAuthenticated, isLoading } = useConvexAuth();
+  const { data: session, isPending } = authClient.useSession();
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
@@ -198,5 +202,5 @@ export default function Home() {
     );
   }
 
-  return isAuthenticated ? <CaptureList /> : <SignIn />;
+  return session ? <CaptureList /> : <SignIn />;
 }
