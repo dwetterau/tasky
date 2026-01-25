@@ -1,25 +1,326 @@
 "use client";
 
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { Id } from "../../../convex/_generated/dataModel";
 import { Navigation } from "../../components/Navigation";
 import { authClient } from "@/lib/auth-client";
+import ReactMarkdown from "react-markdown";
+import { useState, useRef, useEffect } from "react";
 
-function NotesPlaceholder() {
+type Tag = { _id: Id<"tags">; name: string; color?: string };
+
+function TagSelector({
+  selectedTags,
+  onTagsChange,
+  allTags,
+}: {
+  selectedTags: Tag[];
+  onTagsChange: (tagIds: Id<"tags">[]) => void;
+  allTags: Tag[];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedIds = new Set(selectedTags.map((t) => t._id));
+  const availableTags = allTags.filter(
+    (tag) =>
+      !selectedIds.has(tag._id) &&
+      tag.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const addTag = (tag: Tag) => {
+    onTagsChange([...selectedTags.map((t) => t._id), tag._id]);
+    setSearch("");
+    inputRef.current?.focus();
+  };
+
+  const removeTag = (tagId: Id<"tags">) => {
+    onTagsChange(selectedTags.filter((t) => t._id !== tagId).map((t) => t._id));
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div
+        className="flex flex-wrap items-center gap-2 min-h-[38px] px-3 py-2 bg-[var(--background)] border border-[var(--card-border)] rounded-lg cursor-text focus-within:border-[var(--accent)] transition-colors"
+        onClick={() => {
+          setIsOpen(true);
+          inputRef.current?.focus();
+        }}
+      >
+        {selectedTags.map((tag) => (
+          <span
+            key={tag._id}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+            style={{
+              backgroundColor: tag.color ? `${tag.color}20` : "var(--accent-muted)",
+              color: tag.color || "var(--accent)",
+            }}
+          >
+            {tag.name}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                removeTag(tag._id);
+              }}
+              className="hover:opacity-70 transition-opacity"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onFocus={() => setIsOpen(true)}
+          placeholder={selectedTags.length === 0 ? "Add tags..." : ""}
+          className="flex-1 min-w-[80px] bg-transparent outline-none text-sm placeholder:text-[var(--muted)]"
+        />
+      </div>
+
+      {isOpen && availableTags.length > 0 && (
+        <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl max-h-48 overflow-y-auto">
+          {availableTags.map((tag) => (
+            <button
+              key={tag._id}
+              onClick={() => addTag(tag)}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--card-border)] transition-colors flex items-center gap-2"
+            >
+              <span
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: tag.color || "var(--accent)" }}
+              />
+              {tag.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isOpen && search && availableTags.length === 0 && (
+        <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl p-3 text-sm text-[var(--muted)]">
+          No matching tags
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NoteCard({
+  id,
+  content,
+  tags,
+  allTags,
+}: {
+  id: Id<"notes">;
+  content: string;
+  tags: Tag[];
+  allTags: Tag[];
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(content);
+  const [editTagIds, setEditTagIds] = useState<Id<"tags">[]>(tags.map((t) => t._id));
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const remove = useMutation(api.notes.remove);
+  const update = useMutation(api.notes.update);
+
+  // Get the full tag objects for editing
+  const editTags = editTagIds
+    .map((id) => allTags.find((t) => t._id === id))
+    .filter((t): t is Tag => t !== undefined);
+
+  const startEditing = () => {
+    setEditContent(content);
+    setEditTagIds(tags.map((t) => t._id));
+    setIsEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setIsEditing(false);
+    setEditContent(content);
+    setEditTagIds(tags.map((t) => t._id));
+  };
+
+  const saveChanges = async () => {
+    await update({
+      id,
+      content: editContent,
+      tagIds: editTagIds,
+    });
+    setIsEditing(false);
+  };
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current && isEditing) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+    }
+  }, [editContent, isEditing]);
+
+  // Focus textarea when entering edit mode
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [isEditing]);
+
+  if (isEditing) {
+    return (
+      <div className="bg-[var(--card-bg)] border border-[var(--accent)]/50 rounded-xl p-6 transition-all duration-200">
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-[var(--muted)] mb-2">Tags</label>
+          <TagSelector
+            selectedTags={editTags}
+            onTagsChange={setEditTagIds}
+            allTags={allTags}
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-[var(--muted)] mb-2">Content (Markdown)</label>
+          <textarea
+            ref={textareaRef}
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            className="w-full min-h-[120px] px-3 py-2 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors resize-none font-mono text-sm"
+            placeholder="Write your note in markdown..."
+          />
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={cancelEditing}
+            className="px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void saveChanges()}
+            className="px-4 py-2 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-6 transition-all duration-200 hover:border-[var(--accent)]/30">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div className="flex flex-wrap gap-2">
+          {tags.length === 0 ? (
+            <span className="text-xs text-[var(--muted)]">No tags</span>
+          ) : (
+            tags.map((tag) => (
+              <span
+                key={tag._id}
+                className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                style={{
+                  backgroundColor: tag.color ? `${tag.color}20` : "var(--accent-muted)",
+                  color: tag.color || "var(--accent)",
+                }}
+              >
+                {tag.name}
+              </span>
+            ))
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={startEditing}
+            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10 shrink-0"
+            title="Edit note"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => remove({ id })}
+            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200 p-1 rounded-lg hover:bg-red-400/10 shrink-0"
+            title="Delete note"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="prose dark:prose-invert prose-sm max-w-none prose-headings:text-[var(--foreground)] prose-p:text-[var(--foreground)] prose-strong:text-[var(--foreground)] prose-a:text-[var(--accent)]">
+        <ReactMarkdown>{content}</ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+function NotesList() {
+  const notes = useQuery(api.notes.list);
+  const allTags = useQuery(api.tags.list) ?? [];
+
+  // Convert tags to the expected format
+  const allTagsFormatted: Tag[] = allTags.map((tag) => ({
+    _id: tag._id,
+    name: tag.name,
+    color: tag.color,
+  }));
+
   return (
     <>
       <Navigation />
       <div className="min-h-screen pt-24 pb-12 px-4">
         <div className="max-w-2xl mx-auto">
-          <div className="text-center py-16">
-            <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] flex items-center justify-center">
-              <svg className="w-8 h-8 text-[var(--muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold mb-2">Notes</h1>
-            <p className="text-[var(--muted)]">
-              This feature is coming soon. Notes will let you create and organize 
-              readme-style documents with tags.
+          <div className="mb-6">
+            <p className="text-[var(--muted)] text-sm">
+              {notes === undefined
+                ? "Loading..."
+                : notes.length === 0
+                ? "No notes yet"
+                : `${notes.length} note${notes.length === 1 ? "" : "s"}`}
             </p>
+          </div>
+
+          <div className="space-y-4">
+            {notes === undefined ? (
+              <div className="text-center py-8 text-[var(--muted)]">Loading...</div>
+            ) : notes.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] flex items-center justify-center">
+                  <svg className="w-8 h-8 text-[var(--muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <p className="text-[var(--muted)] mb-2">No notes yet</p>
+                <p className="text-sm text-[var(--muted)]/60">
+                  Create a note from a capture using the note icon
+                </p>
+              </div>
+            ) : (
+              notes.map((note) => (
+                <NoteCard
+                  key={note._id}
+                  id={note._id}
+                  content={note.content}
+                  tags={note.tags}
+                  allTags={allTagsFormatted}
+                />
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -68,5 +369,5 @@ export default function NotesPage() {
     );
   }
 
-  return session ? <NotesPlaceholder /> : <SignIn />;
+  return session ? <NotesList /> : <SignIn />;
 }

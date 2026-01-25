@@ -74,6 +74,19 @@ function CaptureItem({
     }
   );
 
+  const createNoteFromCapture = useMutation(api.notes.createFromCapture).withOptimisticUpdate(
+    (localStore, args) => {
+      const captures = localStore.getQuery(api.captures.list, {});
+      if (captures !== undefined) {
+        localStore.setQuery(
+          api.captures.list,
+          {},
+          captures.filter((capture) => capture._id !== args.captureId)
+        );
+      }
+    }
+  );
+
   return (
     <div className="group flex items-center gap-3 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 transition-all duration-200 hover:border-[var(--accent)]/30">
       <button
@@ -93,14 +106,25 @@ function CaptureItem({
       <span className={`flex-1 ${completed ? "line-through text-[var(--muted)]" : ""}`}>
         {text}
       </span>
-      <button
-        onClick={() => remove({ id })}
-        className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200"
-      >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => createNoteFromCapture({ captureId: id })}
+          className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10"
+          title="Create note"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </button>
+        <button
+          onClick={() => remove({ id })}
+          className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200 p-1 rounded-lg hover:bg-red-400/10"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }

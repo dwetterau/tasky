@@ -10,6 +10,14 @@ export default defineSchema({
     completed: v.boolean(),
   }).index("by_user", ["userId"]),
 
+  notes: defineTable({
+    userId: v.string(),
+    content: v.string(), // Markdown content
+    tagIds: v.array(v.id("tags")),
+    createdFromCaptureId: v.optional(v.id("captures")), // Track source capture
+  })
+    .index("by_user", ["userId"]),
+
   tags: defineTable({
     userId: v.string(),
     name: v.string(),

@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as captures from "../captures.js";
 import type * as http from "../http.js";
+import type * as notes from "../notes.js";
 import type * as tags from "../tags.js";
 import type * as users from "../users.js";
 
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   captures: typeof captures;
   http: typeof http;
+  notes: typeof notes;
   tags: typeof tags;
   users: typeof users;
 }>;
