@@ -7,7 +7,142 @@ import { Navigation } from "../../components/Navigation";
 import { TagSelector, SearchTagSelector, Tag } from "../../components/TagSelector";
 import { authClient } from "@/lib/auth-client";
 import ReactMarkdown from "react-markdown";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+
+function CreateNoteModal({
+  isOpen,
+  onClose,
+  allTags,
+  initialTagId,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  allTags: Tag[];
+  initialTagId: Id<"tags"> | null;
+}) {
+  const [content, setContent] = useState("");
+  const [tagIds, setTagIds] = useState<Id<"tags">[]>(initialTagId ? [initialTagId] : []);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const create = useMutation(api.notes.create);
+
+  // Reset form when modal opens with new initialTagId
+  useEffect(() => {
+    if (isOpen) {
+      setContent("");
+      setTagIds(initialTagId ? [initialTagId] : []);
+    }
+  }, [isOpen, initialTagId]);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (textareaRef.current && isOpen) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+    }
+  }, [content, isOpen]);
+
+  useEffect(() => {
+    if (isOpen && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [isOpen]);
+
+  const selectedTags = tagIds
+    .map((id) => allTags.find((t) => t._id === id))
+    .filter((t): t is Tag => t !== undefined);
+
+  const handleSubmit = async () => {
+    if (!content.trim()) return;
+    
+    setIsSubmitting(true);
+    try {
+      await create({
+        content: content.trim(),
+        tagIds: tagIds.length > 0 ? tagIds : undefined,
+      });
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      
+      {/* Modal */}
+      <div 
+        className="relative bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-full bg-[var(--accent)]/10 flex items-center justify-center">
+            <svg className="w-5 h-5 text-[var(--accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold">Create Note</h3>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Tags</label>
+            <TagSelector
+              selectedTags={selectedTags}
+              onTagsChange={setTagIds}
+              allTags={allTags}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Content (Markdown)</label>
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="w-full min-h-[150px] px-3 py-2 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors resize-none font-mono text-sm"
+              placeholder="Write your note in markdown..."
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void handleSubmit()}
+              disabled={!content.trim() || isSubmitting}
+              className="px-4 py-2 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? "Creating..." : "Create Note"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function NoteCard({
   id,
@@ -25,8 +160,46 @@ function NoteCard({
   const [editTagIds, setEditTagIds] = useState<Id<"tags">[]>(tags.map((t) => t._id));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const remove = useMutation(api.notes.remove);
-  const update = useMutation(api.notes.update);
+  const remove = useMutation(api.notes.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      // Update list query
+      const notes = localStore.getQuery(api.notes.list, {});
+      if (notes !== undefined) {
+        localStore.setQuery(
+          api.notes.list,
+          {},
+          notes.filter((n) => n._id !== args.id)
+        );
+      }
+    }
+  );
+
+  const update = useMutation(api.notes.update).withOptimisticUpdate(
+    (localStore, args) => {
+      // Update list query
+      const notes = localStore.getQuery(api.notes.list, {});
+      if (notes !== undefined) {
+        localStore.setQuery(
+          api.notes.list,
+          {},
+          notes.map((n) => {
+            if (n._id !== args.id) return n;
+            return {
+              ...n,
+              content: args.content ?? n.content,
+              tagIds: args.tagIds ?? n.tagIds,
+              // Update tags if tagIds changed
+              tags: args.tagIds
+                ? args.tagIds
+                    .map((tagId) => allTags.find((tag) => tag._id === tagId))
+                    .filter((tag): tag is Tag => tag !== undefined)
+                : n.tags,
+            };
+          })
+        );
+      }
+    }
+  );
 
   // Get the full tag objects for editing
   const editTags = editTagIds
@@ -158,9 +331,54 @@ function NoteCard({
 }
 
 function NotesList() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [searchText, setSearchText] = useState("");
   const [selectedTagId, setSelectedTagId] = useState<Id<"tags"> | null>(null);
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [initialTagApplied, setInitialTagApplied] = useState(false);
+
+  const tagsQuery = useQuery(api.tags.list);
+  const allTags = tagsQuery ?? [];
+
+  // Convert tags to the expected format
+  const allTagsFormatted: Tag[] = allTags.map((tag) => ({
+    _id: tag._id,
+    name: tag.name,
+    color: tag.color,
+  }));
+
+  // Read tag from URL on initial load and validate it
+  useEffect(() => {
+    // Wait for tags to load before checking
+    if (initialTagApplied || tagsQuery === undefined) return;
+    
+    const tagParam = searchParams.get("tag");
+    if (tagParam) {
+      // Validate that the tag ID exists
+      const validTag = allTags.find((t) => t._id === tagParam);
+      if (validTag) {
+        setSelectedTagId(tagParam as Id<"tags">);
+      }
+    }
+    setInitialTagApplied(true);
+  }, [searchParams, allTags, tagsQuery, initialTagApplied]);
+
+  // Update URL when tag filter changes
+  const handleTagChange = useCallback((tagId: Id<"tags"> | null) => {
+    setSelectedTagId(tagId);
+    
+    const params = new URLSearchParams(searchParams.toString());
+    if (tagId) {
+      params.set("tag", tagId);
+    } else {
+      params.delete("tag");
+    }
+    
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    router.replace(newUrl);
+  }, [searchParams, router]);
 
   // Debounce search text to avoid too many queries
   useEffect(() => {
@@ -185,14 +403,6 @@ function NotesList() {
   );
 
   const notes = isSearching ? searchResults : allNotes;
-  const allTags = useQuery(api.tags.list) ?? [];
-
-  // Convert tags to the expected format
-  const allTagsFormatted: Tag[] = allTags.map((tag) => ({
-    _id: tag._id,
-    name: tag.name,
-    color: tag.color,
-  }));
 
   const selectedTag = selectedTagId
     ? allTagsFormatted.find((t) => t._id === selectedTagId) ?? null
@@ -200,7 +410,7 @@ function NotesList() {
 
   const clearSearch = () => {
     setSearchText("");
-    setSelectedTagId(null);
+    handleTagChange(null);
   };
 
   return (
@@ -248,9 +458,19 @@ function NotesList() {
               {/* Tag filter */}
               <SearchTagSelector
                 selectedTag={selectedTag}
-                onTagChange={setSelectedTagId}
+                onTagChange={handleTagChange}
                 allTags={allTagsFormatted}
               />
+
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="h-[38px] px-4 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium text-sm flex items-center gap-2 shrink-0"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create Note
+              </button>
             </div>
 
             {/* Search status */}
@@ -315,6 +535,13 @@ function NotesList() {
           </div>
         </div>
       </div>
+
+      <CreateNoteModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        allTags={allTagsFormatted}
+        initialTagId={selectedTagId}
+      />
     </>
   );
 }

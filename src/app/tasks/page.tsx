@@ -7,7 +7,8 @@ import { Navigation } from "../../components/Navigation";
 import { TagSelector, SearchTagSelector, Tag } from "../../components/TagSelector";
 import { authClient } from "@/lib/auth-client";
 import ReactMarkdown from "react-markdown";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 
 type TaskStatus = "not_started" | "in_progress" | "blocked" | "done";
 type TaskPriority = "triage" | "low" | "medium" | "high";
@@ -28,6 +29,268 @@ const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = 
 
 const STATUS_ORDER: TaskStatus[] = ["not_started", "in_progress", "blocked", "done"];
 
+function CreateTaskModal({
+  isOpen,
+  onClose,
+  allTags,
+  initialTagId,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  allTags: Tag[];
+  initialTagId: Id<"tags"> | null;
+}) {
+  const [content, setContent] = useState("");
+  const [tagIds, setTagIds] = useState<Id<"tags">[]>(initialTagId ? [initialTagId] : []);
+  const [status, setStatus] = useState<TaskStatus>("not_started");
+  const [priority, setPriority] = useState<TaskPriority>("triage");
+  const [dueDate, setDueDate] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const create = useMutation(api.tasks.create);
+
+  // Reset form when modal opens with new initialTagId
+  useEffect(() => {
+    if (isOpen) {
+      setContent("");
+      setTagIds(initialTagId ? [initialTagId] : []);
+      setStatus("not_started");
+      setPriority("triage");
+      setDueDate("");
+    }
+  }, [isOpen, initialTagId]);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (textareaRef.current && isOpen) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+    }
+  }, [content, isOpen]);
+
+  useEffect(() => {
+    if (isOpen && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [isOpen]);
+
+  const selectedTags = tagIds
+    .map((id) => allTags.find((t) => t._id === id))
+    .filter((t): t is Tag => t !== undefined);
+
+  const handleSubmit = async () => {
+    if (!content.trim()) return;
+    
+    setIsSubmitting(true);
+    try {
+      await create({
+        content: content.trim(),
+        tagIds: tagIds.length > 0 ? tagIds : undefined,
+        status,
+        priority,
+        dueDate: dueDate || undefined,
+      });
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      
+      {/* Modal */}
+      <div 
+        className="relative bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-full bg-[var(--accent)]/10 flex items-center justify-center">
+            <svg className="w-5 h-5 text-[var(--accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold">Create Task</h3>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Content</label>
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="w-full min-h-[100px] px-3 py-2 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors resize-none font-mono text-sm"
+              placeholder="What needs to be done?"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[var(--muted)] mb-1">Status</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as TaskStatus)}
+                className="w-full h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+              >
+                {STATUS_ORDER.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_CONFIG[s].label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-[var(--muted)] mb-1">Priority</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as TaskPriority)}
+                className="w-full h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+              >
+                {(["triage", "low", "medium", "high"] as TaskPriority[]).map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITY_CONFIG[p].label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Due Date</label>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="w-full h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Tags</label>
+            <TagSelector
+              selectedTags={selectedTags}
+              onTagsChange={setTagIds}
+              allTags={allTags}
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void handleSubmit()}
+              disabled={!content.trim() || isSubmitting}
+              className="px-4 py-2 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? "Creating..." : "Create Task"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeleteConfirmModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  taskContent,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  taskContent: string;
+}) {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  // Truncate content for display
+  const displayContent = taskContent.length > 100 
+    ? taskContent.slice(0, 100) + "..." 
+    : taskContent;
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      
+      {/* Modal */}
+      <div 
+        className="relative bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-6 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+            <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold">Delete Task</h3>
+        </div>
+        
+        <p className="text-[var(--muted)] mb-2">
+          Are you sure you want to delete this task? This action cannot be undone.
+        </p>
+        
+        <div className="bg-[var(--background)] border border-[var(--card-border)] rounded-lg p-3 mb-6">
+          <p className="text-sm text-[var(--foreground)] line-clamp-3">{displayContent}</p>
+        </div>
+        
+        <div className="flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
+          >
+            Delete Task
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TaskCard({
   task,
   allTags,
@@ -43,6 +306,7 @@ function TaskCard({
   allTags: Tag[];
 }) {
   const [isEditing, setIsEditing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editContent, setEditContent] = useState(task.content);
   const [editTagIds, setEditTagIds] = useState<Id<"tags">[]>(task.tags.map((t) => t._id));
   const [editStatus, setEditStatus] = useState<TaskStatus>(task.status);
@@ -50,8 +314,49 @@ function TaskCard({
   const [editDueDate, setEditDueDate] = useState(task.dueDate || "");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const remove = useMutation(api.tasks.remove);
-  const update = useMutation(api.tasks.update);
+  const remove = useMutation(api.tasks.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      // Update list query
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        localStore.setQuery(
+          api.tasks.list,
+          {},
+          tasks.filter((t) => t._id !== args.id)
+        );
+      }
+    }
+  );
+
+  const update = useMutation(api.tasks.update).withOptimisticUpdate(
+    (localStore, args) => {
+      // Update list query
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        localStore.setQuery(
+          api.tasks.list,
+          {},
+          tasks.map((t) => {
+            if (t._id !== args.id) return t;
+            return {
+              ...t,
+              content: args.content ?? t.content,
+              status: args.status ?? t.status,
+              priority: args.priority ?? t.priority,
+              dueDate: args.dueDate !== undefined ? (args.dueDate ?? undefined) : t.dueDate,
+              tagIds: args.tagIds ?? t.tagIds,
+              // Update tags if tagIds changed
+              tags: args.tagIds
+                ? args.tagIds
+                    .map((id) => allTags.find((tag) => tag._id === id))
+                    .filter((tag): tag is Tag => tag !== undefined)
+                : t.tags,
+            };
+          })
+        );
+      }
+    }
+  );
 
   const editTags = editTagIds
     .map((id) => allTags.find((t) => t._id === id))
@@ -223,7 +528,7 @@ function TaskCard({
               </svg>
             </button>
             <button
-              onClick={() => remove({ id: task._id })}
+              onClick={() => setShowDeleteConfirm(true)}
               className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200 p-1 rounded hover:bg-red-400/10"
               title="Delete task"
             >
@@ -237,6 +542,16 @@ function TaskCard({
         <div className="prose dark:prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 text-sm">
           <ReactMarkdown>{task.content}</ReactMarkdown>
         </div>
+
+        <DeleteConfirmModal
+          isOpen={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={() => {
+            remove({ id: task._id });
+            setShowDeleteConfirm(false);
+          }}
+          taskContent={task.content}
+        />
 
         {(task.dueDate || task.priority !== "triage") && (
           <div className="flex items-center gap-3 mt-3 text-xs text-[var(--muted)]">
@@ -310,9 +625,53 @@ function KanbanColumn({
 }
 
 function TasksList() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [searchText, setSearchText] = useState("");
   const [selectedTagId, setSelectedTagId] = useState<Id<"tags"> | null>(null);
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [initialTagApplied, setInitialTagApplied] = useState(false);
+
+  const tagsQuery = useQuery(api.tags.list);
+  const allTags = tagsQuery ?? [];
+
+  const allTagsFormatted: Tag[] = allTags.map((tag) => ({
+    _id: tag._id,
+    name: tag.name,
+    color: tag.color,
+  }));
+
+  // Read tag from URL on initial load and validate it
+  useEffect(() => {
+    // Wait for tags to load before checking
+    if (initialTagApplied || tagsQuery === undefined) return;
+    
+    const tagParam = searchParams.get("tag");
+    if (tagParam) {
+      // Validate that the tag ID exists
+      const validTag = allTags.find((t) => t._id === tagParam);
+      if (validTag) {
+        setSelectedTagId(tagParam as Id<"tags">);
+      }
+    }
+    setInitialTagApplied(true);
+  }, [searchParams, allTags, tagsQuery, initialTagApplied]);
+
+  // Update URL when tag filter changes
+  const handleTagChange = useCallback((tagId: Id<"tags"> | null) => {
+    setSelectedTagId(tagId);
+    
+    const params = new URLSearchParams(searchParams.toString());
+    if (tagId) {
+      params.set("tag", tagId);
+    } else {
+      params.delete("tag");
+    }
+    
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    router.replace(newUrl);
+  }, [searchParams, router]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -335,13 +694,6 @@ function TasksList() {
   );
 
   const tasks = isSearching ? searchResults : allTasks;
-  const allTags = useQuery(api.tags.list) ?? [];
-
-  const allTagsFormatted: Tag[] = allTags.map((tag) => ({
-    _id: tag._id,
-    name: tag.name,
-    color: tag.color,
-  }));
 
   const selectedTag = selectedTagId
     ? allTagsFormatted.find((t) => t._id === selectedTagId) ?? null
@@ -349,7 +701,7 @@ function TasksList() {
 
   const clearSearch = () => {
     setSearchText("");
-    setSelectedTagId(null);
+    handleTagChange(null);
   };
 
   // Group tasks by status
@@ -379,8 +731,8 @@ function TasksList() {
   return (
     <>
       <Navigation />
-      <div className="min-h-screen pt-24 pb-12 px-4">
-        <div className="max-w-7xl mx-auto">
+      <div className="min-h-screen pt-24 pb-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Search UI */}
           <div className="mb-6 space-y-3">
             <div className="flex gap-2 flex-wrap">
@@ -419,9 +771,19 @@ function TasksList() {
 
               <SearchTagSelector
                 selectedTag={selectedTag}
-                onTagChange={setSelectedTagId}
+                onTagChange={handleTagChange}
                 allTags={allTagsFormatted}
               />
+
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="h-[38px] px-4 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium text-sm flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create Task
+              </button>
             </div>
 
             <div className="flex items-center justify-between">
@@ -474,6 +836,13 @@ function TasksList() {
           )}
         </div>
       </div>
+
+      <CreateTaskModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        allTags={allTagsFormatted}
+        initialTagId={selectedTagId}
+      />
     </>
   );
 }
