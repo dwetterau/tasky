@@ -269,8 +269,137 @@ function NoteCard({
   );
 }
 
+function SearchTagSelector({
+  selectedTag,
+  onTagChange,
+  allTags,
+}: {
+  selectedTag: Tag | null;
+  onTagChange: (tagId: Id<"tags"> | null) => void;
+  allTags: Tag[];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const availableTags = allTags.filter((tag) =>
+    tag.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg hover:border-[var(--accent)] transition-colors text-sm"
+      >
+        {selectedTag ? (
+          <span className="flex items-center gap-2">
+            <span
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: selectedTag.color || "var(--accent)" }}
+            />
+            <span>{selectedTag.name}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onTagChange(null);
+              }}
+              className="hover:opacity-70 transition-opacity ml-1"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </span>
+        ) : (
+          <span className="text-[var(--muted)] flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+            Filter by tag
+          </span>
+        )}
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-10 top-full left-0 mt-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl min-w-[200px] max-h-64 overflow-hidden">
+          <div className="p-2 border-b border-[var(--card-border)]">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search tags..."
+              className="w-full px-2 py-1 bg-[var(--background)] border border-[var(--card-border)] rounded text-sm focus:outline-none focus:border-[var(--accent)]"
+              autoFocus
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {availableTags.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-[var(--muted)]">No tags found</div>
+            ) : (
+              availableTags.map((tag) => (
+                <button
+                  key={tag._id}
+                  onClick={() => {
+                    onTagChange(tag._id);
+                    setIsOpen(false);
+                    setSearch("");
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--card-border)] transition-colors flex items-center gap-2"
+                >
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: tag.color || "var(--accent)" }}
+                  />
+                  {tag.name}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NotesList() {
-  const notes = useQuery(api.notes.list);
+  const [searchText, setSearchText] = useState("");
+  const [selectedTagId, setSelectedTagId] = useState<Id<"tags"> | null>(null);
+  const [debouncedSearchText, setDebouncedSearchText] = useState("");
+
+  // Debounce search text to avoid too many queries
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchText(searchText);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
+  const isSearching = debouncedSearchText.trim() !== "" || selectedTagId !== null;
+
+  // Use search query when there are search criteria, otherwise use list
+  const allNotes = useQuery(api.notes.list);
+  const searchResults = useQuery(
+    api.notes.search,
+    isSearching
+      ? {
+          searchText: debouncedSearchText.trim() || undefined,
+          tagId: selectedTagId ?? undefined,
+        }
+      : "skip"
+  );
+
+  const notes = isSearching ? searchResults : allNotes;
   const allTags = useQuery(api.tags.list) ?? [];
 
   // Convert tags to the expected format
@@ -280,19 +409,85 @@ function NotesList() {
     color: tag.color,
   }));
 
+  const selectedTag = selectedTagId
+    ? allTagsFormatted.find((t) => t._id === selectedTagId) ?? null
+    : null;
+
+  const clearSearch = () => {
+    setSearchText("");
+    setSelectedTagId(null);
+  };
+
   return (
     <>
       <Navigation />
       <div className="min-h-screen pt-24 pb-12 px-4">
         <div className="max-w-2xl mx-auto">
-          <div className="mb-6">
-            <p className="text-[var(--muted)] text-sm">
-              {notes === undefined
-                ? "Loading..."
-                : notes.length === 0
-                ? "No notes yet"
-                : `${notes.length} note${notes.length === 1 ? "" : "s"}`}
-            </p>
+          {/* Search UI */}
+          <div className="mb-6 space-y-3">
+            <div className="flex gap-2">
+              {/* Full-text search input */}
+              <div className="flex-1 relative">
+                <svg
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted)]"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+                <input
+                  type="text"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Search notes..."
+                  className="w-full h-[38px] pl-10 pr-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+                />
+                {searchText && (
+                  <button
+                    onClick={() => setSearchText("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--foreground)]"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {/* Tag filter */}
+              <SearchTagSelector
+                selectedTag={selectedTag}
+                onTagChange={setSelectedTagId}
+                allTags={allTagsFormatted}
+              />
+            </div>
+
+            {/* Search status */}
+            <div className="flex items-center justify-between">
+              <p className="text-[var(--muted)] text-sm">
+                {notes === undefined
+                  ? "Loading..."
+                  : isSearching
+                  ? `${notes.length} result${notes.length === 1 ? "" : "s"}`
+                  : notes.length === 0
+                  ? "No notes yet"
+                  : `${notes.length} note${notes.length === 1 ? "" : "s"}`}
+              </p>
+              {isSearching && (
+                <button
+                  onClick={clearSearch}
+                  className="text-sm text-[var(--accent)] hover:underline"
+                >
+                  Clear search
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -305,10 +500,21 @@ function NotesList() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <p className="text-[var(--muted)] mb-2">No notes yet</p>
-                <p className="text-sm text-[var(--muted)]/60">
-                  Create a note from a capture using the note icon
-                </p>
+                {isSearching ? (
+                  <>
+                    <p className="text-[var(--muted)] mb-2">No matching notes</p>
+                    <p className="text-sm text-[var(--muted)]/60">
+                      Try adjusting your search criteria
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[var(--muted)] mb-2">No notes yet</p>
+                    <p className="text-sm text-[var(--muted)]/60">
+                      Create a note from a capture using the note icon
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               notes.map((note) => (

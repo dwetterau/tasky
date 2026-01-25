@@ -16,7 +16,11 @@ export default defineSchema({
     tagIds: v.array(v.id("tags")),
     createdFromCaptureId: v.optional(v.id("captures")), // Track source capture
   })
-    .index("by_user", ["userId"]),
+    .index("by_user", ["userId"])
+    .searchIndex("search_content", {
+      searchField: "content",
+      filterFields: ["userId"],
+    }),
 
   tags: defineTable({
     userId: v.string(),

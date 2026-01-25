@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "./auth";
+import { Id } from "./_generated/dataModel";
 
 export const list = query({
   args: {},
@@ -115,5 +116,78 @@ export const remove = mutation({
       throw new Error("Note not found or access denied");
     }
     await ctx.db.delete(args.id);
+  },
+});
+
+// Search notes by full-text search and/or tag filtering (with recursive child tags)
+export const search = query({
+  args: {
+    searchText: v.optional(v.string()),
+    tagId: v.optional(v.id("tags")),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return [];
+    }
+
+    // If no search criteria, return empty (use list() for all notes)
+    if (!args.searchText && !args.tagId) {
+      return [];
+    }
+
+    let notes;
+
+    if (args.searchText && args.searchText.trim()) {
+      // Full-text search using Convex search index
+      notes = await ctx.db
+        .query("notes")
+        .withSearchIndex("search_content", (q) =>
+          q.search("content", args.searchText!).eq("userId", userId)
+        )
+        .collect();
+    } else {
+      // No text search, get all user's notes for tag filtering
+      notes = await ctx.db
+        .query("notes")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .collect();
+    }
+
+    // If tag filtering is requested, filter by tag and all its recursive children
+    if (args.tagId) {
+      const tag = await ctx.db.get(args.tagId);
+      if (!tag || tag.userId !== userId) {
+        return [];
+      }
+
+      // Get all tag IDs to match: the selected tag + all its recursive children
+      const matchingTagIds = new Set<Id<"tags">>([args.tagId]);
+      if (tag.childrenRecursive) {
+        for (const childId of tag.childrenRecursive) {
+          matchingTagIds.add(childId);
+        }
+      }
+
+      // Filter notes that have at least one matching tag
+      notes = notes.filter((note) =>
+        note.tagIds.some((tagId) => matchingTagIds.has(tagId))
+      );
+    }
+
+    // Fetch tags for each note
+    const notesWithTags = await Promise.all(
+      notes.map(async (note) => {
+        const tags = await Promise.all(
+          note.tagIds.map((tagId) => ctx.db.get(tagId))
+        );
+        return {
+          ...note,
+          tags: tags.filter((t) => t !== null),
+        };
+      })
+    );
+
+    return notesWithTags;
   },
 });
