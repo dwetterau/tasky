@@ -1,6 +1,24 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+// Task status and priority literals
+export const taskStatusValues = ["not_started", "in_progress", "blocked", "done"] as const;
+export const taskPriorityValues = ["triage", "low", "medium", "high"] as const;
+
+export const taskStatus = v.union(
+  v.literal("not_started"),
+  v.literal("in_progress"),
+  v.literal("blocked"),
+  v.literal("done")
+);
+
+export const taskPriority = v.union(
+  v.literal("triage"),
+  v.literal("low"),
+  v.literal("medium"),
+  v.literal("high")
+);
+
 // Note: better-auth manages its own tables (users, sessions, accounts, verifications)
 // through the component. Our app tables use string userId to reference better-auth users.
 export default defineSchema({
@@ -17,6 +35,22 @@ export default defineSchema({
     createdFromCaptureId: v.optional(v.id("captures")), // Track source capture
   })
     .index("by_user", ["userId"])
+    .searchIndex("search_content", {
+      searchField: "content",
+      filterFields: ["userId"],
+    }),
+
+  tasks: defineTable({
+    userId: v.string(),
+    content: v.string(), // Task description (Markdown)
+    tagIds: v.array(v.id("tags")),
+    status: taskStatus,
+    priority: taskPriority,
+    dueDate: v.optional(v.string()), // ISO date string (YYYY-MM-DD)
+    createdFromCaptureId: v.optional(v.id("captures")), // Track source capture
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_status", ["userId", "status"])
     .searchIndex("search_content", {
       searchField: "content",
       filterFields: ["userId"],

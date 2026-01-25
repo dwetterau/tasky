@@ -87,6 +87,19 @@ function CaptureItem({
     }
   );
 
+  const createTaskFromCapture = useMutation(api.tasks.createFromCapture).withOptimisticUpdate(
+    (localStore, args) => {
+      const captures = localStore.getQuery(api.captures.list, {});
+      if (captures !== undefined) {
+        localStore.setQuery(
+          api.captures.list,
+          {},
+          captures.filter((capture) => capture._id !== args.captureId)
+        );
+      }
+    }
+  );
+
   return (
     <div className="group flex items-center gap-3 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 transition-all duration-200 hover:border-[var(--accent)]/30">
       <button
@@ -107,6 +120,15 @@ function CaptureItem({
         {text}
       </span>
       <div className="flex items-center gap-1">
+        <button
+          onClick={() => createTaskFromCapture({ captureId: id })}
+          className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10"
+          title="Create task"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        </button>
         <button
           onClick={() => createNoteFromCapture({ captureId: id })}
           className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10"
