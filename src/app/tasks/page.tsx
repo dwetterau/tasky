@@ -9,6 +9,20 @@ import { authClient } from "@/lib/auth-client";
 import ReactMarkdown from "react-markdown";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import {
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import { useSortable } from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 
 type TaskStatus = "not_started" | "in_progress" | "blocked" | "done";
 type TaskPriority = "triage" | "low" | "medium" | "high";
@@ -28,6 +42,9 @@ const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = 
 };
 
 const STATUS_ORDER: TaskStatus[] = ["not_started", "in_progress", "blocked", "done"];
+const PRIORITY_ORDER: TaskPriority[] = ["triage", "low", "medium", "high"];
+
+type KanbanMode = "status" | "priority";
 
 function CreateTaskModal({
   isOpen,
@@ -110,8 +127,9 @@ function CreateTaskModal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
       onClick={onClose}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
@@ -244,8 +262,9 @@ function DeleteConfirmModal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
       onClick={onClose}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
@@ -294,6 +313,8 @@ function DeleteConfirmModal({
 function TaskCard({
   task,
   allTags,
+  kanbanMode,
+  isDragging: isDraggingProp,
 }: {
   task: {
     _id: Id<"tasks">;
@@ -304,6 +325,8 @@ function TaskCard({
     tags: Tag[];
   };
   allTags: Tag[];
+  kanbanMode: KanbanMode;
+  isDragging?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -338,6 +361,11 @@ function TaskCard({
           {},
           tasks.map((t) => {
             if (t._id !== args.id) return t;
+            // Keep existing tags - they will refresh when query updates
+            // Filter out removed tags if tagIds changed
+            const newTags = args.tagIds 
+              ? t.tags.filter((tag) => args.tagIds!.includes(tag._id))
+              : t.tags;
             return {
               ...t,
               content: args.content ?? t.content,
@@ -345,12 +373,7 @@ function TaskCard({
               priority: args.priority ?? t.priority,
               dueDate: args.dueDate !== undefined ? (args.dueDate ?? undefined) : t.dueDate,
               tagIds: args.tagIds ?? t.tagIds,
-              // Update tags if tagIds changed
-              tags: args.tagIds
-                ? args.tagIds
-                    .map((id) => allTags.find((tag) => tag._id === id))
-                    .filter((tag): tag is Tag => tag !== undefined)
-                : t.tags,
+              tags: newTags,
             };
           })
         );
@@ -358,11 +381,30 @@ function TaskCard({
     }
   );
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task._id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   const editTags = editTagIds
     .map((id) => allTags.find((t) => t._id === id))
     .filter((t): t is Tag => t !== undefined);
 
-  const priorityColor = PRIORITY_CONFIG[task.priority].color;
+  // In status mode, accent bar shows priority color
+  // In priority mode, accent bar shows status color
+  const accentColor = kanbanMode === "status" 
+    ? PRIORITY_CONFIG[task.priority].color 
+    : STATUS_CONFIG[task.status].color;
 
   const startEditing = () => {
     setEditContent(task.content);
@@ -489,12 +531,16 @@ function TaskCard({
 
   return (
     <div
-      className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden transition-all duration-200 hover:border-[var(--accent)]/30 flex"
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden transition-all duration-200 hover:border-[var(--accent)]/30 flex cursor-grab active:cursor-grabbing ${isDraggingProp ? "ring-2 ring-[var(--accent)] shadow-lg" : ""}`}
     >
-      {/* Priority accent bar */}
+      {/* Accent bar */}
       <div
         className="w-1 shrink-0"
-        style={{ backgroundColor: priorityColor }}
+        style={{ backgroundColor: accentColor }}
       />
 
       <div className="flex-1 p-4">
@@ -520,6 +566,7 @@ function TaskCard({
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={startEditing}
+              onPointerDown={(e) => e.stopPropagation()}
               className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded hover:bg-[var(--accent)]/10"
               title="Edit task"
             >
@@ -529,6 +576,7 @@ function TaskCard({
             </button>
             <button
               onClick={() => setShowDeleteConfirm(true)}
+              onPointerDown={(e) => e.stopPropagation()}
               className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200 p-1 rounded hover:bg-red-400/10"
               title="Delete task"
             >
@@ -553,7 +601,7 @@ function TaskCard({
           taskContent={task.content}
         />
 
-        {(task.dueDate || task.priority !== "triage") && (
+        {(task.dueDate || (kanbanMode === "status" && task.priority !== "triage") || (kanbanMode === "priority" && task.status !== "not_started")) && (
           <div className="flex items-center gap-3 mt-3 text-xs text-[var(--muted)]">
             {task.dueDate && (
               <span className="flex items-center gap-1">
@@ -563,15 +611,29 @@ function TaskCard({
                 {new Date(task.dueDate).toLocaleDateString()}
               </span>
             )}
-            <span
-              className="px-1.5 py-0.5 rounded text-xs font-medium"
-              style={{
-                backgroundColor: `${priorityColor}20`,
-                color: priorityColor,
-              }}
-            >
-              {PRIORITY_CONFIG[task.priority].label}
-            </span>
+            {/* In status mode, show priority badge. In priority mode, show status badge */}
+            {kanbanMode === "status" && task.priority !== "triage" && (
+              <span
+                className="px-1.5 py-0.5 rounded text-xs font-medium"
+                style={{
+                  backgroundColor: `${PRIORITY_CONFIG[task.priority].color}20`,
+                  color: PRIORITY_CONFIG[task.priority].color,
+                }}
+              >
+                {PRIORITY_CONFIG[task.priority].label}
+              </span>
+            )}
+            {kanbanMode === "priority" && task.status !== "not_started" && (
+              <span
+                className="px-1.5 py-0.5 rounded text-xs font-medium"
+                style={{
+                  backgroundColor: `${STATUS_CONFIG[task.status].color}20`,
+                  color: STATUS_CONFIG[task.status].color,
+                }}
+              >
+                {STATUS_CONFIG[task.status].label}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -580,11 +642,14 @@ function TaskCard({
 }
 
 function KanbanColumn({
-  status,
+  columnId,
+  columnValue,
   tasks,
   allTags,
+  kanbanMode,
 }: {
-  status: TaskStatus;
+  columnId: string;
+  columnValue: TaskStatus | TaskPriority;
   tasks: Array<{
     _id: Id<"tasks">;
     content: string;
@@ -594,11 +659,19 @@ function KanbanColumn({
     tags: Tag[];
   }>;
   allTags: Tag[];
+  kanbanMode: KanbanMode;
 }) {
-  const config = STATUS_CONFIG[status];
+  const { setNodeRef, isOver } = useDroppable({ id: columnId });
+  
+  const config = kanbanMode === "status" 
+    ? STATUS_CONFIG[columnValue as TaskStatus]
+    : PRIORITY_CONFIG[columnValue as TaskPriority];
 
   return (
-    <div className="flex-1 min-w-[280px] max-w-[350px]">
+    <div 
+      ref={setNodeRef}
+      className={`flex-1 min-w-[280px] max-w-[350px] transition-all duration-200 ${isOver ? "bg-[var(--accent)]/5 rounded-xl" : ""}`}
+    >
       <div className="flex items-center gap-2 mb-4 px-1">
         <div
           className="w-3 h-3 rounded-full"
@@ -610,13 +683,13 @@ function KanbanColumn({
         </span>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-3 min-h-[100px]">
         {tasks.map((task) => (
-          <TaskCard key={task._id} task={task} allTags={allTags} />
+          <TaskCard key={task._id} task={task} allTags={allTags} kanbanMode={kanbanMode} />
         ))}
         {tasks.length === 0 && (
-          <div className="text-center py-8 text-[var(--muted)] text-sm border border-dashed border-[var(--card-border)] rounded-xl">
-            No tasks
+          <div className={`text-center py-8 text-[var(--muted)] text-sm border border-dashed rounded-xl transition-colors ${isOver ? "border-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--card-border)]"}`}>
+            {isOver ? "Drop here" : "No tasks"}
           </div>
         )}
       </div>
@@ -632,9 +705,54 @@ function TasksList() {
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [initialTagApplied, setInitialTagApplied] = useState(false);
+  const [kanbanMode, setKanbanMode] = useState<KanbanMode>("status");
+  const [activeTaskId, setActiveTaskId] = useState<Id<"tasks"> | null>(null);
 
   const tagsQuery = useQuery(api.tags.list);
   const allTags = tagsQuery ?? [];
+
+  // Drag-and-drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor)
+  );
+
+  // Mutations for drag-and-drop
+  const updateStatus = useMutation(api.tasks.updateStatus).withOptimisticUpdate(
+    (localStore, args) => {
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        localStore.setQuery(
+          api.tasks.list,
+          {},
+          tasks.map((t) => {
+            if (t._id !== args.id) return t;
+            return { ...t, status: args.status };
+          })
+        );
+      }
+    }
+  );
+
+  const updatePriority = useMutation(api.tasks.updatePriority).withOptimisticUpdate(
+    (localStore, args) => {
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        localStore.setQuery(
+          api.tasks.list,
+          {},
+          tasks.map((t) => {
+            if (t._id !== args.id) return t;
+            return { ...t, priority: args.priority };
+          })
+        );
+      }
+    }
+  );
 
   const allTagsFormatted: Tag[] = allTags.map((tag) => ({
     _id: tag._id,
@@ -704,7 +822,69 @@ function TasksList() {
     handleTagChange(null);
   };
 
-  // Group tasks by status
+  // Drag event handlers
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveTaskId(event.active.id as Id<"tasks">);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTaskId(null);
+
+    if (!over) return;
+
+    const taskId = active.id as Id<"tasks">;
+    const targetId = over.id as string;
+
+    // Find the dragged task
+    const task = (tasks ?? []).find((t) => t._id === taskId);
+    if (!task) return;
+
+    if (kanbanMode === "status") {
+      let newStatus: TaskStatus;
+      
+      // Check if dropped on a column
+      if (STATUS_ORDER.includes(targetId as TaskStatus)) {
+        newStatus = targetId as TaskStatus;
+      } else {
+        // Dropped on a task card - find the target task's status
+        const targetTask = (tasks ?? []).find((t) => t._id === targetId);
+        if (!targetTask) return;
+        newStatus = targetTask.status;
+      }
+      
+      if (task.status !== newStatus) {
+        updateStatus({ id: taskId, status: newStatus });
+      }
+    } else {
+      let newPriority: TaskPriority;
+      
+      // Check if dropped on a column
+      if (PRIORITY_ORDER.includes(targetId as TaskPriority)) {
+        newPriority = targetId as TaskPriority;
+      } else {
+        // Dropped on a task card - find the target task's priority
+        const targetTask = (tasks ?? []).find((t) => t._id === targetId);
+        if (!targetTask) return;
+        newPriority = targetTask.priority;
+      }
+      
+      if (task.priority !== newPriority) {
+        updatePriority({ id: taskId, priority: newPriority });
+      }
+    }
+  };
+
+  const handleDragCancel = () => {
+    setActiveTaskId(null);
+  };
+
+  // Get the active task for drag overlay
+  const activeTask = activeTaskId 
+    ? (tasks ?? []).find((t) => t._id === activeTaskId) 
+    : null;
+
+  // Group tasks by status or priority based on mode
   type TaskWithTags = {
     _id: Id<"tasks">;
     content: string;
@@ -721,11 +901,20 @@ function TasksList() {
     done: [],
   };
 
+  const tasksByPriority: Record<TaskPriority, TaskWithTags[]> = {
+    triage: [],
+    low: [],
+    medium: [],
+    high: [],
+  };
+
   for (const task of tasks ?? []) {
-    tasksByStatus[task.status].push({
+    const taskWithTags = {
       ...task,
       tags: task.tags as Tag[],
-    });
+    };
+    tasksByStatus[task.status].push(taskWithTags);
+    tasksByPriority[task.priority].push(taskWithTags);
   }
 
   return (
@@ -775,6 +964,30 @@ function TasksList() {
                 allTags={allTagsFormatted}
               />
 
+              {/* Kanban Mode Toggle */}
+              <div className="h-[38px] flex items-center bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-1">
+                <button
+                  onClick={() => setKanbanMode("status")}
+                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                    kanbanMode === "status"
+                      ? "bg-[var(--accent)] text-white"
+                      : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  Status
+                </button>
+                <button
+                  onClick={() => setKanbanMode("priority")}
+                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                    kanbanMode === "priority"
+                      ? "bg-[var(--accent)] text-white"
+                      : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  Priority
+                </button>
+              </div>
+
               <button
                 onClick={() => setShowCreateModal(true)}
                 className="h-[38px] px-4 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium text-sm flex items-center gap-2"
@@ -823,16 +1036,56 @@ function TasksList() {
               </p>
             </div>
           ) : (
-            <div className="flex gap-6 overflow-x-auto pb-4">
-              {STATUS_ORDER.map((status) => (
-                <KanbanColumn
-                  key={status}
-                  status={status}
-                  tasks={tasksByStatus[status]}
-                  allTags={allTagsFormatted}
-                />
-              ))}
-            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCorners}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <div className="flex gap-6 overflow-x-auto pb-4">
+                {kanbanMode === "status" ? (
+                  STATUS_ORDER.map((status) => (
+                    <KanbanColumn
+                      key={status}
+                      columnId={status}
+                      columnValue={status}
+                      tasks={tasksByStatus[status]}
+                      allTags={allTagsFormatted}
+                      kanbanMode={kanbanMode}
+                    />
+                  ))
+                ) : (
+                  PRIORITY_ORDER.map((priority) => (
+                    <KanbanColumn
+                      key={priority}
+                      columnId={priority}
+                      columnValue={priority}
+                      tasks={tasksByPriority[priority]}
+                      allTags={allTagsFormatted}
+                      kanbanMode={kanbanMode}
+                    />
+                  ))
+                )}
+              </div>
+
+              {/* Drag Overlay */}
+              <DragOverlay>
+                {activeTask ? (
+                  <div className="opacity-90">
+                    <TaskCard
+                      task={{
+                        ...activeTask,
+                        tags: activeTask.tags as Tag[],
+                      }}
+                      allTags={allTagsFormatted}
+                      kanbanMode={kanbanMode}
+                      isDragging
+                    />
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           )}
         </div>
       </div>

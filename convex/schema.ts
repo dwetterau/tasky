@@ -48,6 +48,8 @@ export default defineSchema({
     priority: taskPriority,
     dueDate: v.optional(v.string()), // ISO date string (YYYY-MM-DD)
     createdFromCaptureId: v.optional(v.id("captures")), // Track source capture
+    completedAt: v.optional(v.number()), // Unix timestamp (ms) when task was completed
+    statusUpdatedAt: v.optional(v.number()), // Unix timestamp (ms) of last status change
   })
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"])
