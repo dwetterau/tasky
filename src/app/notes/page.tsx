@@ -144,6 +144,8 @@ function CreateNoteModal({
   );
 }
 
+type FullTag = NonNullable<ReturnType<typeof useQuery<typeof api.tags.list>>>[number];
+
 function NoteCard({
   id,
   content,
@@ -152,8 +154,8 @@ function NoteCard({
 }: {
   id: Id<"notes">;
   content: string;
-  tags: Tag[];
-  allTags: Tag[];
+  tags: FullTag[];
+  allTags: FullTag[];
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
@@ -192,7 +194,7 @@ function NoteCard({
               tags: args.tagIds
                 ? args.tagIds
                     .map((tagId) => allTags.find((tag) => tag._id === tagId))
-                    .filter((tag): tag is Tag => tag !== undefined)
+                    .filter((tag): tag is FullTag => tag !== undefined)
                 : n.tags,
             };
           })
@@ -204,7 +206,7 @@ function NoteCard({
   // Get the full tag objects for editing
   const editTags = editTagIds
     .map((id) => allTags.find((t) => t._id === id))
-    .filter((t): t is Tag => t !== undefined);
+    .filter((t): t is FullTag => t !== undefined);
 
   const startEditing = () => {
     setEditContent(content);
@@ -528,7 +530,7 @@ function NotesList() {
                   id={note._id}
                   content={note.content}
                   tags={note.tags}
-                  allTags={allTagsFormatted}
+                  allTags={allTags}
                 />
               ))
             )}
