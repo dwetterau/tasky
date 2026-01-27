@@ -53,7 +53,10 @@ export const create = mutation({
 });
 
 export const createFromCapture = mutation({
-  args: { captureId: v.id("captures") },
+  args: {
+    captureId: v.id("captures"),
+    tagIds: v.optional(v.array(v.id("tags"))),
+  },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
@@ -69,7 +72,7 @@ export const createFromCapture = mutation({
     const noteId = await ctx.db.insert("notes", {
       userId,
       content: capture.text,
-      tagIds: [],
+      tagIds: args.tagIds ?? [],
       createdFromCaptureId: args.captureId,
     });
 

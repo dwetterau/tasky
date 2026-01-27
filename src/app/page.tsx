@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { Navigation } from "../components/Navigation";
 import { authClient } from "@/lib/auth-client";
+import { CreateFromCaptureModal } from "../components/CreateFromCaptureModal";
 
 function SignIn() {
   const handleGitHubSignIn = async () => {
@@ -49,6 +50,10 @@ function CaptureItem({
   includeCompleted: boolean;
 }) {
   const queryArgs = { includeCompleted };
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    type: "note" | "task";
+  }>({ isOpen: false, type: "note" });
 
   const toggle = useMutation(api.captures.toggle).withOptimisticUpdate(
     (localStore, args) => {
@@ -107,54 +112,81 @@ function CaptureItem({
     }
   );
 
+  const handleOpenModal = (type: "note" | "task") => {
+    setModalState({ isOpen: true, type });
+  };
+
+  const handleCloseModal = () => {
+    setModalState({ isOpen: false, type: modalState.type });
+  };
+
+  const handleConfirm = (tagIds: Id<"tags">[]) => {
+    if (modalState.type === "task") {
+      createTaskFromCapture({ captureId: id, tagIds });
+    } else {
+      createNoteFromCapture({ captureId: id, tagIds });
+    }
+    handleCloseModal();
+  };
+
   return (
-    <div className="group flex items-center gap-3 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 transition-all duration-200 hover:border-[var(--accent)]/30">
-      <button
-        onClick={() => toggle({ id })}
-        className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all duration-200 ${
-          completed
-            ? "bg-[var(--accent)] border-[var(--accent)]"
-            : "border-[var(--muted)] hover:border-[var(--accent)]"
-        }`}
-      >
-        {completed && (
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        )}
-      </button>
-      <span className={`flex-1 ${completed ? "line-through text-[var(--muted)]" : ""}`}>
-        {text}
-      </span>
-      <div className="flex items-center gap-1">
+    <>
+      <div className="group flex items-center gap-3 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 transition-all duration-200 hover:border-[var(--accent)]/30">
         <button
-          onClick={() => createTaskFromCapture({ captureId: id })}
-          className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10"
-          title="Create task"
+          onClick={() => toggle({ id })}
+          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all duration-200 ${
+            completed
+              ? "bg-[var(--accent)] border-[var(--accent)]"
+              : "border-[var(--muted)] hover:border-[var(--accent)]"
+          }`}
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-          </svg>
+          {completed && (
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
         </button>
-        <button
-          onClick={() => createNoteFromCapture({ captureId: id })}
-          className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10"
-          title="Create note"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        </button>
-        <button
-          onClick={() => remove({ id })}
-          className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200 p-1 rounded-lg hover:bg-red-400/10"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <span className={`flex-1 ${completed ? "line-through text-[var(--muted)]" : ""}`}>
+          {text}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => handleOpenModal("task")}
+            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10"
+            title="Create task"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </button>
+          <button
+            onClick={() => handleOpenModal("note")}
+            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10"
+            title="Create note"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => remove({ id })}
+            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200 p-1 rounded-lg hover:bg-red-400/10"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
-    </div>
+
+      <CreateFromCaptureModal
+        isOpen={modalState.isOpen}
+        onClose={handleCloseModal}
+        onConfirm={handleConfirm}
+        captureText={text}
+        type={modalState.type}
+      />
+    </>
   );
 }
 
@@ -204,15 +236,25 @@ function CaptureList() {
                   ? `${completedCount} of ${totalCount} completed`
                   : `${totalCount} pending`}
             </p>
-            <label className="flex items-center gap-2 text-sm text-[var(--muted)] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeCompleted}
-                onChange={(e) => setIncludeCompleted(e.target.checked)}
-                className="w-4 h-4 rounded border-[var(--card-border)] bg-[var(--card-bg)] text-[var(--accent)] focus:ring-[var(--accent)] focus:ring-offset-0 cursor-pointer"
-              />
+            <button
+              onClick={() => setIncludeCompleted(!includeCompleted)}
+              className={`flex items-center gap-2 text-sm transition-colors duration-200 ${
+                includeCompleted ? "text-[var(--accent)]" : "text-[var(--muted)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              <span
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ${
+                  includeCompleted ? "bg-[var(--accent)]" : "bg-[var(--card-border)]"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                    includeCompleted ? "translate-x-[18px]" : "translate-x-1"
+                  }`}
+                />
+              </span>
               Show completed
-            </label>
+            </button>
           </div>
 
           <form onSubmit={handleSubmit} className="mb-6">
