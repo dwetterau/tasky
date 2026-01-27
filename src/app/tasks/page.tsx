@@ -12,13 +12,14 @@ import { useSearchParams, useRouter } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
-  closestCorners,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   DragStartEvent,
   DragEndEvent,
+  DragOverEvent,
 } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
@@ -315,6 +316,7 @@ function TaskCard({
   allTags,
   kanbanMode,
   isDragging: isDraggingProp,
+  isColumnDropTarget,
 }: {
   task: {
     _id: Id<"tasks">;
@@ -327,6 +329,7 @@ function TaskCard({
   allTags: Tag[];
   kanbanMode: KanbanMode;
   isDragging?: boolean;
+  isColumnDropTarget?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -392,8 +395,10 @@ function TaskCard({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    // Only use transform transitions, not opacity - opacity changes should be instant
+    transition: transition ? transition.replace(/opacity[^,]*(,|$)/g, '').trim().replace(/,$/, '') || undefined : undefined,
+    // Hide the original card completely when it's being dragged (DragOverlay shows the visual)
+    opacity: isDragging ? 0 : isColumnDropTarget ? 0.4 : 1,
   };
 
   const editTags = editTagIds
@@ -647,6 +652,7 @@ function KanbanColumn({
   tasks,
   allTags,
   kanbanMode,
+  isDropTarget,
 }: {
   columnId: string;
   columnValue: TaskStatus | TaskPriority;
@@ -660,8 +666,9 @@ function KanbanColumn({
   }>;
   allTags: Tag[];
   kanbanMode: KanbanMode;
+  isDropTarget?: boolean;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: columnId });
+  const { setNodeRef } = useDroppable({ id: columnId });
   
   const config = kanbanMode === "status" 
     ? STATUS_CONFIG[columnValue as TaskStatus]
@@ -670,7 +677,7 @@ function KanbanColumn({
   return (
     <div 
       ref={setNodeRef}
-      className={`flex-1 min-w-[280px] max-w-[350px] transition-all duration-200 ${isOver ? "bg-[var(--accent)]/5 rounded-xl" : ""}`}
+      className="flex-1 min-w-[280px] max-w-[350px] flex flex-col"
     >
       <div className="flex items-center gap-2 mb-4 px-1">
         <div
@@ -683,13 +690,13 @@ function KanbanColumn({
         </span>
       </div>
 
-      <div className="space-y-3 min-h-[100px]">
+      <div className={`space-y-3 flex-1 p-2 -m-2 rounded-xl transition-all duration-200 ${isDropTarget ? "bg-[var(--accent)]/10 ring-2 ring-[var(--accent)]/30 ring-inset" : ""}`}>
         {tasks.map((task) => (
-          <TaskCard key={task._id} task={task} allTags={allTags} kanbanMode={kanbanMode} />
+          <TaskCard key={task._id} task={task} allTags={allTags} kanbanMode={kanbanMode} isColumnDropTarget={isDropTarget} />
         ))}
         {tasks.length === 0 && (
-          <div className={`text-center py-8 text-[var(--muted)] text-sm border border-dashed rounded-xl transition-colors ${isOver ? "border-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--card-border)]"}`}>
-            {isOver ? "Drop here" : "No tasks"}
+          <div className={`text-center py-8 text-[var(--muted)] text-sm border-2 border-dashed rounded-xl transition-all duration-200 ${isDropTarget ? "border-[var(--accent)] bg-[var(--accent)]/10 scale-[1.02]" : "border-[var(--card-border)]"}`}>
+            {isDropTarget ? "Drop here" : "No tasks"}
           </div>
         )}
       </div>
@@ -707,6 +714,7 @@ function TasksList() {
   const [initialTagApplied, setInitialTagApplied] = useState(false);
   const [kanbanMode, setKanbanMode] = useState<KanbanMode>("status");
   const [activeTaskId, setActiveTaskId] = useState<Id<"tasks"> | null>(null);
+  const [overColumnId, setOverColumnId] = useState<string | null>(null);
 
   const tagsQuery = useQuery(api.tags.list);
   const allTags = tagsQuery ?? [];
@@ -822,14 +830,42 @@ function TasksList() {
     handleTagChange(null);
   };
 
+  // Helper to determine column from a target ID (could be column or task)
+  const getColumnFromTargetId = useCallback((targetId: string): string | null => {
+    // Check if it's directly a column ID
+    if (kanbanMode === "status" && STATUS_ORDER.includes(targetId as TaskStatus)) {
+      return targetId;
+    }
+    if (kanbanMode === "priority" && PRIORITY_ORDER.includes(targetId as TaskPriority)) {
+      return targetId;
+    }
+    // It's a task ID - find the task and get its column
+    const targetTask = (tasks ?? []).find((t) => t._id === targetId);
+    if (targetTask) {
+      return kanbanMode === "status" ? targetTask.status : targetTask.priority;
+    }
+    return null;
+  }, [kanbanMode, tasks]);
+
   // Drag event handlers
   const handleDragStart = (event: DragStartEvent) => {
     setActiveTaskId(event.active.id as Id<"tasks">);
   };
 
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    if (over) {
+      const columnId = getColumnFromTargetId(over.id as string);
+      setOverColumnId(columnId);
+    } else {
+      setOverColumnId(null);
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveTaskId(null);
+    setOverColumnId(null);
 
     if (!over) return;
 
@@ -877,6 +913,7 @@ function TasksList() {
 
   const handleDragCancel = () => {
     setActiveTaskId(null);
+    setOverColumnId(null);
   };
 
   // Get the active task for drag overlay
@@ -1038,12 +1075,13 @@ function TasksList() {
           ) : (
             <DndContext
               sensors={sensors}
-              collisionDetection={closestCorners}
+              collisionDetection={pointerWithin}
               onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
             >
-              <div className="flex gap-6 overflow-x-auto pb-4">
+              <div className="flex gap-6 overflow-x-auto pb-4 min-h-[calc(100vh-16rem)]">
                 {kanbanMode === "status" ? (
                   STATUS_ORDER.map((status) => (
                     <KanbanColumn
@@ -1053,6 +1091,7 @@ function TasksList() {
                       tasks={tasksByStatus[status]}
                       allTags={allTagsFormatted}
                       kanbanMode={kanbanMode}
+                      isDropTarget={overColumnId === status}
                     />
                   ))
                 ) : (
@@ -1064,15 +1103,16 @@ function TasksList() {
                       tasks={tasksByPriority[priority]}
                       allTags={allTagsFormatted}
                       kanbanMode={kanbanMode}
+                      isDropTarget={overColumnId === priority}
                     />
                   ))
                 )}
               </div>
 
-              {/* Drag Overlay */}
-              <DragOverlay>
+              {/* Drag Overlay - null dropAnimation for instant transition */}
+              <DragOverlay dropAnimation={null}>
                 {activeTask ? (
-                  <div className="opacity-90">
+                  <div className="shadow-2xl scale-105 rotate-3">
                     <TaskCard
                       task={{
                         ...activeTask,
@@ -1080,7 +1120,6 @@ function TasksList() {
                       }}
                       allTags={allTagsFormatted}
                       kanbanMode={kanbanMode}
-                      isDragging
                     />
                   </div>
                 ) : null}
