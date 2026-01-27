@@ -83,3 +83,18 @@ export const remove = mutation({
     await ctx.db.delete(args.id);
   },
 });
+
+export const update = mutation({
+  args: { id: v.id("captures"), text: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+    const capture = await ctx.db.get(args.id);
+    if (!capture || capture.userId !== userId) {
+      throw new Error("Capture not found or access denied");
+    }
+    await ctx.db.patch(args.id, { text: args.text });
+  },
+});

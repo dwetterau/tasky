@@ -54,6 +54,8 @@ function CaptureItem({
     isOpen: boolean;
     type: "note" | "task";
   }>({ isOpen: false, type: "note" });
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(text);
 
   const toggle = useMutation(api.captures.toggle).withOptimisticUpdate(
     (localStore, args) => {
@@ -112,6 +114,48 @@ function CaptureItem({
     }
   );
 
+  const update = useMutation(api.captures.update).withOptimisticUpdate(
+    (localStore, args) => {
+      const captures = localStore.getQuery(api.captures.list, queryArgs);
+      if (captures !== undefined) {
+        localStore.setQuery(
+          api.captures.list,
+          queryArgs,
+          captures.map((capture) =>
+            capture._id === args.id ? { ...capture, text: args.text } : capture
+          )
+        );
+      }
+    }
+  );
+
+  const handleStartEditing = () => {
+    setEditText(text);
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = () => {
+    const trimmedText = editText.trim();
+    if (trimmedText && trimmedText !== text) {
+      update({ id, text: trimmedText });
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditText(text);
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSaveEdit();
+    } else if (e.key === "Escape") {
+      handleCancelEdit();
+    }
+  };
+
   const handleOpenModal = (type: "note" | "task") => {
     setModalState({ isOpen: true, type });
   };
@@ -146,9 +190,24 @@ function CaptureItem({
             </svg>
           )}
         </button>
-        <span className={`flex-1 ${completed ? "line-through text-[var(--muted)]" : ""}`}>
-          {text}
-        </span>
+        {isEditing ? (
+          <input
+            type="text"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onBlur={handleSaveEdit}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            className="flex-1 bg-transparent border-b border-[var(--accent)] outline-none py-0.5"
+          />
+        ) : (
+          <span
+            onClick={handleStartEditing}
+            className={`flex-1 cursor-text hover:text-[var(--accent)] transition-colors ${completed ? "line-through text-[var(--muted)]" : ""}`}
+          >
+            {text}
+          </span>
+        )}
         <div className="flex items-center gap-1">
           <button
             onClick={() => handleOpenModal("task")}
