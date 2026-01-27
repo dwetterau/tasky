@@ -677,7 +677,7 @@ function KanbanColumn({
   return (
     <div 
       ref={setNodeRef}
-      className="flex-1 min-w-[280px] max-w-[350px] flex flex-col"
+      className="flex-shrink-0 w-[280px] flex flex-col"
     >
       <div className="flex items-center gap-2 mb-4 px-1">
         <div
@@ -690,7 +690,7 @@ function KanbanColumn({
         </span>
       </div>
 
-      <div className={`space-y-3 flex-1 p-2 -m-2 rounded-xl transition-all duration-200 ${isDropTarget ? "bg-[var(--accent)]/10 ring-2 ring-[var(--accent)]/30 ring-inset" : ""}`}>
+      <div className={`space-y-3 flex-1 p-2 rounded-xl transition-all duration-200 ${isDropTarget ? "bg-[var(--accent)]/10 ring-2 ring-[var(--accent)]/30 ring-inset" : ""}`}>
         {tasks.map((task) => (
           <TaskCard key={task._id} task={task} allTags={allTags} kanbanMode={kanbanMode} isColumnDropTarget={isDropTarget} />
         ))}
@@ -955,10 +955,10 @@ function TasksList() {
   }
 
   return (
-    <>
+    <div className="h-screen flex flex-col overflow-hidden">
       <Navigation />
-      <div className="min-h-screen pt-24 pb-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="flex-1 flex flex-col pt-24 min-h-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full flex-1 flex flex-col min-h-0">
           {/* Search UI */}
           <div className="mb-6 space-y-3">
             <div className="flex gap-2 flex-wrap">
@@ -1081,7 +1081,7 @@ function TasksList() {
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
             >
-              <div className="flex gap-6 overflow-x-auto pb-4 min-h-[calc(100vh-16rem)]">
+              <div className="flex gap-6 overflow-x-auto pb-4 flex-1 min-h-0">
                 {kanbanMode === "status" ? (
                   STATUS_ORDER.map((status) => (
                     <KanbanColumn
@@ -1135,7 +1135,7 @@ function TasksList() {
         allTags={allTagsFormatted}
         initialTagId={selectedTagId}
       />
-    </>
+    </div>
   );
 }
 
