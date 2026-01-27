@@ -26,7 +26,10 @@ export default defineSchema({
     userId: v.string(),
     text: v.string(),
     completed: v.boolean(),
-  }).index("by_user", ["userId"]),
+    statusUpdatedAt: v.optional(v.number()), // Unix timestamp (ms) of last status change, for analytics
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_completed", ["userId", "completed"]),
 
   notes: defineTable({
     userId: v.string(),

@@ -41,33 +41,40 @@ function CaptureItem({
   id,
   text,
   completed,
+  includeCompleted,
 }: {
   id: Id<"captures">;
   text: string;
   completed: boolean;
+  includeCompleted: boolean;
 }) {
+  const queryArgs = { includeCompleted };
+
   const toggle = useMutation(api.captures.toggle).withOptimisticUpdate(
     (localStore, args) => {
-      const captures = localStore.getQuery(api.captures.list, {});
+      const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
-        localStore.setQuery(
-          api.captures.list,
-          {},
-          captures.map((capture) =>
-            capture._id === args.id ? { ...capture, completed: !capture.completed } : capture
-          )
+        const updatedCaptures = captures.map((capture) =>
+          capture._id === args.id
+            ? { ...capture, completed: !capture.completed, statusUpdatedAt: Date.now() }
+            : capture
         );
+        // If not including completed, filter out the now-completed item
+        const filteredCaptures = includeCompleted
+          ? updatedCaptures
+          : updatedCaptures.filter((c) => !c.completed);
+        localStore.setQuery(api.captures.list, queryArgs, filteredCaptures);
       }
     }
   );
 
   const remove = useMutation(api.captures.remove).withOptimisticUpdate(
     (localStore, args) => {
-      const captures = localStore.getQuery(api.captures.list, {});
+      const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
         localStore.setQuery(
           api.captures.list,
-          {},
+          queryArgs,
           captures.filter((capture) => capture._id !== args.id)
         );
       }
@@ -76,11 +83,11 @@ function CaptureItem({
 
   const createNoteFromCapture = useMutation(api.notes.createFromCapture).withOptimisticUpdate(
     (localStore, args) => {
-      const captures = localStore.getQuery(api.captures.list, {});
+      const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
         localStore.setQuery(
           api.captures.list,
-          {},
+          queryArgs,
           captures.filter((capture) => capture._id !== args.captureId)
         );
       }
@@ -89,11 +96,11 @@ function CaptureItem({
 
   const createTaskFromCapture = useMutation(api.tasks.createFromCapture).withOptimisticUpdate(
     (localStore, args) => {
-      const captures = localStore.getQuery(api.captures.list, {});
+      const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
         localStore.setQuery(
           api.captures.list,
-          {},
+          queryArgs,
           captures.filter((capture) => capture._id !== args.captureId)
         );
       }
@@ -152,12 +159,15 @@ function CaptureItem({
 }
 
 function CaptureList() {
-  const captures = useQuery(api.captures.list);
+  const [includeCompleted, setIncludeCompleted] = useState(false);
+  const queryArgs = { includeCompleted };
+  const captures = useQuery(api.captures.list, queryArgs);
   const create = useMutation(api.captures.create).withOptimisticUpdate(
     (localStore, args) => {
-      const captures = localStore.getQuery(api.captures.list, {});
+      const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
         // Create a temporary capture - it will be replaced when the server responds
+        // New captures are added at the beginning since we sort by creation time desc
         const tempCapture = {
           _id: crypto.randomUUID() as Id<"captures">,
           _creationTime: Date.now(),
@@ -165,7 +175,7 @@ function CaptureList() {
           text: args.text,
           completed: false,
         };
-        localStore.setQuery(api.captures.list, {}, [...captures, tempCapture]);
+        localStore.setQuery(api.captures.list, queryArgs, [tempCapture, ...captures]);
       }
     }
   );
@@ -186,12 +196,23 @@ function CaptureList() {
       <Navigation />
       <div className="min-h-screen pt-24 pb-12 px-4">
         <div className="max-w-xl mx-auto">
-          <div className="mb-6">
+          <div className="mb-6 flex items-center justify-between">
             <p className="text-[var(--muted)] text-sm">
               {totalCount === 0
-                ? "No tasks yet"
-                : `${completedCount} of ${totalCount} completed`}
+                ? "No captures yet"
+                : includeCompleted
+                  ? `${completedCount} of ${totalCount} completed`
+                  : `${totalCount} pending`}
             </p>
+            <label className="flex items-center gap-2 text-sm text-[var(--muted)] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeCompleted}
+                onChange={(e) => setIncludeCompleted(e.target.checked)}
+                className="w-4 h-4 rounded border-[var(--card-border)] bg-[var(--card-bg)] text-[var(--accent)] focus:ring-[var(--accent)] focus:ring-offset-0 cursor-pointer"
+              />
+              Show completed
+            </label>
           </div>
 
           <form onSubmit={handleSubmit} className="mb-6">
@@ -217,8 +238,12 @@ function CaptureList() {
               <div className="text-center py-8 text-[var(--muted)]">Loading...</div>
             ) : captures.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-[var(--muted)] mb-2">No captures yet</p>
-                <p className="text-sm text-[var(--muted)]/60">Add your first capture above</p>
+                <p className="text-[var(--muted)] mb-2">
+                  {includeCompleted ? "No captures yet" : "No pending captures"}
+                </p>
+                <p className="text-sm text-[var(--muted)]/60">
+                  {includeCompleted ? "Add your first capture above" : "All caught up!"}
+                </p>
               </div>
             ) : (
               captures.map((capture) => (
@@ -227,6 +252,7 @@ function CaptureList() {
                   id={capture._id}
                   text={capture.text}
                   completed={capture.completed}
+                  includeCompleted={includeCompleted}
                 />
               ))
             )}
