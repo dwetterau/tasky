@@ -7,7 +7,7 @@ import { Navigation } from "../../components/Navigation";
 import { TagSelector, SearchTagSelector, Tag } from "../../components/TagSelector";
 import { authClient } from "@/lib/auth-client";
 import ReactMarkdown from "react-markdown";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   DndContext,
@@ -137,12 +137,12 @@ function CreateTaskModal({
       
       {/* Modal */}
       <div 
-        className="relative bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-[var(--accent)]/10 flex items-center justify-center">
-            <svg className="w-5 h-5 text-[var(--accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
+            <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </div>
@@ -151,23 +151,23 @@ function CreateTaskModal({
 
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Content</label>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Content</label>
             <textarea
               ref={textareaRef}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="w-full min-h-[100px] px-3 py-2 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors resize-none font-mono text-sm"
+              className="w-full min-h-[100px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
               placeholder="What needs to be done?"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-[var(--muted)] mb-1">Status</label>
+              <label className="block text-xs font-medium text-(--muted) mb-1">Status</label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                className="w-full h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
               >
                 {STATUS_ORDER.map((s) => (
                   <option key={s} value={s}>
@@ -178,11 +178,11 @@ function CreateTaskModal({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-[var(--muted)] mb-1">Priority</label>
+              <label className="block text-xs font-medium text-(--muted) mb-1">Priority</label>
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                className="w-full h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
               >
                 {(["triage", "low", "medium", "high"] as TaskPriority[]).map((p) => (
                   <option key={p} value={p}>
@@ -194,17 +194,17 @@ function CreateTaskModal({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Due Date</label>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Due Date</label>
             <input
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="w-full h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+              className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Tags</label>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Tags</label>
             <TagSelector
               selectedTags={selectedTags}
               onTagsChange={setTagIds}
@@ -215,14 +215,14 @@ function CreateTaskModal({
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+              className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
             >
               Cancel
             </button>
             <button
               onClick={() => void handleSubmit()}
               disabled={!content.trim() || isSubmitting}
-              className="px-4 py-2 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? "Creating..." : "Create Task"}
             </button>
@@ -272,7 +272,7 @@ function DeleteConfirmModal({
       
       {/* Modal */}
       <div 
-        className="relative bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-6 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 mb-4">
@@ -284,18 +284,18 @@ function DeleteConfirmModal({
           <h3 className="text-lg font-semibold">Delete Task</h3>
         </div>
         
-        <p className="text-[var(--muted)] mb-2">
+        <p className="text-(--muted) mb-2">
           Are you sure you want to delete this task? This action cannot be undone.
         </p>
         
-        <div className="bg-[var(--background)] border border-[var(--card-border)] rounded-lg p-3 mb-6">
-          <p className="text-sm text-[var(--foreground)] line-clamp-3">{displayContent}</p>
+        <div className="bg-background border border-(--card-border) rounded-lg p-3 mb-6">
+          <p className="text-sm text-foreground line-clamp-3">{displayContent}</p>
         </div>
         
         <div className="flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+            className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
           >
             Cancel
           </button>
@@ -451,26 +451,26 @@ function TaskCard({
 
   if (isEditing) {
     return (
-      <div className="bg-[var(--card-bg)] border border-[var(--accent)]/50 rounded-xl p-4 transition-all duration-200">
+      <div className="bg-(--card-bg) border border-(--accent)/50 rounded-xl p-4 transition-all duration-200">
         <div className="space-y-3">
           <div>
-            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Content</label>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Content</label>
             <textarea
               ref={textareaRef}
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
-              className="w-full min-h-[80px] px-3 py-2 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors resize-none font-mono text-sm"
+              className="w-full min-h-[80px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
               placeholder="Task description..."
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-[var(--muted)] mb-1">Status</label>
+              <label className="block text-xs font-medium text-(--muted) mb-1">Status</label>
               <select
                 value={editStatus}
                 onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
-                className="w-full h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
               >
                 {STATUS_ORDER.map((status) => (
                   <option key={status} value={status}>
@@ -481,11 +481,11 @@ function TaskCard({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-[var(--muted)] mb-1">Priority</label>
+              <label className="block text-xs font-medium text-(--muted) mb-1">Priority</label>
               <select
                 value={editPriority}
                 onChange={(e) => setEditPriority(e.target.value as TaskPriority)}
-                className="w-full h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
               >
                 {(["triage", "low", "medium", "high"] as TaskPriority[]).map((priority) => (
                   <option key={priority} value={priority}>
@@ -497,17 +497,17 @@ function TaskCard({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Due Date</label>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Due Date</label>
             <input
               type="date"
               value={editDueDate}
               onChange={(e) => setEditDueDate(e.target.value)}
-              className="w-full h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+              className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Tags</label>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Tags</label>
             <TagSelector
               selectedTags={editTags}
               onTagsChange={setEditTagIds}
@@ -518,13 +518,13 @@ function TaskCard({
           <div className="flex items-center justify-end gap-2 pt-2">
             <button
               onClick={cancelEditing}
-              className="px-3 py-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+              className="px-3 py-1.5 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
             >
               Cancel
             </button>
             <button
               onClick={() => void saveChanges()}
-              className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium"
+              className="px-3 py-1.5 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium"
             >
               Save
             </button>
@@ -540,7 +540,7 @@ function TaskCard({
       style={style}
       {...attributes}
       {...listeners}
-      className={`group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden transition-all duration-200 hover:border-[var(--accent)]/30 flex cursor-grab active:cursor-grabbing ${isDraggingProp ? "ring-2 ring-[var(--accent)] shadow-lg" : ""}`}
+      className={`group bg-(--card-bg) border border-(--card-border) rounded-xl overflow-hidden transition-all duration-200 hover:border-(--accent)/30 flex cursor-grab active:cursor-grabbing ${isDraggingProp ? "ring-2 ring-accent shadow-lg" : ""}`}
     >
       {/* Accent bar */}
       <div
@@ -552,7 +552,7 @@ function TaskCard({
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex flex-wrap gap-1.5">
             {task.tags.length === 0 ? (
-              <span className="text-xs text-[var(--muted)]">No tags</span>
+              <span className="text-xs text-(--muted)">No tags</span>
             ) : (
               task.tags.map((tag) => (
                 <span
@@ -572,7 +572,7 @@ function TaskCard({
             <button
               onClick={startEditing}
               onPointerDown={(e) => e.stopPropagation()}
-              className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded hover:bg-[var(--accent)]/10"
+              className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-accent transition-all duration-200 p-1 rounded hover:bg-(--accent)/10"
               title="Edit task"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -582,7 +582,7 @@ function TaskCard({
             <button
               onClick={() => setShowDeleteConfirm(true)}
               onPointerDown={(e) => e.stopPropagation()}
-              className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200 p-1 rounded hover:bg-red-400/10"
+              className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-red-400 transition-all duration-200 p-1 rounded hover:bg-red-400/10"
               title="Delete task"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -607,7 +607,7 @@ function TaskCard({
         />
 
         {(task.dueDate || (kanbanMode === "status" && task.priority !== "triage") || (kanbanMode === "priority" && task.status !== "not_started")) && (
-          <div className="flex items-center gap-3 mt-3 text-xs text-[var(--muted)]">
+          <div className="flex items-center gap-3 mt-3 text-xs text-(--muted)">
             {task.dueDate && (
               <span className="flex items-center gap-1">
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -677,7 +677,7 @@ function KanbanColumn({
   return (
     <div 
       ref={setNodeRef}
-      className="flex-shrink-0 w-[280px] flex flex-col"
+      className="shrink-0 w-[280px] flex flex-col"
     >
       <div className="flex items-center gap-2 mb-4 px-1">
         <div
@@ -685,17 +685,17 @@ function KanbanColumn({
           style={{ backgroundColor: config.color }}
         />
         <h3 className="font-medium text-sm">{config.label}</h3>
-        <span className="text-xs text-[var(--muted)] bg-[var(--card-border)] px-2 py-0.5 rounded-full">
+        <span className="text-xs text-(--muted) bg-(--card-border) px-2 py-0.5 rounded-full">
           {tasks.length}
         </span>
       </div>
 
-      <div className={`space-y-3 flex-1 p-2 rounded-xl transition-all duration-200 ${isDropTarget ? "bg-[var(--accent)]/10 ring-2 ring-[var(--accent)]/30 ring-inset" : ""}`}>
+      <div className={`space-y-3 flex-1 p-2 rounded-xl transition-all duration-200 ${isDropTarget ? "bg-(--accent)/10 ring-2 ring-(--accent)/30 ring-inset" : ""}`}>
         {tasks.map((task) => (
           <TaskCard key={task._id} task={task} allTags={allTags} kanbanMode={kanbanMode} isColumnDropTarget={isDropTarget} />
         ))}
         {tasks.length === 0 && (
-          <div className={`text-center py-8 text-[var(--muted)] text-sm border-2 border-dashed rounded-xl transition-all duration-200 ${isDropTarget ? "border-[var(--accent)] bg-[var(--accent)]/10 scale-[1.02]" : "border-[var(--card-border)]"}`}>
+          <div className={`text-center py-8 text-(--muted) text-sm border-2 border-dashed rounded-xl transition-all duration-200 ${isDropTarget ? "border-accent bg-(--accent)/10 scale-[1.02]" : "border-(--card-border)"}`}>
             {isDropTarget ? "Drop here" : "No tasks"}
           </div>
         )}
@@ -708,16 +708,14 @@ function TasksList() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [searchText, setSearchText] = useState("");
-  const [selectedTagId, setSelectedTagId] = useState<Id<"tags"> | null>(null);
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [initialTagApplied, setInitialTagApplied] = useState(false);
   const [kanbanMode, setKanbanMode] = useState<KanbanMode>("status");
   const [activeTaskId, setActiveTaskId] = useState<Id<"tasks"> | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
 
   const tagsQuery = useQuery(api.tags.list);
-  const allTags = tagsQuery ?? [];
+  const allTags = useMemo(() => tagsQuery ?? [], [tagsQuery]);
 
   // Drag-and-drop sensors
   const sensors = useSensors(
@@ -768,26 +766,20 @@ function TasksList() {
     color: tag.color,
   }));
 
-  // Read tag from URL on initial load and validate it
-  useEffect(() => {
-    // Wait for tags to load before checking
-    if (initialTagApplied || tagsQuery === undefined) return;
-    
+  // Derive selected tag from URL - URL is the source of truth
+  const selectedTagId = useMemo(() => {
     const tagParam = searchParams.get("tag");
-    if (tagParam) {
-      // Validate that the tag ID exists
+    if (tagParam && tagsQuery !== undefined) {
       const validTag = allTags.find((t) => t._id === tagParam);
       if (validTag) {
-        setSelectedTagId(tagParam as Id<"tags">);
+        return tagParam as Id<"tags">;
       }
     }
-    setInitialTagApplied(true);
-  }, [searchParams, allTags, tagsQuery, initialTagApplied]);
+    return null;
+  }, [searchParams, allTags, tagsQuery]);
 
   // Update URL when tag filter changes
   const handleTagChange = useCallback((tagId: Id<"tags"> | null) => {
-    setSelectedTagId(tagId);
-    
     const params = new URLSearchParams(searchParams.toString());
     if (tagId) {
       params.set("tag", tagId);
@@ -964,7 +956,7 @@ function TasksList() {
             <div className="flex gap-2 flex-wrap">
               <div className="flex-1 min-w-[200px] relative">
                 <svg
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted)]"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-(--muted)"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -981,12 +973,12 @@ function TasksList() {
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   placeholder="Search tasks..."
-                  className="w-full h-[38px] pl-10 pr-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+                  className="w-full h-[38px] pl-10 pr-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
                 />
                 {searchText && (
                   <button
                     onClick={() => setSearchText("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--foreground)]"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-(--muted) hover:text-foreground"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1002,13 +994,13 @@ function TasksList() {
               />
 
               {/* Kanban Mode Toggle */}
-              <div className="h-[38px] flex items-center bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-1">
+              <div className="h-[38px] flex items-center bg-(--card-bg) border border-(--card-border) rounded-lg p-1">
                 <button
                   onClick={() => setKanbanMode("status")}
                   className={`px-3 py-1 text-sm rounded-md transition-colors ${
                     kanbanMode === "status"
-                      ? "bg-[var(--accent)] text-white"
-                      : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                      ? "bg-accent text-white"
+                      : "text-(--muted) hover:text-foreground"
                   }`}
                 >
                   Status
@@ -1017,8 +1009,8 @@ function TasksList() {
                   onClick={() => setKanbanMode("priority")}
                   className={`px-3 py-1 text-sm rounded-md transition-colors ${
                     kanbanMode === "priority"
-                      ? "bg-[var(--accent)] text-white"
-                      : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                      ? "bg-accent text-white"
+                      : "text-(--muted) hover:text-foreground"
                   }`}
                 >
                   Priority
@@ -1027,7 +1019,7 @@ function TasksList() {
 
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="h-[38px] px-4 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium text-sm flex items-center gap-2"
+                className="h-[38px] px-4 bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium text-sm flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1037,7 +1029,7 @@ function TasksList() {
             </div>
 
             <div className="flex items-center justify-between">
-              <p className="text-[var(--muted)] text-sm">
+              <p className="text-(--muted) text-sm">
                 {tasks === undefined
                   ? "Loading..."
                   : isSearching
@@ -1049,7 +1041,7 @@ function TasksList() {
               {isSearching && (
                 <button
                   onClick={clearSearch}
-                  className="text-sm text-[var(--accent)] hover:underline"
+                  className="text-sm text-accent hover:underline"
                 >
                   Clear search
                 </button>
@@ -1059,16 +1051,16 @@ function TasksList() {
 
           {/* Kanban Board */}
           {tasks === undefined ? (
-            <div className="text-center py-8 text-[var(--muted)]">Loading...</div>
+            <div className="text-center py-8 text-(--muted)">Loading...</div>
           ) : tasks.length === 0 && !isSearching ? (
             <div className="text-center py-12">
-              <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] flex items-center justify-center">
-                <svg className="w-8 h-8 text-[var(--muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-(--card-bg) border border-(--card-border) flex items-center justify-center">
+                <svg className="w-8 h-8 text-(--muted)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                 </svg>
               </div>
-              <p className="text-[var(--muted)] mb-2">No tasks yet</p>
-              <p className="text-sm text-[var(--muted)]/60">
+              <p className="text-(--muted) mb-2">No tasks yet</p>
+              <p className="text-sm text-(--muted)/60">
                 Create a task from a capture using the task icon
               </p>
             </div>
@@ -1148,12 +1140,12 @@ function SignIn() {
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+      <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold mb-2 bg-linear-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
             Tasky
           </h1>
-          <p className="text-[var(--muted)]">Your personal task manager</p>
+          <p className="text-(--muted)">Your personal task manager</p>
         </div>
         <button
           onClick={() => void handleGitHubSignIn()}
@@ -1175,7 +1167,7 @@ export default function TasksPage() {
   if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
