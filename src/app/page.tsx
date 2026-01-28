@@ -203,7 +203,7 @@ function CaptureItem({
         ) : (
           <span
             onClick={handleStartEditing}
-            className={`flex-1 cursor-text hover:text-[var(--accent)] transition-colors ${completed ? "line-through text-[var(--muted)]" : ""}`}
+            className={`flex-1 cursor-text ${completed ? "line-through text-[var(--muted)]" : ""}`}
           >
             {text}
           </span>
