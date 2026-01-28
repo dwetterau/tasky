@@ -323,6 +323,7 @@ function CaptureList() {
                 value={newCapture}
                 onChange={(e) => setNewCapture(e.target.value)}
                 placeholder="Capture something..."
+                autoFocus
                 className="flex-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl px-4 py-3 focus:outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--muted)]"
               />
               <button
