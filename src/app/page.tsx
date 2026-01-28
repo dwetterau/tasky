@@ -17,12 +17,12 @@ function SignIn() {
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+      <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold mb-2 bg-linear-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
             Tasky
           </h1>
-          <p className="text-[var(--muted)]">Your personal task manager</p>
+          <p className="text-(--muted)">Your personal task manager</p>
         </div>
         <button
           onClick={() => void handleGitHubSignIn()}
@@ -175,13 +175,13 @@ function CaptureItem({
 
   return (
     <>
-      <div className="group flex items-center gap-3 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 transition-all duration-200 hover:border-[var(--accent)]/30">
+      <div className="group flex items-center gap-3 bg-(--card-bg) border border-(--card-border) rounded-xl p-4 transition-all duration-200 hover:border-accent/30">
         <button
           onClick={() => toggle({ id })}
           className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all duration-200 ${
             completed
-              ? "bg-[var(--accent)] border-[var(--accent)]"
-              : "border-[var(--muted)] hover:border-[var(--accent)]"
+              ? "bg-accent border-accent"
+              : "border-(--muted) hover:border-accent"
           }`}
         >
           {completed && (
@@ -198,12 +198,12 @@ function CaptureItem({
             onBlur={handleSaveEdit}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="flex-1 bg-transparent border-b border-[var(--accent)] outline-none py-0.5"
+            className="flex-1 bg-transparent border-b border-accent outline-none py-0.5"
           />
         ) : (
           <span
             onClick={handleStartEditing}
-            className={`flex-1 cursor-text ${completed ? "line-through text-[var(--muted)]" : ""}`}
+            className={`flex-1 cursor-text ${completed ? "line-through text-(--muted)" : ""}`}
           >
             {text}
           </span>
@@ -211,7 +211,7 @@ function CaptureItem({
         <div className="flex items-center gap-1">
           <button
             onClick={() => handleOpenModal("task")}
-            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10"
+            className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-accent transition-all duration-200 p-1 rounded-lg hover:bg-accent/10"
             title="Create task"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -220,7 +220,7 @@ function CaptureItem({
           </button>
           <button
             onClick={() => handleOpenModal("note")}
-            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10"
+            className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-accent transition-all duration-200 p-1 rounded-lg hover:bg-accent/10"
             title="Create note"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -229,7 +229,7 @@ function CaptureItem({
           </button>
           <button
             onClick={() => remove({ id })}
-            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200 p-1 rounded-lg hover:bg-red-400/10"
+            className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-red-400 transition-all duration-200 p-1 rounded-lg hover:bg-red-400/10"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -259,9 +259,10 @@ function CaptureList() {
       if (captures !== undefined) {
         // Create a temporary capture - it will be replaced when the server responds
         // New captures are added at the beginning since we sort by creation time desc
+        // Use MAX_SAFE_INTEGER so it sorts to the top until server responds with real timestamp
         const tempCapture = {
           _id: crypto.randomUUID() as Id<"captures">,
-          _creationTime: Date.now(),
+          _creationTime: Number.MAX_SAFE_INTEGER,
           userId: "",
           text: args.text,
           completed: false,
@@ -288,7 +289,7 @@ function CaptureList() {
       <div className="min-h-screen pt-24 pb-12 px-4">
         <div className="max-w-xl mx-auto">
           <div className="mb-6 flex items-center justify-between">
-            <p className="text-[var(--muted)] text-sm">
+            <p className="text-(--muted) text-sm">
               {totalCount === 0
                 ? "No captures yet"
                 : includeCompleted
@@ -298,12 +299,12 @@ function CaptureList() {
             <button
               onClick={() => setIncludeCompleted(!includeCompleted)}
               className={`flex items-center gap-2 text-sm transition-colors duration-200 ${
-                includeCompleted ? "text-[var(--accent)]" : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                includeCompleted ? "text-accent" : "text-(--muted) hover:text-foreground"
               }`}
             >
               <span
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ${
-                  includeCompleted ? "bg-[var(--accent)]" : "bg-[var(--card-border)]"
+                  includeCompleted ? "bg-accent" : "bg-(--card-border)"
                 }`}
               >
                 <span
@@ -324,11 +325,11 @@ function CaptureList() {
                 onChange={(e) => setNewCapture(e.target.value)}
                 placeholder="Capture something..."
                 autoFocus
-                className="flex-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl px-4 py-3 focus:outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--muted)]"
+                className="flex-1 bg-(--card-bg) border border-(--card-border) rounded-xl px-4 py-3 focus:outline-none focus:border-accent transition-colors placeholder:text-(--muted)"
               />
               <button
                 type="submit"
-                className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white px-6 py-3 rounded-xl font-medium transition-colors"
+                className="bg-accent hover:bg-(--accent-hover) text-white px-6 py-3 rounded-xl font-medium transition-colors"
               >
                 Add
               </button>
@@ -337,13 +338,13 @@ function CaptureList() {
 
           <div className="space-y-3">
             {captures === undefined ? (
-              <div className="text-center py-8 text-[var(--muted)]">Loading...</div>
+              <div className="text-center py-8 text-(--muted)">Loading...</div>
             ) : captures.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-[var(--muted)] mb-2">
+                <p className="text-(--muted) mb-2">
                   {includeCompleted ? "No captures yet" : "No pending captures"}
                 </p>
-                <p className="text-sm text-[var(--muted)]/60">
+                <p className="text-sm text-(--muted)/60">
                   {includeCompleted ? "Add your first capture above" : "All caught up!"}
                 </p>
               </div>
@@ -371,7 +372,7 @@ export default function Home() {
   if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }

@@ -58,13 +58,13 @@ function TagTreeItem({
   return (
     <div className="select-none">
       <div
-        className="group flex items-center gap-2 py-2 px-3 rounded-lg transition-colors hover:bg-[var(--card-border)]"
+        className="group flex items-center gap-2 py-2 px-3 rounded-lg transition-colors hover:bg-(--card-border)"
         style={{ paddingLeft: `${level * 24 + 12}px` }}
       >
         {/* Expand/Collapse Button */}
         <button
           onClick={() => setExpanded(!expanded)}
-          className={`w-5 h-5 flex items-center justify-center text-[var(--muted)] transition-transform ${
+          className={`w-5 h-5 flex items-center justify-center text-(--muted) transition-transform ${
             hasChildren ? "" : "invisible"
           } ${expanded ? "rotate-90" : ""}`}
         >
@@ -86,7 +86,7 @@ function TagTreeItem({
         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
           <button
             onClick={() => onAddChild(tag._id)}
-            className="p-1.5 text-[var(--muted)] hover:text-[var(--accent)] transition-colors rounded"
+            className="p-1.5 text-(--muted) hover:text-accent transition-colors rounded"
             title="Add child tag"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -95,7 +95,7 @@ function TagTreeItem({
           </button>
           <button
             onClick={() => onEdit(tag)}
-            className="p-1.5 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded"
+            className="p-1.5 text-(--muted) hover:text-foreground transition-colors rounded"
             title="Edit tag"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -104,7 +104,7 @@ function TagTreeItem({
           </button>
           <button
             onClick={() => onDelete(tag)}
-            className="p-1.5 text-[var(--muted)] hover:text-red-400 transition-colors rounded"
+            className="p-1.5 text-(--muted) hover:text-red-400 transition-colors rounded"
             title="Delete tag"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -216,14 +216,14 @@ function TagModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-6 w-full max-w-md shadow-2xl">
+      <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 w-full max-w-md shadow-2xl">
         <h2 className="text-xl font-semibold mb-4">
           {isEditing ? "Edit Tag" : "Create Tag"}
         </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Name Input */}
           <div>
-            <label className="block text-sm font-medium text-[var(--muted)] mb-1.5">
+            <label className="block text-sm font-medium text-(--muted) mb-1.5">
               Name
             </label>
             <input
@@ -231,20 +231,20 @@ function TagModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Enter tag name..."
-              className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-2.5 focus:outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--muted)]"
+              className="w-full bg-background border border-(--card-border) rounded-xl px-4 py-2.5 focus:outline-none focus:border-accent transition-colors placeholder:text-(--muted)"
               autoFocus
             />
           </div>
 
           {/* Parent Selector */}
           <div>
-            <label className="block text-sm font-medium text-[var(--muted)] mb-1.5">
+            <label className="block text-sm font-medium text-(--muted) mb-1.5">
               Parent Tag
             </label>
             <select
               value={selectedParentId ?? ""}
               onChange={(e) => setSelectedParentId(e.target.value ? e.target.value as Id<"tags"> : null)}
-              className="w-full bg-[var(--background)] border border-[var(--card-border)] rounded-xl px-4 py-2.5 focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full bg-background border border-(--card-border) rounded-xl px-4 py-2.5 focus:outline-none focus:border-accent transition-colors"
             >
               <option value="">None</option>
               {parentOptions.map((option) => (
@@ -257,7 +257,7 @@ function TagModal({
 
           {/* Color Picker */}
           <div>
-            <label className="block text-sm font-medium text-[var(--muted)] mb-1.5">
+            <label className="block text-sm font-medium text-(--muted) mb-1.5">
               Color
             </label>
             <div className="flex flex-wrap gap-2">
@@ -267,7 +267,7 @@ function TagModal({
                   type="button"
                   onClick={() => setColor(c.value)}
                   className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${
-                    color === c.value ? "ring-2 ring-offset-2 ring-[var(--accent)] ring-offset-[var(--card-bg)]" : ""
+                    color === c.value ? "ring-2 ring-offset-2 ring-accent ring-offset-(--card-bg)" : ""
                   }`}
                   style={{ backgroundColor: c.value }}
                   title={c.name}
@@ -288,14 +288,14 @@ function TagModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+              className="px-4 py-2 text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting || !name.trim()}
-              className="px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-accent hover:bg-(--accent-hover) text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? "Saving..." : isEditing ? "Save Changes" : "Create Tag"}
             </button>
@@ -323,9 +323,9 @@ function DeleteConfirmModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-6 w-full max-w-md shadow-2xl">
+      <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 w-full max-w-md shadow-2xl">
         <h2 className="text-xl font-semibold mb-2">Delete Tag</h2>
-        <p className="text-[var(--muted)] mb-4">
+        <p className="text-(--muted) mb-4">
           Are you sure you want to delete &quot;{tagName}&quot;?
           {hasChildren && (
             <span className="block mt-2 text-amber-500">
@@ -336,7 +336,7 @@ function DeleteConfirmModal({
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+            className="px-4 py-2 text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
           >
             Cancel
           </button>
@@ -409,13 +409,13 @@ function TagManager() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold">Tag Manager</h1>
-              <p className="text-[var(--muted)] text-sm mt-1">
+              <p className="text-(--muted) text-sm mt-1">
                 Organize your tags in a hierarchical structure
               </p>
             </div>
             <button
               onClick={handleAddTopLevel}
-              className="flex items-center gap-2 px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-xl font-medium transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-(--accent-hover) text-white rounded-xl font-medium transition-colors"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -424,15 +424,15 @@ function TagManager() {
             </button>
           </div>
 
-          <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl overflow-hidden">
+          <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl overflow-hidden">
             {tree === undefined ? (
-              <div className="p-8 text-center text-[var(--muted)]">Loading...</div>
+              <div className="p-8 text-center text-(--muted)">Loading...</div>
             ) : !hasTags ? (
               <div className="p-8 text-center">
-                <p className="text-[var(--muted)] mb-4">No tags yet</p>
+                <p className="text-(--muted) mb-4">No tags yet</p>
                 <button
                   onClick={handleAddTopLevel}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-xl font-medium transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-(--accent-hover) text-white rounded-xl font-medium transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -458,7 +458,7 @@ function TagManager() {
           </div>
 
           {/* Help text */}
-          <div className="mt-6 text-sm text-[var(--muted)]">
+          <div className="mt-6 text-sm text-(--muted)">
             <p className="mb-2">
               <strong>Tip:</strong> Tags are organized hierarchically. Create top-level tags like &quot;Work&quot; or &quot;Personal&quot;, 
               then add project-specific tags as children.
@@ -498,12 +498,12 @@ function SignIn() {
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+      <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold mb-2 bg-linear-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
             Tasky
           </h1>
-          <p className="text-[var(--muted)]">Your personal task manager</p>
+          <p className="text-(--muted)">Your personal task manager</p>
         </div>
         <button
           onClick={() => void handleGitHubSignIn()}
@@ -525,7 +525,7 @@ export default function TagsPage() {
   if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }

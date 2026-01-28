@@ -7,7 +7,7 @@ import { Navigation } from "../../components/Navigation";
 import { TagSelector, SearchTagSelector, Tag } from "../../components/TagSelector";
 import { authClient } from "@/lib/auth-client";
 import ReactMarkdown from "react-markdown";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
 function CreateNoteModal({
@@ -90,12 +90,12 @@ function CreateNoteModal({
       
       {/* Modal */}
       <div 
-        className="relative bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-[var(--accent)]/10 flex items-center justify-center">
-            <svg className="w-5 h-5 text-[var(--accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
+            <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </div>
@@ -104,7 +104,7 @@ function CreateNoteModal({
 
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Tags</label>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Tags</label>
             <TagSelector
               selectedTags={selectedTags}
               onTagsChange={setTagIds}
@@ -113,12 +113,12 @@ function CreateNoteModal({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-[var(--muted)] mb-1">Content (Markdown)</label>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Content (Markdown)</label>
             <textarea
               ref={textareaRef}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="w-full min-h-[150px] px-3 py-2 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors resize-none font-mono text-sm"
+              className="w-full min-h-[150px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
               placeholder="Write your note in markdown..."
             />
           </div>
@@ -126,14 +126,14 @@ function CreateNoteModal({
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+              className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
             >
               Cancel
             </button>
             <button
               onClick={() => void handleSubmit()}
               disabled={!content.trim() || isSubmitting}
-              className="px-4 py-2 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? "Creating..." : "Create Note"}
             </button>
@@ -246,9 +246,9 @@ function NoteCard({
 
   if (isEditing) {
     return (
-      <div className="bg-[var(--card-bg)] border border-[var(--accent)]/50 rounded-xl p-6 transition-all duration-200">
+      <div className="bg-(--card-bg) border border-(--accent)/50 rounded-xl p-6 transition-all duration-200">
         <div className="mb-4">
-          <label className="block text-xs font-medium text-[var(--muted)] mb-2">Tags</label>
+          <label className="block text-xs font-medium text-(--muted) mb-2">Tags</label>
           <TagSelector
             selectedTags={editTags}
             onTagsChange={setEditTagIds}
@@ -256,25 +256,25 @@ function NoteCard({
           />
         </div>
         <div className="mb-4">
-          <label className="block text-xs font-medium text-[var(--muted)] mb-2">Content (Markdown)</label>
+          <label className="block text-xs font-medium text-(--muted) mb-2">Content (Markdown)</label>
           <textarea
             ref={textareaRef}
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
-            className="w-full min-h-[120px] px-3 py-2 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors resize-none font-mono text-sm"
+            className="w-full min-h-[120px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
             placeholder="Write your note in markdown..."
           />
         </div>
         <div className="flex items-center justify-end gap-2">
           <button
             onClick={cancelEditing}
-            className="px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors rounded-lg hover:bg-[var(--card-border)]"
+            className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
           >
             Cancel
           </button>
           <button
             onClick={() => void saveChanges()}
-            className="px-4 py-2 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium"
+            className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium"
           >
             Save
           </button>
@@ -284,11 +284,11 @@ function NoteCard({
   }
 
   return (
-    <div className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-6 transition-all duration-200 hover:border-[var(--accent)]/30">
+    <div className="group bg-(--card-bg) border border-(--card-border) rounded-xl p-6 transition-all duration-200 hover:border-(--accent)/30">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex flex-wrap gap-2">
           {tags.length === 0 ? (
-            <span className="text-xs text-[var(--muted)]">No tags</span>
+            <span className="text-xs text-(--muted)">No tags</span>
           ) : (
             tags.map((tag) => (
               <span
@@ -307,7 +307,7 @@ function NoteCard({
         <div className="flex items-center gap-1">
           <button
             onClick={startEditing}
-            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[var(--accent)] transition-all duration-200 p-1 rounded-lg hover:bg-[var(--accent)]/10 shrink-0"
+            className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-accent transition-all duration-200 p-1 rounded-lg hover:bg-(--accent)/10 shrink-0"
             title="Edit note"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -316,7 +316,7 @@ function NoteCard({
           </button>
           <button
             onClick={() => remove({ id })}
-            className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-red-400 transition-all duration-200 p-1 rounded-lg hover:bg-red-400/10 shrink-0"
+            className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-red-400 transition-all duration-200 p-1 rounded-lg hover:bg-red-400/10 shrink-0"
             title="Delete note"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -325,7 +325,7 @@ function NoteCard({
           </button>
         </div>
       </div>
-      <div className="prose dark:prose-invert prose-sm max-w-none prose-headings:text-[var(--foreground)] prose-p:text-[var(--foreground)] prose-strong:text-[var(--foreground)] prose-a:text-[var(--accent)]">
+      <div className="prose dark:prose-invert prose-sm max-w-none prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-a:text-accent">
         <ReactMarkdown>{content}</ReactMarkdown>
       </div>
     </div>
@@ -336,13 +336,11 @@ function NotesList() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [searchText, setSearchText] = useState("");
-  const [selectedTagId, setSelectedTagId] = useState<Id<"tags"> | null>(null);
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [initialTagApplied, setInitialTagApplied] = useState(false);
 
   const tagsQuery = useQuery(api.tags.list);
-  const allTags = tagsQuery ?? [];
+  const allTags = useMemo(() => tagsQuery ?? [], [tagsQuery]);
 
   // Convert tags to the expected format
   const allTagsFormatted: Tag[] = allTags.map((tag) => ({
@@ -351,26 +349,20 @@ function NotesList() {
     color: tag.color,
   }));
 
-  // Read tag from URL on initial load and validate it
-  useEffect(() => {
-    // Wait for tags to load before checking
-    if (initialTagApplied || tagsQuery === undefined) return;
-    
+  // Derive selected tag from URL - URL is the source of truth
+  const selectedTagId = useMemo(() => {
     const tagParam = searchParams.get("tag");
-    if (tagParam) {
-      // Validate that the tag ID exists
+    if (tagParam && tagsQuery !== undefined) {
       const validTag = allTags.find((t) => t._id === tagParam);
       if (validTag) {
-        setSelectedTagId(tagParam as Id<"tags">);
+        return tagParam as Id<"tags">;
       }
     }
-    setInitialTagApplied(true);
-  }, [searchParams, allTags, tagsQuery, initialTagApplied]);
+    return null;
+  }, [searchParams, allTags, tagsQuery]);
 
   // Update URL when tag filter changes
   const handleTagChange = useCallback((tagId: Id<"tags"> | null) => {
-    setSelectedTagId(tagId);
-    
     const params = new URLSearchParams(searchParams.toString());
     if (tagId) {
       params.set("tag", tagId);
@@ -426,7 +418,7 @@ function NotesList() {
               {/* Full-text search input */}
               <div className="flex-1 relative">
                 <svg
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted)]"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-(--muted)"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -443,12 +435,12 @@ function NotesList() {
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   placeholder="Search notes..."
-                  className="w-full h-[38px] pl-10 pr-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg focus:outline-none focus:border-[var(--accent)] transition-colors text-sm"
+                  className="w-full h-[38px] pl-10 pr-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
                 />
                 {searchText && (
                   <button
                     onClick={() => setSearchText("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--foreground)]"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-(--muted) hover:text-foreground"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -466,7 +458,7 @@ function NotesList() {
 
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="h-[38px] px-4 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg transition-colors font-medium text-sm flex items-center gap-2 shrink-0"
+                className="h-[38px] px-4 bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium text-sm flex items-center gap-2 shrink-0"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -477,7 +469,7 @@ function NotesList() {
 
             {/* Search status */}
             <div className="flex items-center justify-between">
-              <p className="text-[var(--muted)] text-sm">
+              <p className="text-(--muted) text-sm">
                 {notes === undefined
                   ? "Loading..."
                   : isSearching
@@ -489,7 +481,7 @@ function NotesList() {
               {isSearching && (
                 <button
                   onClick={clearSearch}
-                  className="text-sm text-[var(--accent)] hover:underline"
+                  className="text-sm text-accent hover:underline"
                 >
                   Clear search
                 </button>
@@ -499,25 +491,25 @@ function NotesList() {
 
           <div className="space-y-4">
             {notes === undefined ? (
-              <div className="text-center py-8 text-[var(--muted)]">Loading...</div>
+              <div className="text-center py-8 text-(--muted)">Loading...</div>
             ) : notes.length === 0 ? (
               <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-[var(--card-bg)] border border-[var(--card-border)] flex items-center justify-center">
-                  <svg className="w-8 h-8 text-[var(--muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-(--card-bg) border border-(--card-border) flex items-center justify-center">
+                  <svg className="w-8 h-8 text-(--muted)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
                 {isSearching ? (
                   <>
-                    <p className="text-[var(--muted)] mb-2">No matching notes</p>
-                    <p className="text-sm text-[var(--muted)]/60">
+                    <p className="text-(--muted) mb-2">No matching notes</p>
+                    <p className="text-sm text-(--muted)/60">
                       Try adjusting your search criteria
                     </p>
                   </>
                 ) : (
                   <>
-                    <p className="text-[var(--muted)] mb-2">No notes yet</p>
-                    <p className="text-sm text-[var(--muted)]/60">
+                    <p className="text-(--muted) mb-2">No notes yet</p>
+                    <p className="text-sm text-(--muted)/60">
                       Create a note from a capture using the note icon
                     </p>
                   </>
@@ -557,12 +549,12 @@ function SignIn() {
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+      <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold mb-2 bg-linear-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
             Tasky
           </h1>
-          <p className="text-[var(--muted)]">Your personal task manager</p>
+          <p className="text-(--muted)">Your personal task manager</p>
         </div>
         <button
           onClick={() => void handleGitHubSignIn()}
@@ -584,7 +576,7 @@ export default function NotesPage() {
   if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
