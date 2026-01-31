@@ -32,13 +32,11 @@ import {
   taskPriorityValues,
 } from "../../../convex/schema";
 
-// Includes "done" for legacy data display (maps to same style as "closed")
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   not_started: { label: "Not Started", color: "#6b7280" },
   in_progress: { label: "In Progress", color: "#3b82f6" },
   blocked: { label: "Blocked", color: "#ef4444" },
   closed: { label: "Closed", color: "#22c55e" },
-  done: { label: "Done", color: "#22c55e" }, // Legacy status, treated like closed
 };
 
 const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = {
@@ -48,8 +46,7 @@ const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = 
   high: { label: "High", color: "#ef4444" },
 };
 
-// Filter out "done" from UI columns (legacy status)
-const STATUS_ORDER: TaskStatus[] = taskStatusValues.filter((s) => s !== "done");
+const STATUS_ORDER: TaskStatus[] = [...taskStatusValues];
 const PRIORITY_ORDER: TaskPriority[] = [...taskPriorityValues];
 
 type KanbanMode = "status" | "priority";
@@ -1064,7 +1061,6 @@ function TasksList() {
     in_progress: [],
     blocked: [],
     closed: [],
-    done: [], // Legacy status bucket
   };
 
   const tasksByPriority: Record<TaskPriority, TaskWithTags[]> = {
