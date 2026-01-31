@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
 
 const navItems = [
@@ -50,10 +50,28 @@ export function Navigation() {
   const user = useQuery(api.tags.currentUser);
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   const handleSignOut = async () => {
     await authClient.signOut();
   };
+
+  // Close profile dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+
+    if (profileDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [profileDropdownOpen]);
 
   return (
     <nav className="fixed top-0 left-0 right-0 bg-[var(--card-bg)] border-b border-[var(--card-border)] z-50">
@@ -89,18 +107,49 @@ export function Navigation() {
         {/* User Section */}
         <div className="flex items-center gap-4">
           {user && (
-            <div className="hidden sm:flex items-center gap-3">
-              {user.image && (
-                <img
-                  src={user.image}
-                  alt={user.name || "User"}
-                  className="w-8 h-8 rounded-full border border-[var(--card-border)]"
-                />
-              )}
-              {user.name && (
-                <span className="text-sm text-[var(--foreground)]">
-                  {user.name}
-                </span>
+            <div className="relative hidden sm:block" ref={profileDropdownRef}>
+              <button
+                onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                className="flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors hover:bg-[var(--card-border)]"
+              >
+                {user.image && (
+                  <img
+                    src={user.image}
+                    alt={user.name || "User"}
+                    className="w-8 h-8 rounded-full border border-[var(--card-border)]"
+                  />
+                )}
+                {user.name && (
+                  <span className="text-sm text-[var(--foreground)]">
+                    {user.name}
+                  </span>
+                )}
+                <svg
+                  className={`w-4 h-4 text-[var(--muted)] transition-transform ${profileDropdownOpen ? "rotate-180" : ""}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {/* Profile Dropdown Menu */}
+              {profileDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-lg py-1 z-50">
+                  <button
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      void handleSignOut();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--card-border)] transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Sign out
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -117,13 +166,6 @@ export function Navigation() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               )}
             </svg>
-          </button>
-          
-          <button
-            onClick={() => void handleSignOut()}
-            className="hidden md:block text-[var(--muted)] hover:text-[var(--foreground)] transition-colors text-sm px-3 py-1.5 rounded-lg hover:bg-[var(--card-border)]"
-          >
-            Sign out
           </button>
         </div>
       </div>

@@ -785,20 +785,25 @@ function KanbanColumn({
   return (
     <div 
       ref={setNodeRef}
-      className="shrink-0 w-[280px] flex flex-col"
+      className="shrink-0 w-[280px] flex flex-col overflow-hidden"
     >
-      <div className="flex items-center gap-2 mb-4 px-1">
-        <div
-          className="w-3 h-3 rounded-full"
-          style={{ backgroundColor: config.color }}
-        />
-        <h3 className="font-medium text-sm">{config.label}</h3>
-        <span className="text-xs text-(--muted) bg-(--card-border) px-2 py-0.5 rounded-full">
-          {tasks.length}
-        </span>
+      {/* Sticky header with gradient fade */}
+      <div className="sticky top-0 z-10 bg-background pb-1">
+        <div className="flex items-center gap-2 px-1 py-2">
+          <div
+            className="w-3 h-3 rounded-full"
+            style={{ backgroundColor: config.color }}
+          />
+          <h3 className="font-medium text-sm">{config.label}</h3>
+          <span className="text-xs text-(--muted) bg-(--card-border) px-2 py-0.5 rounded-full">
+            {tasks.length}
+          </span>
+        </div>
+        {/* Gradient fade effect */}
+        <div className="h-4 bg-linear-to-b from-background to-transparent -mb-4" />
       </div>
 
-      <div className={`space-y-3 flex-1 p-2 rounded-xl transition-all duration-200 ${isDropTarget ? "bg-(--accent)/10 ring-2 ring-(--accent)/30 ring-inset" : ""}`}>
+      <div className={`space-y-3 flex-1 p-2 pt-4 rounded-xl transition-all duration-200 overflow-y-auto ${isDropTarget ? "bg-(--accent)/10 ring-2 ring-(--accent)/30 ring-inset" : ""}`}>
         {tasks.map((task) => (
           <TaskCard 
             key={task._id} 
