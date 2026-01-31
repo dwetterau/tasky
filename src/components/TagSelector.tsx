@@ -12,6 +12,7 @@ function useDropdownPosition(
   isOpen: boolean
 ) {
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [isPositionReady, setIsPositionReady] = useState(false);
 
   const updatePosition = useCallback(() => {
     if (containerRef.current && isOpen) {
@@ -21,11 +22,16 @@ function useDropdownPosition(
         left: rect.left,
         width: rect.width,
       });
+      setIsPositionReady(true);
     }
   }, [containerRef, isOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      // Reset ready state when dropdown closes
+      setIsPositionReady(false);
+      return;
+    }
 
     updatePosition();
 
@@ -39,7 +45,7 @@ function useDropdownPosition(
     };
   }, [isOpen, updatePosition]);
 
-  return position;
+  return { position, isPositionReady };
 }
 
 // Multi-select tag selector for editing items
@@ -58,7 +64,7 @@ export function TagSelector({
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const position = useDropdownPosition(containerRef, isOpen);
+  const { position, isPositionReady } = useDropdownPosition(containerRef, isOpen);
 
   const selectedIds = new Set(selectedTags.map((t) => t._id));
   const availableTags = allTags.filter(
@@ -94,7 +100,7 @@ export function TagSelector({
   };
 
   const renderDropdown = () => {
-    if (!isOpen) return null;
+    if (!isOpen || !isPositionReady) return null;
 
     const dropdownContent = availableTags.length > 0 ? (
       <div
@@ -202,7 +208,7 @@ export function SearchTagSelector({
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const position = useDropdownPosition(containerRef, isOpen);
+  const { position, isPositionReady } = useDropdownPosition(containerRef, isOpen);
 
   const availableTags = allTags.filter((tag) =>
     tag.name.toLowerCase().includes(search.toLowerCase())
@@ -225,7 +231,7 @@ export function SearchTagSelector({
   }, []);
 
   const renderDropdown = () => {
-    if (!isOpen) return null;
+    if (!isOpen || !isPositionReady) return null;
 
     const dropdownContent = (
       <div
