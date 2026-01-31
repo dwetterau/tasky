@@ -9,8 +9,7 @@ export const taskStatus = v.union(
   v.literal("not_started"),
   v.literal("in_progress"),
   v.literal("blocked"),
-  v.literal("closed"),
-  v.literal("done")
+  v.literal("closed")
 );
 
 export const taskPriority = v.union(
