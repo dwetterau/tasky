@@ -25,15 +25,20 @@ import {
 import { useSortable } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
+import {
+  type TaskStatus,
+  type TaskPriority,
+  taskStatusValues,
+  taskPriorityValues,
+} from "../../../convex/schema";
 
-type TaskStatus = "not_started" | "in_progress" | "blocked" | "closed";
-type TaskPriority = "triage" | "low" | "medium" | "high";
-
+// Includes "done" for legacy data display (maps to same style as "closed")
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   not_started: { label: "Not Started", color: "#6b7280" },
   in_progress: { label: "In Progress", color: "#3b82f6" },
   blocked: { label: "Blocked", color: "#ef4444" },
   closed: { label: "Closed", color: "#22c55e" },
+  done: { label: "Done", color: "#22c55e" }, // Legacy status, treated like closed
 };
 
 const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = {
@@ -43,8 +48,9 @@ const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = 
   high: { label: "High", color: "#ef4444" },
 };
 
-const STATUS_ORDER: TaskStatus[] = ["not_started", "in_progress", "blocked", "closed"];
-const PRIORITY_ORDER: TaskPriority[] = ["triage", "low", "medium", "high"];
+// Filter out "done" from UI columns (legacy status)
+const STATUS_ORDER: TaskStatus[] = taskStatusValues.filter((s) => s !== "done");
+const PRIORITY_ORDER: TaskPriority[] = [...taskPriorityValues];
 
 type KanbanMode = "status" | "priority";
 
@@ -955,10 +961,10 @@ function TasksList() {
   // Helper to determine column from a target ID (could be column or task)
   const getColumnFromTargetId = useCallback((targetId: string): string | null => {
     // Check if it's directly a column ID
-    if (kanbanMode === "status" && STATUS_ORDER.includes(targetId as TaskStatus)) {
+    if (kanbanMode === "status" && (STATUS_ORDER as readonly string[]).includes(targetId)) {
       return targetId;
     }
-    if (kanbanMode === "priority" && PRIORITY_ORDER.includes(targetId as TaskPriority)) {
+    if (kanbanMode === "priority" && (PRIORITY_ORDER as readonly string[]).includes(targetId)) {
       return targetId;
     }
     // It's a task ID - find the task and get its column
@@ -1002,7 +1008,7 @@ function TasksList() {
       let newStatus: TaskStatus;
       
       // Check if dropped on a column
-      if (STATUS_ORDER.includes(targetId as TaskStatus)) {
+      if ((STATUS_ORDER as readonly string[]).includes(targetId)) {
         newStatus = targetId as TaskStatus;
       } else {
         // Dropped on a task card - find the target task's status
@@ -1018,7 +1024,7 @@ function TasksList() {
       let newPriority: TaskPriority;
       
       // Check if dropped on a column
-      if (PRIORITY_ORDER.includes(targetId as TaskPriority)) {
+      if ((PRIORITY_ORDER as readonly string[]).includes(targetId)) {
         newPriority = targetId as TaskPriority;
       } else {
         // Dropped on a task card - find the target task's priority
@@ -1058,6 +1064,7 @@ function TasksList() {
     in_progress: [],
     blocked: [],
     closed: [],
+    done: [], // Legacy status bucket
   };
 
   const tasksByPriority: Record<TaskPriority, TaskWithTags[]> = {

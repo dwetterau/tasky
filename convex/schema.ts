@@ -2,14 +2,20 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 // Task status and priority literals
-export const taskStatusValues = ["not_started", "in_progress", "blocked", "closed"] as const;
+// Note: "done" is included temporarily for safe migration (will be removed after all data migrated to "closed")
+export const taskStatusValues = ["not_started", "in_progress", "blocked", "closed", "done"] as const;
 export const taskPriorityValues = ["triage", "low", "medium", "high"] as const;
+
+// TypeScript types derived from the arrays
+export type TaskStatus = (typeof taskStatusValues)[number];
+export type TaskPriority = (typeof taskPriorityValues)[number];
 
 export const taskStatus = v.union(
   v.literal("not_started"),
   v.literal("in_progress"),
   v.literal("blocked"),
-  v.literal("closed")
+  v.literal("closed"),
+  v.literal("done")
 );
 
 export const taskPriority = v.union(
