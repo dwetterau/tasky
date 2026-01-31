@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
+import { AUTH_PENDING_KEY } from "@/lib/useAuthSession";
 
 const navItems = [
   {
@@ -54,6 +55,8 @@ export function Navigation() {
   const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   const handleSignOut = async () => {
+    // Clear any auth pending flag to prevent flash on sign-in screen
+    sessionStorage.removeItem(AUTH_PENDING_KEY);
     await authClient.signOut();
   };
 
