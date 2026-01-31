@@ -195,12 +195,19 @@ function CreateTaskModal({
 
           <div>
             <label className="block text-xs font-medium text-(--muted) mb-1">Due Date</label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
-            />
+            <div className="relative w-full h-[38px] bg-background border border-(--card-border) rounded-lg focus-within:border-accent transition-colors">
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="absolute inset-0 w-full h-full px-3 bg-transparent focus:outline-none text-sm scheme-dark dark:scheme-dark [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-(--muted)">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -486,12 +493,19 @@ function TaskEditModal({
 
           <div>
             <label className="block text-xs font-medium text-(--muted) mb-1">Due Date</label>
-            <input
-              type="date"
-              value={editDueDate}
-              onChange={(e) => setEditDueDate(e.target.value)}
-              className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
-            />
+            <div className="relative w-full h-[38px] bg-background border border-(--card-border) rounded-lg focus-within:border-accent transition-colors">
+              <input
+                type="date"
+                value={editDueDate}
+                onChange={(e) => setEditDueDate(e.target.value)}
+                className="absolute inset-0 w-full h-full px-3 bg-transparent focus:outline-none text-sm scheme-dark dark:scheme-dark [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-(--muted)">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -635,37 +649,22 @@ function TaskCard({
       />
 
       <div className="flex-1 p-4 min-w-0">
-        {/* Action buttons - positioned absolutely to avoid being pushed off */}
-        <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenEditModal?.();
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-accent transition-all duration-200 p-1.5 rounded-lg bg-(--card-bg)/80 backdrop-blur-sm hover:bg-(--accent)/10 shadow-sm"
-            title="Edit task"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDeleteConfirm(true);
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-red-400 transition-all duration-200 p-1.5 rounded-lg bg-(--card-bg)/80 backdrop-blur-sm hover:bg-red-400/10 shadow-sm"
-            title="Delete task"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
+        {/* Delete button - positioned absolutely to avoid being pushed off */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowDeleteConfirm(true);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 text-(--muted) hover:text-red-400 transition-all duration-200 p-1.5 rounded-lg bg-(--card-bg)/80 backdrop-blur-sm hover:bg-red-400/10 shadow-sm"
+          title="Delete task"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
 
-        <div className="flex flex-wrap gap-1.5 mb-2 pr-16">
+        <div className="flex flex-wrap gap-1.5 mb-2 pr-10">
           {task.tags.length === 0 ? (
             <span className="text-xs text-(--muted)">No tags</span>
           ) : (
