@@ -25,14 +25,14 @@ import { useSortable } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
-type TaskStatus = "not_started" | "in_progress" | "blocked" | "done";
+type TaskStatus = "not_started" | "in_progress" | "blocked" | "closed";
 type TaskPriority = "triage" | "low" | "medium" | "high";
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   not_started: { label: "Not Started", color: "#6b7280" },
   in_progress: { label: "In Progress", color: "#3b82f6" },
   blocked: { label: "Blocked", color: "#ef4444" },
-  done: { label: "Done", color: "#22c55e" },
+  closed: { label: "Closed", color: "#22c55e" },
 };
 
 const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = {
@@ -42,7 +42,7 @@ const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = 
   high: { label: "High", color: "#ef4444" },
 };
 
-const STATUS_ORDER: TaskStatus[] = ["not_started", "in_progress", "blocked", "done"];
+const STATUS_ORDER: TaskStatus[] = ["not_started", "in_progress", "blocked", "closed"];
 const PRIORITY_ORDER: TaskPriority[] = ["triage", "low", "medium", "high"];
 
 type KanbanMode = "status" | "priority";
@@ -1056,7 +1056,7 @@ function TasksList() {
     not_started: [],
     in_progress: [],
     blocked: [],
-    done: [],
+    closed: [],
   };
 
   const tasksByPriority: Record<TaskPriority, TaskWithTags[]> = {

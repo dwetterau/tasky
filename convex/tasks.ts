@@ -58,7 +58,7 @@ export const create = mutation({
       dueDate: args.dueDate,
       createdFromCaptureId: args.createdFromCaptureId,
       statusUpdatedAt: now,
-      completedAt: status === "done" ? now : undefined,
+      completedAt: status === "closed" ? now : undefined,
     });
   },
 });
@@ -134,10 +134,10 @@ export const update = mutation({
       updates.status = args.status;
       updates.statusUpdatedAt = now;
       // Track completion timestamp
-      if (args.status === "done" && task.status !== "done") {
+      if (args.status === "closed" && task.status !== "closed") {
         updates.completedAt = now;
-      } else if (args.status !== "done" && task.status === "done") {
-        // Clear completedAt if moving out of done status
+      } else if (args.status !== "closed" && task.status === "closed") {
+        // Clear completedAt if moving out of closed status
         updates.completedAt = undefined;
       }
     }
@@ -180,9 +180,9 @@ export const updateStatus = mutation({
     };
 
     // Track completion timestamp
-    if (args.status === "done" && task.status !== "done") {
+    if (args.status === "closed" && task.status !== "closed") {
       updates.completedAt = now;
-    } else if (args.status !== "done" && task.status === "done") {
+    } else if (args.status !== "closed" && task.status === "closed") {
       updates.completedAt = undefined;
     }
 
