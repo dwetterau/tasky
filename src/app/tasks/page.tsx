@@ -311,13 +311,14 @@ function DeleteConfirmModal({
   );
 }
 
-function TaskCard({
+function TaskEditModal({
+  isOpen,
+  onClose,
   task,
   allTags,
-  kanbanMode,
-  isDragging: isDraggingProp,
-  isColumnDropTarget,
 }: {
+  isOpen: boolean;
+  onClose: () => void;
   task: {
     _id: Id<"tasks">;
     content: string;
@@ -327,140 +328,127 @@ function TaskCard({
     tags: Tag[];
   };
   allTags: Tag[];
-  kanbanMode: KanbanMode;
-  isDragging?: boolean;
-  isColumnDropTarget?: boolean;
 }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editContent, setEditContent] = useState(task.content);
   const [editTagIds, setEditTagIds] = useState<Id<"tags">[]>(task.tags.map((t) => t._id));
   const [editStatus, setEditStatus] = useState<TaskStatus>(task.status);
   const [editPriority, setEditPriority] = useState<TaskPriority>(task.priority);
   const [editDueDate, setEditDueDate] = useState(task.dueDate || "");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const remove = useMutation(api.tasks.remove).withOptimisticUpdate(
-    (localStore, args) => {
-      // Update list query
-      const tasks = localStore.getQuery(api.tasks.list, {});
-      if (tasks !== undefined) {
-        localStore.setQuery(
-          api.tasks.list,
-          {},
-          tasks.filter((t) => t._id !== args.id)
-        );
-      }
+  const update = useMutation(api.tasks.update);
+  const remove = useMutation(api.tasks.remove);
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setEditContent(task.content);
+      setEditTagIds(task.tags.map((t) => t._id));
+      setEditStatus(task.status);
+      setEditPriority(task.priority);
+      setEditDueDate(task.dueDate || "");
     }
-  );
+  }, [isOpen, task]);
 
-  const update = useMutation(api.tasks.update).withOptimisticUpdate(
-    (localStore, args) => {
-      // Update list query
-      const tasks = localStore.getQuery(api.tasks.list, {});
-      if (tasks !== undefined) {
-        localStore.setQuery(
-          api.tasks.list,
-          {},
-          tasks.map((t) => {
-            if (t._id !== args.id) return t;
-            // Keep existing tags - they will refresh when query updates
-            // Filter out removed tags if tagIds changed
-            const newTags = args.tagIds 
-              ? t.tags.filter((tag) => args.tagIds!.includes(tag._id))
-              : t.tags;
-            return {
-              ...t,
-              content: args.content ?? t.content,
-              status: args.status ?? t.status,
-              priority: args.priority ?? t.priority,
-              dueDate: args.dueDate !== undefined ? (args.dueDate ?? undefined) : t.dueDate,
-              tagIds: args.tagIds ?? t.tagIds,
-              tags: newTags,
-            };
-          })
-        );
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen && !showDeleteConfirm) {
+        onClose();
       }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isOpen, onClose, showDeleteConfirm]);
+
+  useEffect(() => {
+    if (textareaRef.current && isOpen) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
     }
-  );
+  }, [editContent, isOpen]);
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: task._id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    // Only use transform transitions, not opacity - opacity changes should be instant
-    transition: transition ? transition.replace(/opacity[^,]*(,|$)/g, '').trim().replace(/,$/, '') || undefined : undefined,
-    // Hide the original card completely when it's being dragged (DragOverlay shows the visual)
-    opacity: isDragging ? 0 : isColumnDropTarget ? 0.4 : 1,
-  };
+  useEffect(() => {
+    if (isOpen && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [isOpen]);
 
   const editTags = editTagIds
     .map((id) => allTags.find((t) => t._id === id))
     .filter((t): t is Tag => t !== undefined);
 
-  // In status mode, accent bar shows priority color
-  // In priority mode, accent bar shows status color
-  const accentColor = kanbanMode === "status" 
-    ? PRIORITY_CONFIG[task.priority].color 
-    : STATUS_CONFIG[task.status].color;
-
-  const startEditing = () => {
-    setEditContent(task.content);
-    setEditTagIds(task.tags.map((t) => t._id));
-    setEditStatus(task.status);
-    setEditPriority(task.priority);
-    setEditDueDate(task.dueDate || "");
-    setIsEditing(true);
-  };
-
-  const cancelEditing = () => {
-    setIsEditing(false);
-  };
-
-  const saveChanges = async () => {
-    await update({
-      id: task._id,
-      content: editContent,
-      tagIds: editTagIds,
-      status: editStatus,
-      priority: editPriority,
-      dueDate: editDueDate || null,
-    });
-    setIsEditing(false);
-  };
-
-  useEffect(() => {
-    if (textareaRef.current && isEditing) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+  const handleSubmit = async () => {
+    if (!editContent.trim()) return;
+    
+    setIsSubmitting(true);
+    try {
+      await update({
+        id: task._id,
+        content: editContent.trim(),
+        tagIds: editTagIds,
+        status: editStatus,
+        priority: editPriority,
+        dueDate: editDueDate || null,
+      });
+      onClose();
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [editContent, isEditing]);
+  };
 
-  useEffect(() => {
-    if (isEditing && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [isEditing]);
+  const handleDelete = () => {
+    remove({ id: task._id });
+    setShowDeleteConfirm(false);
+    onClose();
+  };
 
-  if (isEditing) {
-    return (
-      <div className="bg-(--card-bg) border border-(--accent)/50 rounded-xl p-4 transition-all duration-200">
-        <div className="space-y-3">
+  if (!isOpen) return null;
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
+      onClick={onClose}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      
+      {/* Modal */}
+      <div 
+        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-2xl w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
+              <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold">Edit Task</h3>
+          </div>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="text-(--muted) hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-400/10"
+            title="Delete task"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-(--muted) mb-1">Content</label>
             <textarea
               ref={textareaRef}
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
-              className="w-full min-h-[80px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
-              placeholder="Task description..."
+              className="w-full min-h-[200px] px-4 py-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
+              placeholder="What needs to be done?"
             />
           </div>
 
@@ -472,9 +460,9 @@ function TaskCard({
                 onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
                 className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
               >
-                {STATUS_ORDER.map((status) => (
-                  <option key={status} value={status}>
-                    {STATUS_CONFIG[status].label}
+                {STATUS_ORDER.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_CONFIG[s].label}
                   </option>
                 ))}
               </select>
@@ -487,9 +475,9 @@ function TaskCard({
                 onChange={(e) => setEditPriority(e.target.value as TaskPriority)}
                 className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
               >
-                {(["triage", "low", "medium", "high"] as TaskPriority[]).map((priority) => (
-                  <option key={priority} value={priority}>
-                    {PRIORITY_CONFIG[priority].label}
+                {(["triage", "low", "medium", "high"] as TaskPriority[]).map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITY_CONFIG[p].label}
                   </option>
                 ))}
               </select>
@@ -515,24 +503,120 @@ function TaskCard({
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2">
+          <div className="flex items-center justify-end gap-3 pt-2">
             <button
-              onClick={cancelEditing}
-              className="px-3 py-1.5 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
             >
               Cancel
             </button>
             <button
-              onClick={() => void saveChanges()}
-              className="px-3 py-1.5 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium"
+              onClick={() => void handleSubmit()}
+              disabled={!editContent.trim() || isSubmitting}
+              className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save
+              {isSubmitting ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </div>
+
+        <DeleteConfirmModal
+          isOpen={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={handleDelete}
+          taskContent={task.content}
+        />
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+function TaskCard({
+  task,
+  kanbanMode,
+  isDragging: isDraggingProp,
+  isColumnDropTarget,
+  onOpenEditModal,
+}: {
+  task: {
+    _id: Id<"tasks">;
+    content: string;
+    status: TaskStatus;
+    priority: TaskPriority;
+    dueDate?: string;
+    tags: Tag[];
+  };
+  kanbanMode: KanbanMode;
+  isDragging?: boolean;
+  isColumnDropTarget?: boolean;
+  onOpenEditModal?: () => void;
+}) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const hasDraggedRef = useRef(false);
+
+  const remove = useMutation(api.tasks.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      // Update list query
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        localStore.setQuery(
+          api.tasks.list,
+          {},
+          tasks.filter((t) => t._id !== args.id)
+        );
+      }
+    }
+  );
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task._id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    // Only use transform transitions, not opacity - opacity changes should be instant
+    transition: transition ? transition.replace(/opacity[^,]*(,|$)/g, '').trim().replace(/,$/, '') || undefined : undefined,
+    // Hide the original card completely when it's being dragged (DragOverlay shows the visual)
+    opacity: isDragging ? 0 : isColumnDropTarget ? 0.4 : 1,
+  };
+
+  // In status mode, accent bar shows priority color
+  // In priority mode, accent bar shows status color
+  const accentColor = kanbanMode === "status" 
+    ? PRIORITY_CONFIG[task.priority].color 
+    : STATUS_CONFIG[task.status].color;
+
+  // Track drag vs click - if we moved more than 8px, it's a drag
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    hasDraggedRef.current = false;
+    // Call dnd-kit's onPointerDown handler
+    const dndPointerDown = listeners?.onPointerDown as ((e: React.PointerEvent<HTMLDivElement>) => void) | undefined;
+    dndPointerDown?.(e);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Don't open modal if we dragged, or if clicking on a link or button
+    if (hasDraggedRef.current) return;
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'A' || target.tagName === 'BUTTON' || target.closest('a') || target.closest('button')) {
+      return;
+    }
+    onOpenEditModal?.();
+  };
+
+  // Listen for drag start from dnd-kit to mark as dragged
+  useEffect(() => {
+    if (isDragging) {
+      hasDraggedRef.current = true;
+    }
+  }, [isDragging]);
 
   return (
     <div
@@ -540,7 +624,9 @@ function TaskCard({
       style={style}
       {...attributes}
       {...listeners}
-      className={`group bg-(--card-bg) border border-(--card-border) rounded-xl overflow-hidden transition-all duration-200 hover:border-(--accent)/30 flex cursor-grab active:cursor-grabbing ${isDraggingProp ? "ring-2 ring-accent shadow-lg" : ""}`}
+      onPointerDown={handlePointerDown}
+      onClick={handleClick}
+      className={`group relative bg-(--card-bg) border border-(--card-border) rounded-xl overflow-hidden transition-all duration-200 hover:border-(--accent)/30 flex cursor-grab active:cursor-grabbing ${isDraggingProp ? "ring-2 ring-accent shadow-lg" : ""}`}
     >
       {/* Accent bar */}
       <div
@@ -548,52 +634,75 @@ function TaskCard({
         style={{ backgroundColor: accentColor }}
       />
 
-      <div className="flex-1 p-4">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex flex-wrap gap-1.5">
-            {task.tags.length === 0 ? (
-              <span className="text-xs text-(--muted)">No tags</span>
-            ) : (
-              task.tags.map((tag) => (
-                <span
-                  key={tag._id}
-                  className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
-                  style={{
-                    backgroundColor: tag.color ? `${tag.color}20` : "var(--accent-muted)",
-                    color: tag.color || "var(--accent)",
-                  }}
-                >
-                  {tag.name}
-                </span>
-              ))
-            )}
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={startEditing}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-accent transition-all duration-200 p-1 rounded hover:bg-(--accent)/10"
-              title="Edit task"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-red-400 transition-all duration-200 p-1 rounded hover:bg-red-400/10"
-              title="Delete task"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-          </div>
+      <div className="flex-1 p-4 min-w-0">
+        {/* Action buttons - positioned absolutely to avoid being pushed off */}
+        <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenEditModal?.();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-accent transition-all duration-200 p-1.5 rounded-lg bg-(--card-bg)/80 backdrop-blur-sm hover:bg-(--accent)/10 shadow-sm"
+            title="Edit task"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDeleteConfirm(true);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-red-400 transition-all duration-200 p-1.5 rounded-lg bg-(--card-bg)/80 backdrop-blur-sm hover:bg-red-400/10 shadow-sm"
+            title="Delete task"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
         </div>
 
-        <div className="prose dark:prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 text-sm">
-          <ReactMarkdown>{task.content}</ReactMarkdown>
+        <div className="flex flex-wrap gap-1.5 mb-2 pr-16">
+          {task.tags.length === 0 ? (
+            <span className="text-xs text-(--muted)">No tags</span>
+          ) : (
+            task.tags.map((tag) => (
+              <span
+                key={tag._id}
+                className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
+                style={{
+                  backgroundColor: tag.color ? `${tag.color}20` : "var(--accent-muted)",
+                  color: tag.color || "var(--accent)",
+                }}
+              >
+                {tag.name}
+              </span>
+            ))
+          )}
+        </div>
+
+        <div className="prose dark:prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 text-sm wrap-break-word prose-a:text-accent prose-a:no-underline hover:prose-a:underline">
+          <ReactMarkdown
+            components={{
+              a: ({ href, children }) => (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="text-accent hover:underline"
+                >
+                  {children}
+                </a>
+              ),
+            }}
+          >
+            {task.content}
+          </ReactMarkdown>
         </div>
 
         <DeleteConfirmModal
@@ -650,9 +759,9 @@ function KanbanColumn({
   columnId,
   columnValue,
   tasks,
-  allTags,
   kanbanMode,
   isDropTarget,
+  onOpenEditModal,
 }: {
   columnId: string;
   columnValue: TaskStatus | TaskPriority;
@@ -664,9 +773,9 @@ function KanbanColumn({
     dueDate?: string;
     tags: Tag[];
   }>;
-  allTags: Tag[];
   kanbanMode: KanbanMode;
   isDropTarget?: boolean;
+  onOpenEditModal: (task: { _id: Id<"tasks">; content: string; status: TaskStatus; priority: TaskPriority; dueDate?: string; tags: Tag[] }) => void;
 }) {
   const { setNodeRef } = useDroppable({ id: columnId });
   
@@ -692,7 +801,13 @@ function KanbanColumn({
 
       <div className={`space-y-3 flex-1 p-2 rounded-xl transition-all duration-200 ${isDropTarget ? "bg-(--accent)/10 ring-2 ring-(--accent)/30 ring-inset" : ""}`}>
         {tasks.map((task) => (
-          <TaskCard key={task._id} task={task} allTags={allTags} kanbanMode={kanbanMode} isColumnDropTarget={isDropTarget} />
+          <TaskCard 
+            key={task._id} 
+            task={task} 
+            kanbanMode={kanbanMode} 
+            isColumnDropTarget={isDropTarget}
+            onOpenEditModal={() => onOpenEditModal(task)}
+          />
         ))}
         {tasks.length === 0 && (
           <div className={`text-center py-8 text-(--muted) text-sm border-2 border-dashed rounded-xl transition-all duration-200 ${isDropTarget ? "border-accent bg-(--accent)/10 scale-[1.02]" : "border-(--card-border)"}`}>
@@ -704,6 +819,15 @@ function KanbanColumn({
   );
 }
 
+type TaskForEdit = {
+  _id: Id<"tasks">;
+  content: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate?: string;
+  tags: Tag[];
+};
+
 function TasksList() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -713,6 +837,7 @@ function TasksList() {
   const [kanbanMode, setKanbanMode] = useState<KanbanMode>("status");
   const [activeTaskId, setActiveTaskId] = useState<Id<"tasks"> | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<TaskForEdit | null>(null);
 
   const tagsQuery = useQuery(api.tags.list);
   const allTags = useMemo(() => tagsQuery ?? [], [tagsQuery]);
@@ -1081,9 +1206,9 @@ function TasksList() {
                       columnId={status}
                       columnValue={status}
                       tasks={tasksByStatus[status]}
-                      allTags={allTagsFormatted}
                       kanbanMode={kanbanMode}
                       isDropTarget={overColumnId === status}
+                      onOpenEditModal={setEditingTask}
                     />
                   ))
                 ) : (
@@ -1093,9 +1218,9 @@ function TasksList() {
                       columnId={priority}
                       columnValue={priority}
                       tasks={tasksByPriority[priority]}
-                      allTags={allTagsFormatted}
                       kanbanMode={kanbanMode}
                       isDropTarget={overColumnId === priority}
+                      onOpenEditModal={setEditingTask}
                     />
                   ))
                 )}
@@ -1110,7 +1235,6 @@ function TasksList() {
                         ...activeTask,
                         tags: activeTask.tags as Tag[],
                       }}
-                      allTags={allTagsFormatted}
                       kanbanMode={kanbanMode}
                     />
                   </div>
@@ -1127,6 +1251,15 @@ function TasksList() {
         allTags={allTagsFormatted}
         initialTagId={selectedTagId}
       />
+
+      {editingTask && (
+        <TaskEditModal
+          isOpen={true}
+          onClose={() => setEditingTask(null)}
+          task={editingTask}
+          allTags={allTagsFormatted}
+        />
+      )}
     </div>
   );
 }
