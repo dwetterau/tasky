@@ -13,6 +13,7 @@ export const list = query({
     const notes = await ctx.db
       .query("notes")
       .withIndex("by_user", (q) => q.eq("userId", userId))
+      .order("desc")
       .collect();
 
     // Fetch tags for each note

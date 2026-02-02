@@ -49,6 +49,22 @@ const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string }> = 
 const STATUS_ORDER: TaskStatus[] = [...taskStatusValues];
 const PRIORITY_ORDER: TaskPriority[] = [...taskPriorityValues];
 
+// Priority weight for sorting (higher number = higher priority = shown first)
+const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
+  high: 3,
+  medium: 2,
+  low: 1,
+  triage: 0,
+};
+
+// Status weight for sorting (lower number = shown first in priority view)
+const STATUS_WEIGHT: Record<TaskStatus, number> = {
+  not_started: 0,
+  in_progress: 1,
+  blocked: 2,
+  closed: 3,
+};
+
 type KanbanMode = "status" | "priority";
 
 function CreateTaskModal({
@@ -322,6 +338,73 @@ function DeleteConfirmModal({
   );
 }
 
+function UnsavedChangesModal({
+  isOpen,
+  onClose,
+  onDiscard,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onDiscard: () => void;
+}) {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div 
+      className="fixed inset-0 z-60 flex items-center justify-center p-4 cursor-default"
+      onClick={onClose}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      
+      {/* Modal */}
+      <div 
+        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+            <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold">Unsaved Changes</h3>
+        </div>
+        
+        <p className="text-(--muted) mb-6">
+          You have unsaved changes. Are you sure you want to discard them?
+        </p>
+        
+        <div className="flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+          >
+            Keep Editing
+          </button>
+          <button
+            onClick={onDiscard}
+            className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors font-medium"
+          >
+            Discard Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TaskEditModal({
   isOpen,
   onClose,
@@ -347,10 +430,37 @@ function TaskEditModal({
   const [editDueDate, setEditDueDate] = useState(task.dueDate || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const update = useMutation(api.tasks.update);
   const remove = useMutation(api.tasks.remove);
+
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = useMemo(() => {
+    const originalTagIds = task.tags.map((t) => t._id).sort();
+    const currentTagIds = [...editTagIds].sort();
+    const tagsChanged = 
+      originalTagIds.length !== currentTagIds.length ||
+      originalTagIds.some((id, i) => id !== currentTagIds[i]);
+    
+    return (
+      editContent !== task.content ||
+      editStatus !== task.status ||
+      editPriority !== task.priority ||
+      editDueDate !== (task.dueDate || "") ||
+      tagsChanged
+    );
+  }, [editContent, editStatus, editPriority, editDueDate, editTagIds, task]);
+
+  // Handle close attempt - check for unsaved changes
+  const handleCloseAttempt = useCallback(() => {
+    if (hasUnsavedChanges) {
+      setShowUnsavedChanges(true);
+    } else {
+      onClose();
+    }
+  }, [hasUnsavedChanges, onClose]);
 
   // Reset form when modal opens
   useEffect(() => {
@@ -360,18 +470,19 @@ function TaskEditModal({
       setEditStatus(task.status);
       setEditPriority(task.priority);
       setEditDueDate(task.dueDate || "");
+      setShowUnsavedChanges(false);
     }
   }, [isOpen, task]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen && !showDeleteConfirm) {
-        onClose();
+      if (e.key === "Escape" && isOpen && !showDeleteConfirm && !showUnsavedChanges) {
+        handleCloseAttempt();
       }
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [isOpen, onClose, showDeleteConfirm]);
+  }, [isOpen, handleCloseAttempt, showDeleteConfirm, showUnsavedChanges]);
 
   useEffect(() => {
     if (textareaRef.current && isOpen) {
@@ -420,7 +531,7 @@ function TaskEditModal({
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
-      onClick={onClose}
+      onClick={handleCloseAttempt}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
@@ -523,7 +634,7 @@ function TaskEditModal({
 
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
-              onClick={onClose}
+              onClick={handleCloseAttempt}
               className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
             >
               Cancel
@@ -543,6 +654,12 @@ function TaskEditModal({
           onClose={() => setShowDeleteConfirm(false)}
           onConfirm={handleDelete}
           taskContent={task.content}
+        />
+
+        <UnsavedChangesModal
+          isOpen={showUnsavedChanges}
+          onClose={() => setShowUnsavedChanges(false)}
+          onDiscard={onClose}
         />
       </div>
     </div>
@@ -850,6 +967,10 @@ function TasksList() {
   const tagsQuery = useQuery(api.tags.list);
   const allTags = useMemo(() => tagsQuery ?? [], [tagsQuery]);
 
+  // Refs to capture current filter state for optimistic updates
+  const searchTextRef = useRef<string>("");
+  const selectedTagIdRef = useRef<Id<"tags"> | null>(null);
+
   // Drag-and-drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -861,37 +982,79 @@ function TasksList() {
   );
 
   // Mutations for drag-and-drop
+  // Note: The refs are accessed in optimistic update callbacks which run at mutation-invocation
+  // time (during drag-and-drop), not during render. This is safe despite the lint warning.
+  /* eslint-disable */
   const updateStatus = useMutation(api.tasks.updateStatus).withOptimisticUpdate(
     (localStore, args) => {
-      const tasks = localStore.getQuery(api.tasks.list, {});
-      if (tasks !== undefined) {
+      // Update the main list query
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
         localStore.setQuery(
           api.tasks.list,
           {},
-          tasks.map((t) => {
+          listTasks.map((t) => {
             if (t._id !== args.id) return t;
             return { ...t, status: args.status };
           })
         );
+      }
+
+      // Also update the search query if filters are active
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(
+            api.tasks.search,
+            searchArgs,
+            searchTasks.map((t) => {
+              if (t._id !== args.id) return t;
+              return { ...t, status: args.status };
+            })
+          );
+        }
       }
     }
   );
 
   const updatePriority = useMutation(api.tasks.updatePriority).withOptimisticUpdate(
     (localStore, args) => {
-      const tasks = localStore.getQuery(api.tasks.list, {});
-      if (tasks !== undefined) {
+      // Update the main list query
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
         localStore.setQuery(
           api.tasks.list,
           {},
-          tasks.map((t) => {
+          listTasks.map((t) => {
             if (t._id !== args.id) return t;
             return { ...t, priority: args.priority };
           })
         );
       }
+
+      // Also update the search query if filters are active
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(
+            api.tasks.search,
+            searchArgs,
+            searchTasks.map((t) => {
+              if (t._id !== args.id) return t;
+              return { ...t, priority: args.priority };
+            })
+          );
+        }
+      }
     }
   );
+  /* eslint-enable */
 
   const allTagsFormatted: Tag[] = allTags.map((tag) => ({
     _id: tag._id,
@@ -930,6 +1093,15 @@ function TasksList() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchText]);
+
+  // Keep refs in sync for optimistic updates
+  useEffect(() => {
+    searchTextRef.current = debouncedSearchText;
+  }, [debouncedSearchText]);
+
+  useEffect(() => {
+    selectedTagIdRef.current = selectedTagId;
+  }, [selectedTagId]);
 
   const isSearching = debouncedSearchText.trim() !== "" || selectedTagId !== null;
 
@@ -1049,6 +1221,7 @@ function TasksList() {
   // Group tasks by status or priority based on mode
   type TaskWithTags = {
     _id: Id<"tasks">;
+    _creationTime: number;
     content: string;
     status: TaskStatus;
     priority: TaskPriority;
@@ -1077,6 +1250,24 @@ function TasksList() {
     };
     tasksByStatus[task.status].push(taskWithTags);
     tasksByPriority[task.priority].push(taskWithTags);
+  }
+
+  // Sort tasks within each status column: by priority (high first), then by creation time descending
+  for (const status of STATUS_ORDER) {
+    tasksByStatus[status].sort((a, b) => {
+      const priorityDiff = PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
+      if (priorityDiff !== 0) return priorityDiff;
+      return b._creationTime - a._creationTime;
+    });
+  }
+
+  // Sort tasks within each priority column: by status (not_started first, closed last), then by creation time descending
+  for (const priority of PRIORITY_ORDER) {
+    tasksByPriority[priority].sort((a, b) => {
+      const statusDiff = STATUS_WEIGHT[a.status] - STATUS_WEIGHT[b.status];
+      if (statusDiff !== 0) return statusDiff;
+      return b._creationTime - a._creationTime;
+    });
   }
 
   return (
