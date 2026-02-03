@@ -50,11 +50,12 @@ const STATUS_ORDER: TaskStatus[] = [...taskStatusValues];
 const PRIORITY_ORDER: TaskPriority[] = [...taskPriorityValues];
 
 // Priority weight for sorting (higher number = higher priority = shown first)
+// Triage (un-prioritized) is treated as highest priority so it appears first and gets attention
 const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
+  triage: 4,
   high: 3,
   medium: 2,
   low: 1,
-  triage: 0,
 };
 
 // Status weight for sorting (lower number = shown first in priority view)

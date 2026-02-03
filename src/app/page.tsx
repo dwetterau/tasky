@@ -149,7 +149,7 @@ function CaptureItem({
       <div className="group flex items-center gap-3 bg-(--card-bg) border border-(--card-border) rounded-xl p-4 transition-all duration-200 hover:border-accent/30">
         <button
           onClick={() => toggle({ id })}
-          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all duration-200 ${
+          className={`w-6 h-6 shrink-0 rounded-lg border-2 flex items-center justify-center transition-all duration-200 ${
             completed
               ? "bg-accent border-accent"
               : "border-(--muted) hover:border-accent"
@@ -169,17 +169,17 @@ function CaptureItem({
             onBlur={handleSaveEdit}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="flex-1 bg-transparent border-b border-accent outline-none py-0.5"
+            className="flex-1 min-w-0 bg-transparent border-b border-accent outline-none py-0.5"
           />
         ) : (
           <span
             onClick={handleStartEditing}
-            className={`flex-1 cursor-text ${completed ? "line-through text-(--muted)" : ""}`}
+            className={`flex-1 min-w-0 cursor-text break-all ${completed ? "line-through text-(--muted)" : ""}`}
           >
             {text}
           </span>
         )}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={() => handleOpenModal("task")}
             className="opacity-0 group-hover:opacity-100 text-(--muted) hover:text-accent transition-all duration-200 p-1 rounded-lg hover:bg-accent/10"
