@@ -60,9 +60,11 @@ export function TagSelector({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const { position, isPositionReady } = useDropdownPosition(containerRef, isOpen);
 
@@ -72,6 +74,20 @@ export function TagSelector({
       !selectedIds.has(tag._id) &&
       tag.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Reset highlighted index when dropdown opens or available tags change
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [isOpen, search]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (isOpen && itemRefs.current[highlightedIndex]) {
+      itemRefs.current[highlightedIndex]?.scrollIntoView({
+        block: "nearest",
+      });
+    }
+  }, [highlightedIndex, isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -92,6 +108,7 @@ export function TagSelector({
   const addTag = (tag: Tag) => {
     onTagsChange([...selectedTags.map((t) => t._id), tag._id]);
     setSearch("");
+    setHighlightedIndex(0);
     inputRef.current?.focus();
   };
 
@@ -99,8 +116,40 @@ export function TagSelector({
     onTagsChange(selectedTags.filter((t) => t._id !== tagId).map((t) => t._id));
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!isOpen || availableTags.length === 0) return;
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev < availableTags.length - 1 ? prev + 1 : 0
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev > 0 ? prev - 1 : availableTags.length - 1
+        );
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (availableTags[highlightedIndex]) {
+          addTag(availableTags[highlightedIndex]);
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setIsOpen(false);
+        break;
+    }
+  };
+
   const renderDropdown = () => {
     if (!isOpen || !isPositionReady) return null;
+
+    // Reset refs array
+    itemRefs.current = [];
 
     const dropdownContent = availableTags.length > 0 ? (
       <div
@@ -112,11 +161,17 @@ export function TagSelector({
           width: position.width,
         }}
       >
-        {availableTags.map((tag) => (
+        {availableTags.map((tag, index) => (
           <button
             key={tag._id}
+            ref={(el) => { itemRefs.current[index] = el; }}
             onClick={() => addTag(tag)}
-            className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--card-border)] transition-colors flex items-center gap-2"
+            onMouseEnter={() => setHighlightedIndex(index)}
+            className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
+              index === highlightedIndex
+                ? "bg-[var(--accent)]/10 text-[var(--accent)]"
+                : "hover:bg-[var(--card-border)]"
+            }`}
           >
             <span
               className="w-3 h-3 rounded-full"
@@ -183,6 +238,7 @@ export function TagSelector({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onFocus={() => setIsOpen(true)}
+          onKeyDown={handleKeyDown}
           placeholder={selectedTags.length === 0 ? "Add tags..." : ""}
           className="flex-1 min-w-[80px] bg-transparent outline-none text-sm placeholder:text-[var(--muted)]"
         />
@@ -205,14 +261,31 @@ export function SearchTagSelector({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const { position, isPositionReady } = useDropdownPosition(containerRef, isOpen);
 
   const availableTags = allTags.filter((tag) =>
     tag.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Reset highlighted index when dropdown opens or search changes
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [isOpen, search]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (isOpen && itemRefs.current[highlightedIndex]) {
+      itemRefs.current[highlightedIndex]?.scrollIntoView({
+        block: "nearest",
+      });
+    }
+  }, [highlightedIndex, isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -230,8 +303,47 @@ export function SearchTagSelector({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const selectTag = (tag: Tag) => {
+    onTagChange(tag._id);
+    setIsOpen(false);
+    setSearch("");
+    setHighlightedIndex(0);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (availableTags.length === 0) return;
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev < availableTags.length - 1 ? prev + 1 : 0
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev > 0 ? prev - 1 : availableTags.length - 1
+        );
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (availableTags[highlightedIndex]) {
+          selectTag(availableTags[highlightedIndex]);
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setIsOpen(false);
+        break;
+    }
+  };
+
   const renderDropdown = () => {
     if (!isOpen || !isPositionReady) return null;
+
+    // Reset refs array
+    itemRefs.current = [];
 
     const dropdownContent = (
       <div
@@ -245,9 +357,11 @@ export function SearchTagSelector({
       >
         <div className="p-2 border-b border-[var(--card-border)]">
           <input
+            ref={inputRef}
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="Search tags..."
             className="w-full px-2 py-1 bg-[var(--background)] border border-[var(--card-border)] rounded text-sm focus:outline-none focus:border-[var(--accent)]"
             autoFocus
@@ -257,15 +371,17 @@ export function SearchTagSelector({
           {availableTags.length === 0 ? (
             <div className="px-3 py-2 text-sm text-[var(--muted)]">No tags found</div>
           ) : (
-            availableTags.map((tag) => (
+            availableTags.map((tag, index) => (
               <button
                 key={tag._id}
-                onClick={() => {
-                  onTagChange(tag._id);
-                  setIsOpen(false);
-                  setSearch("");
-                }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--card-border)] transition-colors flex items-center gap-2"
+                ref={(el) => { itemRefs.current[index] = el; }}
+                onClick={() => selectTag(tag)}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
+                  index === highlightedIndex
+                    ? "bg-[var(--accent)]/10 text-[var(--accent)]"
+                    : "hover:bg-[var(--card-border)]"
+                }`}
               >
                 <span
                   className="w-3 h-3 rounded-full"

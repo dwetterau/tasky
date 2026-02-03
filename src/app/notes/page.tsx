@@ -8,8 +8,8 @@ import { TagSelector, SearchTagSelector, Tag } from "../../components/TagSelecto
 import { useAuthSession } from "@/lib/useAuthSession";
 import { SignIn } from "@/components/SignIn";
 import ReactMarkdown from "react-markdown";
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useSelectedTag } from "@/lib/useSelectedTag";
 
 function CreateNoteModal({
   isOpen,
@@ -334,8 +334,6 @@ function NoteCard({
 }
 
 function NotesList() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
   const [searchText, setSearchText] = useState("");
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -350,30 +348,9 @@ function NotesList() {
     color: tag.color,
   }));
 
-  // Derive selected tag from URL - URL is the source of truth
-  const selectedTagId = useMemo(() => {
-    const tagParam = searchParams.get("tag");
-    if (tagParam && tagsQuery !== undefined) {
-      const validTag = allTags.find((t) => t._id === tagParam);
-      if (validTag) {
-        return tagParam as Id<"tags">;
-      }
-    }
-    return null;
-  }, [searchParams, allTags, tagsQuery]);
-
-  // Update URL when tag filter changes
-  const handleTagChange = useCallback((tagId: Id<"tags"> | null) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (tagId) {
-      params.set("tag", tagId);
-    } else {
-      params.delete("tag");
-    }
-    
-    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
-    router.replace(newUrl);
-  }, [searchParams, router]);
+  // Use the shared tag selection hook
+  const validTagIds = useMemo(() => allTags.map(t => t._id), [allTags]);
+  const { selectedTagId, handleTagChange } = useSelectedTag(tagsQuery !== undefined ? validTagIds : undefined);
 
   // Debounce search text to avoid too many queries
   useEffect(() => {

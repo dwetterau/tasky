@@ -8,11 +8,13 @@ import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
 import { AUTH_PENDING_KEY } from "@/lib/useAuthSession";
+import { getStoredTagId } from "@/lib/useSelectedTag";
 
 const navItems = [
   {
     name: "Captures",
     href: "/",
+    preserveTag: false,
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
@@ -22,6 +24,7 @@ const navItems = [
   {
     name: "Tasks",
     href: "/tasks",
+    preserveTag: true,
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -31,6 +34,7 @@ const navItems = [
   {
     name: "Notes",
     href: "/notes",
+    preserveTag: true,
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -40,6 +44,7 @@ const navItems = [
   {
     name: "Tags",
     href: "/tags",
+    preserveTag: false,
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
@@ -47,6 +52,15 @@ const navItems = [
     ),
   },
 ];
+
+function getNavHref(item: typeof navItems[number]): string {
+  if (!item.preserveTag) return item.href;
+  const storedTag = getStoredTagId();
+  if (storedTag) {
+    return `${item.href}?tag=${storedTag}`;
+  }
+  return item.href;
+}
 
 export function Navigation() {
   const user = useQuery(api.tags.currentUser);
@@ -93,7 +107,7 @@ export function Navigation() {
               return (
                 <Link
                   key={item.name}
-                  href={item.href}
+                  href={getNavHref(item)}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
                     isActive
                       ? "bg-(--accent)/10 text-accent"
@@ -185,7 +199,7 @@ export function Navigation() {
               return (
                 <Link
                   key={item.name}
-                  href={item.href}
+                  href={getNavHref(item)}
                   onClick={() => setMenuOpen(false)}
                   className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors ${
                     isActive
