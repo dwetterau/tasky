@@ -968,11 +968,12 @@ function TasksList() {
   
   // Use the shared tag selection hook
   const validTagIds = useMemo(() => allTags.map(t => t._id), [allTags]);
-  const { selectedTagId, handleTagChange } = useSelectedTag(tagsQuery !== undefined ? validTagIds : undefined);
+  const { selectedTagId, selectedNoTag, handleTagChange } = useSelectedTag(tagsQuery !== undefined ? validTagIds : undefined);
 
   // Refs to capture current filter state for optimistic updates
   const searchTextRef = useRef<string>("");
   const selectedTagIdRef = useRef<Id<"tags"> | null>(null);
+  const selectedNoTagRef = useRef<boolean>(false);
 
   // Drag-and-drop sensors
   const sensors = useSensors(
@@ -1006,8 +1007,9 @@ function TasksList() {
       // Also update the search query if filters are active
       const currentSearchText = searchTextRef.current.trim() || undefined;
       const currentTagId = selectedTagIdRef.current ?? undefined;
-      if (currentSearchText !== undefined || currentTagId !== undefined) {
-        const searchArgs = { searchText: currentSearchText, tagId: currentTagId };
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
         const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
         if (searchTasks !== undefined) {
           localStore.setQuery(
@@ -1041,8 +1043,9 @@ function TasksList() {
       // Also update the search query if filters are active
       const currentSearchText = searchTextRef.current.trim() || undefined;
       const currentTagId = selectedTagIdRef.current ?? undefined;
-      if (currentSearchText !== undefined || currentTagId !== undefined) {
-        const searchArgs = { searchText: currentSearchText, tagId: currentTagId };
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
         const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
         if (searchTasks !== undefined) {
           localStore.setQuery(
@@ -1081,7 +1084,11 @@ function TasksList() {
     selectedTagIdRef.current = selectedTagId;
   }, [selectedTagId]);
 
-  const isSearching = debouncedSearchText.trim() !== "" || selectedTagId !== null;
+  useEffect(() => {
+    selectedNoTagRef.current = selectedNoTag;
+  }, [selectedNoTag]);
+
+  const isSearching = debouncedSearchText.trim() !== "" || selectedTagId !== null || selectedNoTag;
 
   const allTasks = useQuery(api.tasks.list);
   const searchResults = useQuery(
@@ -1090,6 +1097,7 @@ function TasksList() {
       ? {
           searchText: debouncedSearchText.trim() || undefined,
           tagId: selectedTagId ?? undefined,
+          noTag: selectedNoTag || undefined,
         }
       : "skip"
   );
@@ -1293,6 +1301,7 @@ function TasksList() {
                 selectedTag={selectedTag}
                 onTagChange={handleTagChange}
                 allTags={allTagsFormatted}
+                selectedNoTag={selectedNoTag}
               />
 
               {/* Kanban Mode Toggle */}

@@ -249,15 +249,21 @@ export function TagSelector({
   );
 }
 
+// Special constant for "no tag" filter
+export const NO_TAG_FILTER = "__no_tag__" as const;
+export type TagFilterValue = Id<"tags"> | typeof NO_TAG_FILTER | null;
+
 // Single-select tag filter for search/filter UI
 export function SearchTagSelector({
   selectedTag,
   onTagChange,
   allTags,
+  selectedNoTag = false,
 }: {
   selectedTag: Tag | null;
-  onTagChange: (tagId: Id<"tags"> | null) => void;
+  onTagChange: (tagId: TagFilterValue) => void;
   allTags: Tag[];
+  selectedNoTag?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -310,26 +316,42 @@ export function SearchTagSelector({
     setHighlightedIndex(0);
   };
 
+  const selectNoTag = () => {
+    onTagChange(NO_TAG_FILTER);
+    setIsOpen(false);
+    setSearch("");
+    setHighlightedIndex(0);
+  };
+
+  // Include "No tag" option in the list when searching matches it
+  const showNoTagOption = "no tag".includes(search.toLowerCase()) || search === "";
+  const totalItems = (showNoTagOption ? 1 : 0) + availableTags.length;
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (availableTags.length === 0) return;
+    if (totalItems === 0) return;
 
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
         setHighlightedIndex((prev) =>
-          prev < availableTags.length - 1 ? prev + 1 : 0
+          prev < totalItems - 1 ? prev + 1 : 0
         );
         break;
       case "ArrowUp":
         e.preventDefault();
         setHighlightedIndex((prev) =>
-          prev > 0 ? prev - 1 : availableTags.length - 1
+          prev > 0 ? prev - 1 : totalItems - 1
         );
         break;
       case "Enter":
         e.preventDefault();
-        if (availableTags[highlightedIndex]) {
-          selectTag(availableTags[highlightedIndex]);
+        if (showNoTagOption && highlightedIndex === 0) {
+          selectNoTag();
+        } else {
+          const tagIndex = showNoTagOption ? highlightedIndex - 1 : highlightedIndex;
+          if (availableTags[tagIndex]) {
+            selectTag(availableTags[tagIndex]);
+          }
         }
         break;
       case "Escape":
@@ -368,28 +390,48 @@ export function SearchTagSelector({
           />
         </div>
         <div className="max-h-48 overflow-y-auto">
-          {availableTags.length === 0 ? (
+          {totalItems === 0 ? (
             <div className="px-3 py-2 text-sm text-[var(--muted)]">No tags found</div>
           ) : (
-            availableTags.map((tag, index) => (
-              <button
-                key={tag._id}
-                ref={(el) => { itemRefs.current[index] = el; }}
-                onClick={() => selectTag(tag)}
-                onMouseEnter={() => setHighlightedIndex(index)}
-                className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
-                  index === highlightedIndex
-                    ? "bg-[var(--accent)]/10 text-[var(--accent)]"
-                    : "hover:bg-[var(--card-border)]"
-                }`}
-              >
-                <span
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: tag.color || "var(--accent)" }}
-                />
-                {tag.name}
-              </button>
-            ))
+            <>
+              {showNoTagOption && (
+                <button
+                  ref={(el) => { itemRefs.current[0] = el; }}
+                  onClick={selectNoTag}
+                  onMouseEnter={() => setHighlightedIndex(0)}
+                  className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
+                    highlightedIndex === 0
+                      ? "bg-[var(--accent)]/10 text-[var(--accent)]"
+                      : "hover:bg-[var(--card-border)]"
+                  }`}
+                >
+                  <span className="w-3 h-3 rounded-full border-2 border-[var(--muted)] border-dashed" />
+                  No tag
+                </button>
+              )}
+              {availableTags.map((tag, index) => {
+                const itemIndex = showNoTagOption ? index + 1 : index;
+                return (
+                  <button
+                    key={tag._id}
+                    ref={(el) => { itemRefs.current[itemIndex] = el; }}
+                    onClick={() => selectTag(tag)}
+                    onMouseEnter={() => setHighlightedIndex(itemIndex)}
+                    className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
+                      itemIndex === highlightedIndex
+                        ? "bg-[var(--accent)]/10 text-[var(--accent)]"
+                        : "hover:bg-[var(--card-border)]"
+                    }`}
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: tag.color || "var(--accent)" }}
+                    />
+                    {tag.name}
+                  </button>
+                );
+              })}
+            </>
           )}
         </div>
       </div>
@@ -404,7 +446,23 @@ export function SearchTagSelector({
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg hover:border-[var(--accent)] transition-colors text-sm"
       >
-        {selectedTag ? (
+        {selectedNoTag ? (
+          <span className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full border-2 border-[var(--muted)] border-dashed" />
+            <span>No tag</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onTagChange(null);
+              }}
+              className="hover:opacity-70 transition-opacity ml-1"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </span>
+        ) : selectedTag ? (
           <span className="flex items-center gap-2">
             <span
               className="w-3 h-3 rounded-full"

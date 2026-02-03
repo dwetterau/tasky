@@ -235,6 +235,7 @@ export const search = query({
   args: {
     searchText: v.optional(v.string()),
     tagId: v.optional(v.id("tags")),
+    noTag: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -243,7 +244,7 @@ export const search = query({
     }
 
     // If no search criteria, return empty (use list() for all tasks)
-    if (!args.searchText && !args.tagId) {
+    if (!args.searchText && !args.tagId && !args.noTag) {
       return [];
     }
 
@@ -265,8 +266,12 @@ export const search = query({
         .collect();
     }
 
+    // If filtering by "no tag", filter for tasks with empty tagIds
+    if (args.noTag) {
+      tasks = tasks.filter((task) => task.tagIds.length === 0);
+    }
     // If tag filtering is requested, filter by tag and all its recursive children
-    if (args.tagId) {
+    else if (args.tagId) {
       const tag = await ctx.db.get(args.tagId);
       if (!tag || tag.userId !== userId) {
         return [];
