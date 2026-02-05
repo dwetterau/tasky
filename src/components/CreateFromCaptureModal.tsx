@@ -16,6 +16,8 @@ interface CreateFromCaptureModalProps {
   onConfirm: (tagIds: Id<"tags">[]) => void;
   captureText: string;
   type: "note" | "task";
+  /** Tag ID selected on the current page (tasks/notes) - takes priority over last used tag */
+  pageSelectedTagId?: Id<"tags"> | null;
 }
 
 export function CreateFromCaptureModal({
@@ -24,6 +26,7 @@ export function CreateFromCaptureModal({
   onConfirm,
   captureText,
   type,
+  pageSelectedTagId,
 }: CreateFromCaptureModalProps) {
   const allTagsQuery = useQuery(api.tags.list);
   const allTags = useMemo(() => allTagsQuery ?? [], [allTagsQuery]);
@@ -37,7 +40,10 @@ export function CreateFromCaptureModal({
   const prevIsOpenRef = useRef(false);
   const hasLoadedRef = useRef(false);
 
-  // Load last selected tag from localStorage when modal opens
+  // Load default tag when modal opens
+  // Priority: 1) pageSelectedTagId (from tasks/notes page filter)
+  //           2) last used tag from localStorage
+  //           3) null (blank)
   useEffect(() => {
     // Detect modal open transition (false -> true)
     const justOpened = isOpen && !prevIsOpenRef.current;
@@ -45,16 +51,29 @@ export function CreateFromCaptureModal({
       hasLoadedRef.current = false;
     }
 
-    // Load from localStorage when modal is open and we haven't loaded yet
+    // Load default tag when modal is open and we haven't loaded yet
     if (isOpen && !hasLoadedRef.current && allTags.length > 0) {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       let newTagId: Id<"tags"> | null = null;
-      if (saved) {
-        const tagExists = allTags.some((t) => t._id === saved);
+      
+      // Priority 1: Use page selected tag if provided and valid
+      if (pageSelectedTagId) {
+        const tagExists = allTags.some((t) => t._id === pageSelectedTagId);
         if (tagExists) {
-          newTagId = saved as Id<"tags">;
+          newTagId = pageSelectedTagId;
         }
       }
+      
+      // Priority 2: Fall back to last used tag from localStorage
+      if (!newTagId) {
+        const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (saved) {
+          const tagExists = allTags.some((t) => t._id === saved);
+          if (tagExists) {
+            newTagId = saved as Id<"tags">;
+          }
+        }
+      }
+      
       // Reading from localStorage is a legitimate sync with external state
       // eslint-disable-next-line
       setSelectedTagId(newTagId);
@@ -62,7 +81,7 @@ export function CreateFromCaptureModal({
     }
 
     prevIsOpenRef.current = isOpen;
-  }, [isOpen, allTags]);
+  }, [isOpen, allTags, pageSelectedTagId]);
 
   // Helper to close dropdown and reset search
   const closeDropdown = () => {

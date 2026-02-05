@@ -509,7 +509,7 @@ function NotesList() {
           </div>
           </div>
         </div>
-        <CapturesSidebar />
+        <CapturesSidebar pageSelectedTagId={selectedTagId} />
       </div>
 
       <CreateNoteModal

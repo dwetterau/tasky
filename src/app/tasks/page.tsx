@@ -1432,7 +1432,7 @@ function TasksList() {
           )}
           </div>
         </div>
-        <CapturesSidebar />
+        <CapturesSidebar pageSelectedTagId={selectedTagId} />
       </div>
 
       <CreateTaskModal

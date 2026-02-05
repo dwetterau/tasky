@@ -11,11 +11,13 @@ function CaptureItem({
   text,
   completed,
   includeCompleted,
+  pageSelectedTagId,
 }: {
   id: Id<"captures">;
   text: string;
   completed: boolean;
   includeCompleted: boolean;
+  pageSelectedTagId?: Id<"tags"> | null;
 }) {
   const queryArgs = { includeCompleted };
   const [modalState, setModalState] = useState<{
@@ -219,12 +221,17 @@ function CaptureItem({
         onConfirm={handleConfirm}
         captureText={text}
         type={modalState.type}
+        pageSelectedTagId={pageSelectedTagId}
       />
     </>
   );
 }
 
-export function CapturesSidebar() {
+export function CapturesSidebar({
+  pageSelectedTagId,
+}: {
+  pageSelectedTagId?: Id<"tags"> | null;
+} = {}) {
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const queryArgs = { includeCompleted };
   const captures = useQuery(api.captures.list, queryArgs);
@@ -326,6 +333,7 @@ export function CapturesSidebar() {
               text={capture.text}
               completed={capture.completed}
               includeCompleted={includeCompleted}
+              pageSelectedTagId={pageSelectedTagId}
             />
           ))
         )}
