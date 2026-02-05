@@ -142,57 +142,56 @@ function CaptureItem({
 
   return (
     <>
-      <div className="group relative bg-(--card-bg) border border-(--card-border) rounded-lg p-3 transition-all duration-200 hover:border-accent/30">
-        {/* Floating checkbox - appears on hover in top left */}
-        <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-(--card-bg) rounded-md shadow-sm border border-(--card-border) p-0.5">
+      <div className="bg-(--card-bg) border border-(--card-border) rounded-lg p-3 transition-all duration-200">
+        {/* Action row - always visible */}
+        <div className="flex items-center justify-between mb-2">
           <button
             onClick={() => toggle({ id })}
-            className={`w-6 h-6 shrink-0 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${
+            className={`p-1 rounded transition-colors ${
               completed
-                ? "bg-accent border-accent"
-                : "border-(--muted) hover:border-accent"
+                ? "text-accent"
+                : "text-(--muted) hover:text-accent"
             }`}
             title={completed ? "Mark incomplete" : "Mark complete"}
           >
-            {completed && (
-              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
+
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => handleOpenModal("task")}
+              className="text-(--muted) hover:text-accent transition-colors p-1 rounded hover:bg-accent/10"
+              title="Create task"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
-            )}
-          </button>
+            </button>
+            <button
+              onClick={() => handleOpenModal("note")}
+              className="text-(--muted) hover:text-accent transition-colors p-1 rounded hover:bg-accent/10"
+              title="Create note"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => remove({ id })}
+              className="text-(--muted) hover:text-red-400 transition-colors p-1 rounded hover:bg-red-400/10"
+              title="Delete"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Floating action buttons - appear on hover in top right */}
-        <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-(--card-bg) rounded-md shadow-sm border border-(--card-border) p-0.5">
-          <button
-            onClick={() => handleOpenModal("task")}
-            className="text-(--muted) hover:text-accent transition-colors p-1 rounded hover:bg-accent/10"
-            title="Create task"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleOpenModal("note")}
-            className="text-(--muted) hover:text-accent transition-colors p-1 rounded hover:bg-accent/10"
-            title="Create note"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => remove({ id })}
-            className="text-(--muted) hover:text-red-400 transition-colors p-1 rounded hover:bg-red-400/10"
-            title="Delete"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
+        <div className="border-t border-(--card-border) pt-2 mt-1">
+        {/* Text content */}
         {isEditing ? (
           <input
             type="text"
@@ -211,6 +210,7 @@ function CaptureItem({
             {text}
           </span>
         )}
+        </div>
       </div>
 
       <CreateFromCaptureModal
