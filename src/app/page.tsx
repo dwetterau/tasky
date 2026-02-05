@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { Navigation } from "../components/Navigation";
 import { SignIn } from "../components/SignIn";
@@ -119,13 +119,23 @@ function CaptureItem({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSaveEdit();
     } else if (e.key === "Escape") {
       handleCancelEdit();
     }
   };
+
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (isEditing && editTextareaRef.current) {
+      const textarea = editTextareaRef.current;
+      textarea.style.height = "auto";
+      textarea.style.height = textarea.scrollHeight + "px";
+    }
+  }, [isEditing, editText]);
 
   const handleOpenModal = (type: "note" | "task") => {
     setModalState({ isOpen: true, type });
@@ -146,7 +156,7 @@ function CaptureItem({
 
   return (
     <>
-      <div className="group flex items-center gap-3 bg-(--card-bg) border border-(--card-border) rounded-xl p-4 transition-all duration-200 hover:border-accent/30">
+      <div className="group flex items-start gap-3 bg-(--card-bg) border border-(--card-border) rounded-xl p-4 transition-all duration-200 hover:border-accent/30">
         <button
           onClick={() => toggle({ id })}
           className={`w-6 h-6 shrink-0 rounded-lg border-2 flex items-center justify-center transition-all duration-200 ${
@@ -162,19 +172,20 @@ function CaptureItem({
           )}
         </button>
         {isEditing ? (
-          <input
-            type="text"
+          <textarea
+            ref={editTextareaRef}
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
             onBlur={handleSaveEdit}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="flex-1 min-w-0 bg-transparent border-b border-accent outline-none py-0.5"
+            rows={1}
+            className="flex-1 min-w-0 bg-transparent border-b border-accent outline-none py-0.5 resize-none overflow-hidden"
           />
         ) : (
           <span
             onClick={handleStartEditing}
-            className={`flex-1 min-w-0 cursor-text break-all ${completed ? "line-through text-(--muted)" : ""}`}
+            className={`flex-1 min-w-0 cursor-text break-all whitespace-pre-wrap ${completed ? "line-through text-(--muted)" : ""}`}
           >
             {text}
           </span>
@@ -243,13 +254,32 @@ function CaptureList() {
     }
   );
   const [newCapture, setNewCapture] = useState("");
+  const mainTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCapture.trim()) return;
     create({ text: newCapture.trim() });
     setNewCapture("");
+    if (mainTextareaRef.current) {
+      mainTextareaRef.current.style.height = "auto";
+    }
   };
+
+  const handleMainKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  useEffect(() => {
+    if (mainTextareaRef.current) {
+      const textarea = mainTextareaRef.current;
+      textarea.style.height = "auto";
+      textarea.style.height = textarea.scrollHeight + "px";
+    }
+  }, [newCapture]);
 
   const completedCount = captures?.filter((c) => c.completed).length ?? 0;
   const totalCount = captures?.length ?? 0;
@@ -289,14 +319,16 @@ function CaptureList() {
           </div>
 
           <form onSubmit={handleSubmit} className="mb-6">
-            <div className="flex gap-3">
-              <input
-                type="text"
+            <div className="flex gap-3 items-start">
+              <textarea
+                ref={mainTextareaRef}
                 value={newCapture}
                 onChange={(e) => setNewCapture(e.target.value)}
+                onKeyDown={handleMainKeyDown}
                 placeholder="Capture something..."
                 autoFocus
-                className="flex-1 bg-(--card-bg) border border-(--card-border) rounded-xl px-4 py-3 focus:outline-none focus:border-accent transition-colors placeholder:text-(--muted)"
+                rows={1}
+                className="flex-1 bg-(--card-bg) border border-(--card-border) rounded-xl px-4 py-3 focus:outline-none focus:border-accent transition-colors placeholder:text-(--muted) resize-none overflow-hidden max-h-48"
               />
               <button
                 type="submit"

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useState, useSyncExternalStore, useCallback } from "react";
+import { useState, useSyncExternalStore, useCallback, useRef, useEffect } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { CreateFromCaptureModal } from "./CreateFromCaptureModal";
 
@@ -142,13 +142,23 @@ function CaptureItem({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSaveEdit();
     } else if (e.key === "Escape") {
       handleCancelEdit();
     }
   };
+
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (isEditing && editTextareaRef.current) {
+      const textarea = editTextareaRef.current;
+      textarea.style.height = "auto";
+      textarea.style.height = textarea.scrollHeight + "px";
+    }
+  }, [isEditing, editText]);
 
   const handleOpenModal = (type: "note" | "task") => {
     setModalState({ isOpen: true, type });
@@ -220,19 +230,20 @@ function CaptureItem({
         <div className="border-t border-(--card-border) pt-2 mt-0">
         {/* Text content */}
         {isEditing ? (
-          <input
-            type="text"
+          <textarea
+            ref={editTextareaRef}
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
             onBlur={handleSaveEdit}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="w-full min-w-0 bg-transparent border-b border-accent outline-none py-0.5 text-sm"
+            rows={1}
+            className="w-full min-w-0 bg-transparent border-b border-accent outline-none py-0.5 text-sm resize-none overflow-hidden"
           />
         ) : (
           <span
             onClick={handleStartEditing}
-            className={`block cursor-text wrap-break-word text-sm leading-relaxed ${completed ? "line-through text-(--muted)" : ""}`}
+            className={`block cursor-text wrap-break-word text-sm leading-relaxed whitespace-pre-wrap ${completed ? "line-through text-(--muted)" : ""}`}
           >
             {text}
           </span>
@@ -282,13 +293,33 @@ export function CapturesSidebar({
     }
   );
   const [newCapture, setNewCapture] = useState("");
+  const mainTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCapture.trim()) return;
     create({ text: newCapture.trim() });
     setNewCapture("");
+    // Reset textarea height after clearing
+    if (mainTextareaRef.current) {
+      mainTextareaRef.current.style.height = "auto";
+    }
   };
+
+  const handleMainKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  useEffect(() => {
+    if (mainTextareaRef.current) {
+      const textarea = mainTextareaRef.current;
+      textarea.style.height = "auto";
+      textarea.style.height = textarea.scrollHeight + "px";
+    }
+  }, [newCapture]);
 
   const completedCount = captures?.filter((c) => c.completed).length ?? 0;
   const totalCount = captures?.length ?? 0;
@@ -359,13 +390,15 @@ export function CapturesSidebar({
             </button>
           </div>
         </div>
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
-            type="text"
+        <form onSubmit={handleSubmit} className="flex gap-2 items-start">
+          <textarea
+            ref={mainTextareaRef}
             value={newCapture}
             onChange={(e) => setNewCapture(e.target.value)}
+            onKeyDown={handleMainKeyDown}
             placeholder="Capture something..."
-            className="flex-1 bg-(--card-bg) border border-(--card-border) rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-(--muted)"
+            rows={1}
+            className="flex-1 bg-(--card-bg) border border-(--card-border) rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-(--muted) resize-none overflow-hidden max-h-32"
           />
           <button
             type="submit"
