@@ -10,6 +10,7 @@ import { SignIn } from "@/components/SignIn";
 import ReactMarkdown from "react-markdown";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useSelectedTag } from "@/lib/useSelectedTag";
+import { CapturesSidebar } from "@/components/CapturesSidebar";
 import {
   DndContext,
   DragOverlay,
@@ -1259,8 +1260,9 @@ function TasksList() {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <Navigation />
-      <div className="flex-1 flex flex-col pt-24 min-h-0">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex pt-16 min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full flex-1 flex flex-col min-h-0 pt-8">
           {/* Search UI */}
           <div className="mb-6 space-y-3">
             <div className="flex gap-2 flex-wrap">
@@ -1428,7 +1430,9 @@ function TasksList() {
               </DragOverlay>
             </DndContext>
           )}
+          </div>
         </div>
+        <CapturesSidebar />
       </div>
 
       <CreateTaskModal

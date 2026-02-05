@@ -10,6 +10,7 @@ import { SignIn } from "@/components/SignIn";
 import ReactMarkdown from "react-markdown";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useSelectedTag } from "@/lib/useSelectedTag";
+import { CapturesSidebar } from "@/components/CapturesSidebar";
 
 function CreateNoteModal({
   isOpen,
@@ -386,10 +387,11 @@ function NotesList() {
   };
 
   return (
-    <>
+    <div className="h-screen flex flex-col overflow-hidden">
       <Navigation />
-      <div className="min-h-screen pt-24 pb-12 px-4">
-        <div className="max-w-2xl mx-auto">
+      <div className="flex-1 flex pt-16 min-h-0">
+        <div className="flex-1 overflow-y-auto pt-8 pb-12 px-4">
+          <div className="max-w-2xl mx-auto">
           {/* Search UI */}
           <div className="mb-6 space-y-3">
             <div className="flex gap-2">
@@ -505,7 +507,9 @@ function NotesList() {
               ))
             )}
           </div>
+          </div>
         </div>
+        <CapturesSidebar />
       </div>
 
       <CreateNoteModal
@@ -514,7 +518,7 @@ function NotesList() {
         allTags={allTagsFormatted}
         initialTagId={selectedTagId}
       />
-    </>
+    </div>
   );
 }
 
