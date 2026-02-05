@@ -142,15 +142,15 @@ function CaptureItem({
 
   return (
     <>
-      <div className="bg-(--card-bg) border border-(--card-border) rounded-lg p-3 transition-all duration-200">
+      <div className="bg-(--card-bg) border border-(--card-border) rounded-lg px-3 pb-3 pt-1 transition-all duration-200">
         {/* Action row - always visible */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between pb-1">
           <button
             onClick={() => toggle({ id })}
             className={`p-1 rounded transition-colors ${
               completed
-                ? "text-accent"
-                : "text-(--muted) hover:text-accent"
+                ? "text-accent hover:bg-green-500/10"
+                : "text-(--muted) hover:text-accent hover:bg-green-500/10"
             }`}
             title={completed ? "Mark incomplete" : "Mark complete"}
           >
@@ -190,7 +190,7 @@ function CaptureItem({
           </div>
         </div>
 
-        <div className="border-t border-(--card-border) pt-2 mt-1">
+        <div className="border-t border-(--card-border) pt-2 mt-0">
         {/* Text content */}
         {isEditing ? (
           <input
@@ -257,7 +257,7 @@ export function CapturesSidebar() {
 
   return (
     <div className="w-80 shrink-0 flex flex-col h-full border-l border-(--card-border) bg-background">
-      <div className="p-4 border-b border-(--card-border)">
+      <div className="px-2 border-b border-(--card-border)">
         <form onSubmit={handleSubmit}>
           <div className="flex gap-2">
             <input
