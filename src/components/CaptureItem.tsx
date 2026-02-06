@@ -105,11 +105,9 @@ export function CaptureItem({
 
     // Determine cursor position from where the user clicked
     let cursorPos = text.length;
-    if (document.caretRangeFromPoint) {
-      const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-      if (range) {
-        cursorPos = range.startOffset;
-      }
+    const caretPos = document.caretPositionFromPoint(e.clientX, e.clientY);
+    if (caretPos) {
+      cursorPos = caretPos.offset;
     }
 
     cursorPositionRef.current = cursorPos;
