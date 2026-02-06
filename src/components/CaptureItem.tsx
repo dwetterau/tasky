@@ -98,8 +98,21 @@ export function CaptureItem({
     }
   );
 
-  const handleStartEditing = () => {
+  const cursorPositionRef = useRef<number | null>(null);
+
+  const handleStartEditing = (e: React.MouseEvent) => {
     setEditText(text);
+
+    // Determine cursor position from where the user clicked
+    let cursorPos = text.length;
+    if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+      if (range) {
+        cursorPos = range.startOffset;
+      }
+    }
+
+    cursorPositionRef.current = cursorPos;
     setIsEditing(true);
   };
 
@@ -132,6 +145,14 @@ export function CaptureItem({
       const textarea = editTextareaRef.current;
       textarea.style.height = "auto";
       textarea.style.height = textarea.scrollHeight + "px";
+
+      // Set cursor position from the original click location
+      if (cursorPositionRef.current !== null) {
+        textarea.focus();
+        textarea.selectionStart = cursorPositionRef.current;
+        textarea.selectionEnd = cursorPositionRef.current;
+        cursorPositionRef.current = null;
+      }
     }
   }, [isEditing, editText]);
 
@@ -211,7 +232,6 @@ export function CaptureItem({
               onChange={(e) => setEditText(e.target.value)}
               onBlur={handleSaveEdit}
               onKeyDown={handleKeyDown}
-              autoFocus
               rows={1}
               className="w-full min-w-0 bg-transparent border-b border-accent outline-none py-0.5 text-sm resize-none overflow-hidden"
             />
