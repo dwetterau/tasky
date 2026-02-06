@@ -960,6 +960,7 @@ function TasksList() {
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [kanbanMode, setKanbanMode] = useState<KanbanMode>("status");
+  const [hideClosed, setHideClosed] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<Id<"tasks"> | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<TaskForEdit | null>(null);
@@ -1230,7 +1231,10 @@ function TasksList() {
     high: [],
   };
 
+  let displayedTaskCount = 0;
   for (const task of tasks ?? []) {
+    if (hideClosed && task.status === "closed") continue;
+    displayedTaskCount++;
     const taskWithTags = {
       ...task,
       tags: task.tags as Tag[],
@@ -1309,7 +1313,7 @@ function TasksList() {
               {/* Kanban Mode Toggle */}
               <div className="h-[38px] flex items-center bg-(--card-bg) border border-(--card-border) rounded-lg p-1">
                 <button
-                  onClick={() => setKanbanMode("status")}
+                  onClick={() => { setKanbanMode("status"); setHideClosed(false); }}
                   className={`px-3 py-1 text-sm rounded-md transition-colors ${
                     kanbanMode === "status"
                       ? "bg-accent text-white"
@@ -1319,7 +1323,7 @@ function TasksList() {
                   Status
                 </button>
                 <button
-                  onClick={() => setKanbanMode("priority")}
+                  onClick={() => { setKanbanMode("priority"); setHideClosed(true); }}
                   className={`px-3 py-1 text-sm rounded-md transition-colors ${
                     kanbanMode === "priority"
                       ? "bg-accent text-white"
@@ -1342,15 +1346,28 @@ function TasksList() {
             </div>
 
             <div className="flex items-center justify-between">
-              <p className="text-(--muted) text-sm">
-                {tasks === undefined
-                  ? "Loading..."
-                  : isSearching
-                  ? `${tasks.length} result${tasks.length === 1 ? "" : "s"}`
-                  : tasks.length === 0
-                  ? "No tasks yet"
-                  : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-(--muted) text-sm">
+                  {tasks === undefined
+                    ? "Loading..."
+                    : isSearching
+                    ? `${displayedTaskCount} result${displayedTaskCount === 1 ? "" : "s"}${hideClosed && tasks.length !== displayedTaskCount ? ` (${tasks.length - displayedTaskCount} closed hidden)` : ""}`
+                    : displayedTaskCount === 0 && !hideClosed
+                    ? "No tasks yet"
+                    : `${displayedTaskCount} task${displayedTaskCount === 1 ? "" : "s"}${hideClosed && tasks.length !== displayedTaskCount ? ` (${tasks.length - displayedTaskCount} closed hidden)` : ""}`}
+                </p>
+                <button
+                  onClick={() => setHideClosed(!hideClosed)}
+                  className={`flex items-center gap-1.5 text-xs transition-colors ${
+                    hideClosed ? "text-foreground" : "text-(--muted) hover:text-foreground"
+                  }`}
+                >
+                  <div className={`w-6 h-3.5 rounded-full transition-colors relative ${hideClosed ? "bg-accent" : "bg-(--card-border)"}`}>
+                    <div className={`absolute top-[2px] w-[10px] h-[10px] rounded-full bg-white transition-transform ${hideClosed ? "left-[12px]" : "left-[2px]"}`} />
+                  </div>
+                  Hide closed
+                </button>
+              </div>
               {isSearching && (
                 <button
                   onClick={clearSearch}
