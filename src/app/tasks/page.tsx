@@ -87,6 +87,7 @@ function CreateTaskModal({
   const [dueDate, setDueDate] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   const create = useMutation(api.tasks.create);
 
@@ -151,7 +152,8 @@ function CreateTaskModal({
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
-      onClick={onClose}
+      onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
+      onClick={(e) => { if (e.target === mouseDownTargetRef.current) onClose(); }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
@@ -273,6 +275,8 @@ function DeleteConfirmModal({
   onConfirm: () => void;
   taskContent: string;
 }) {
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) {
@@ -293,7 +297,8 @@ function DeleteConfirmModal({
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
-      onClick={onClose}
+      onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
+      onClick={(e) => { if (e.target === mouseDownTargetRef.current) onClose(); }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
@@ -349,6 +354,8 @@ function UnsavedChangesModal({
   onClose: () => void;
   onDiscard: () => void;
 }) {
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) {
@@ -364,7 +371,8 @@ function UnsavedChangesModal({
   return (
     <div 
       className="fixed inset-0 z-60 flex items-center justify-center p-4 cursor-default"
-      onClick={onClose}
+      onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
+      onClick={(e) => { if (e.target === mouseDownTargetRef.current) onClose(); }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
@@ -434,6 +442,7 @@ function TaskEditModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   const update = useMutation(api.tasks.update);
   const remove = useMutation(api.tasks.remove);
@@ -533,7 +542,8 @@ function TaskEditModal({
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
-      onClick={handleCloseAttempt}
+      onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
+      onClick={(e) => { if (e.target === mouseDownTargetRef.current) handleCloseAttempt(); }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
