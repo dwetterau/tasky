@@ -1,7 +1,8 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { useState, useSyncExternalStore, useCallback, useRef, useEffect } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { CaptureItem } from "./CaptureItem";
@@ -45,7 +46,7 @@ export function CapturesSidebar({
 
   const queryArgs = { includeCompleted };
   const captures = useQuery(api.captures.list, queryArgs);
-  const create = useMutation(api.captures.create).withOptimisticUpdate(
+  const create = useTrackedMutation(api.captures.create).withOptimisticUpdate(
     (localStore, args) => {
       const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {

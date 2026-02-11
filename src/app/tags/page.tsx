@@ -1,7 +1,8 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { useState, useEffect } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
 import { Navigation } from "../../components/Navigation";
@@ -148,8 +149,8 @@ function TagModal({
   parentId?: Id<"tags"> | null;
   allTags: TagNode[];
 }) {
-  const createTag = useMutation(api.tags.create);
-  const updateTag = useMutation(api.tags.update);
+  const createTag = useTrackedMutation(api.tags.create);
+  const updateTag = useTrackedMutation(api.tags.update);
   const [name, setName] = useState("");
   const [color, setColor] = useState(TAG_COLORS[0].value);
   const [selectedParentId, setSelectedParentId] = useState<Id<"tags"> | null | undefined>(null);
@@ -355,7 +356,7 @@ function DeleteConfirmModal({
 
 function TagManager() {
   const tree = useQuery(api.tags.getTree);
-  const removeTag = useMutation(api.tags.remove);
+  const removeTag = useTrackedMutation(api.tags.remove);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTag, setEditingTag] = useState<TagNode | undefined>();

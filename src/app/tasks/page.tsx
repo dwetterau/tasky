@@ -1,7 +1,8 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { Id } from "../../../convex/_generated/dataModel";
 import { Navigation } from "../../components/Navigation";
 import { TagSelector, SearchTagSelector, Tag } from "../../components/TagSelector";
@@ -89,7 +90,7 @@ function CreateTaskModal({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
-  const create = useMutation(api.tasks.create);
+  const create = useTrackedMutation(api.tasks.create);
 
   // Reset form when modal opens with new initialTagId
   useEffect(() => {
@@ -444,8 +445,8 @@ function TaskEditModal({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
-  const update = useMutation(api.tasks.update);
-  const remove = useMutation(api.tasks.remove);
+  const update = useTrackedMutation(api.tasks.update);
+  const remove = useTrackedMutation(api.tasks.remove);
 
   // Check if there are unsaved changes
   const hasUnsavedChanges = useMemo(() => {
@@ -702,7 +703,7 @@ function TaskCard({
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
 
-  const remove = useMutation(api.tasks.remove).withOptimisticUpdate(
+  const remove = useTrackedMutation(api.tasks.remove).withOptimisticUpdate(
     (localStore, args) => {
       // Update list query
       const tasks = localStore.getQuery(api.tasks.list, {});
@@ -1001,7 +1002,7 @@ function TasksList() {
   // Note: The refs are accessed in optimistic update callbacks which run at mutation-invocation
   // time (during drag-and-drop), not during render. This is safe despite the lint warning.
   /* eslint-disable */
-  const updateStatus = useMutation(api.tasks.updateStatus).withOptimisticUpdate(
+  const updateStatus = useTrackedMutation(api.tasks.updateStatus).withOptimisticUpdate(
     (localStore, args) => {
       // Update the main list query
       const listTasks = localStore.getQuery(api.tasks.list, {});
@@ -1037,7 +1038,7 @@ function TasksList() {
     }
   );
 
-  const updatePriority = useMutation(api.tasks.updatePriority).withOptimisticUpdate(
+  const updatePriority = useTrackedMutation(api.tasks.updatePriority).withOptimisticUpdate(
     (localStore, args) => {
       // Update the main list query
       const listTasks = localStore.getQuery(api.tasks.list, {});

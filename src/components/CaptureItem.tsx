@@ -1,7 +1,7 @@
 "use client";
 
-import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { useState, useRef, useEffect } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { CreateFromCaptureModal } from "./CreateFromCaptureModal";
@@ -27,7 +27,7 @@ export function CaptureItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
 
-  const toggle = useMutation(api.captures.toggle).withOptimisticUpdate(
+  const toggle = useTrackedMutation(api.captures.toggle).withOptimisticUpdate(
     (localStore, args) => {
       const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
@@ -44,7 +44,7 @@ export function CaptureItem({
     }
   );
 
-  const remove = useMutation(api.captures.remove).withOptimisticUpdate(
+  const remove = useTrackedMutation(api.captures.remove).withOptimisticUpdate(
     (localStore, args) => {
       const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
@@ -57,7 +57,7 @@ export function CaptureItem({
     }
   );
 
-  const createNoteFromCapture = useMutation(api.notes.createFromCapture).withOptimisticUpdate(
+  const createNoteFromCapture = useTrackedMutation(api.notes.createFromCapture).withOptimisticUpdate(
     (localStore, args) => {
       const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
@@ -70,7 +70,7 @@ export function CaptureItem({
     }
   );
 
-  const createTaskFromCapture = useMutation(api.tasks.createFromCapture).withOptimisticUpdate(
+  const createTaskFromCapture = useTrackedMutation(api.tasks.createFromCapture).withOptimisticUpdate(
     (localStore, args) => {
       const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
@@ -83,7 +83,7 @@ export function CaptureItem({
     }
   );
 
-  const update = useMutation(api.captures.update).withOptimisticUpdate(
+  const update = useTrackedMutation(api.captures.update).withOptimisticUpdate(
     (localStore, args) => {
       const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { Id } from "../../../convex/_generated/dataModel";
 import { Navigation } from "../../components/Navigation";
 import { TagSelector, SearchTagSelector, Tag } from "../../components/TagSelector";
@@ -28,7 +29,7 @@ function CreateNoteModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const create = useMutation(api.notes.create);
+  const create = useTrackedMutation(api.notes.create);
 
   // Reset form when modal opens with new initialTagId
   useEffect(() => {
@@ -164,7 +165,7 @@ function NoteCard({
   const [editTagIds, setEditTagIds] = useState<Id<"tags">[]>(tags.map((t) => t._id));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const remove = useMutation(api.notes.remove).withOptimisticUpdate(
+  const remove = useTrackedMutation(api.notes.remove).withOptimisticUpdate(
     (localStore, args) => {
       // Update list query
       const notes = localStore.getQuery(api.notes.list, {});
@@ -178,7 +179,7 @@ function NoteCard({
     }
   );
 
-  const update = useMutation(api.notes.update).withOptimisticUpdate(
+  const update = useTrackedMutation(api.notes.update).withOptimisticUpdate(
     (localStore, args) => {
       // Update list query
       const notes = localStore.getQuery(api.notes.list, {});
