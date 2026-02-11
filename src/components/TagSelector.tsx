@@ -450,17 +450,18 @@ export function SearchTagSelector({
           <span className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full border-2 border-[var(--muted)] border-dashed" />
             <span>No tag</span>
-            <button
+            <span
+              role="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onTagChange(null);
               }}
-              className="hover:opacity-70 transition-opacity ml-1"
+              className="hover:opacity-70 transition-opacity ml-1 cursor-pointer"
             >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-            </button>
+            </span>
           </span>
         ) : selectedTag ? (
           <span className="flex items-center gap-2">
@@ -469,17 +470,18 @@ export function SearchTagSelector({
               style={{ backgroundColor: selectedTag.color || "var(--accent)" }}
             />
             <span>{selectedTag.name}</span>
-            <button
+            <span
+              role="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onTagChange(null);
               }}
-              className="hover:opacity-70 transition-opacity ml-1"
+              className="hover:opacity-70 transition-opacity ml-1 cursor-pointer"
             >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-            </button>
+            </span>
           </span>
         ) : (
           <span className="text-[var(--muted)] flex items-center gap-2">

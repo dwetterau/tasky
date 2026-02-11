@@ -26,10 +26,29 @@ function CreateNoteModal({
 }) {
   const [content, setContent] = useState("");
   const [tagIds, setTagIds] = useState<Id<"tags">[]>(initialTagId ? [initialTagId] : []);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const create = useTrackedMutation(api.notes.create);
+  const create = useTrackedMutation(api.notes.create).withOptimisticUpdate(
+    (localStore, args) => {
+      const notes = localStore.getQuery(api.notes.list, {});
+      if (notes !== undefined) {
+        const allTagsFull = localStore.getQuery(api.tags.list, {});
+        const selectedTagsFull = (args.tagIds ?? [])
+          .map((tagId) => allTagsFull?.find((t) => t._id === tagId))
+          .filter((t): t is NonNullable<typeof t> => t !== undefined);
+
+        const tempNote = {
+          _id: crypto.randomUUID() as Id<"notes">,
+          _creationTime: Number.MAX_SAFE_INTEGER,
+          userId: "",
+          content: args.content,
+          tagIds: args.tagIds ?? [],
+          tags: selectedTagsFull,
+        };
+        localStore.setQuery(api.notes.list, {}, [tempNote, ...notes]);
+      }
+    }
+  );
 
   // Reset form when modal opens with new initialTagId
   useEffect(() => {
@@ -66,19 +85,13 @@ function CreateNoteModal({
     .map((id) => allTags.find((t) => t._id === id))
     .filter((t): t is Tag => t !== undefined);
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!content.trim()) return;
-    
-    setIsSubmitting(true);
-    try {
-      await create({
-        content: content.trim(),
-        tagIds: tagIds.length > 0 ? tagIds : undefined,
-      });
-      onClose();
-    } finally {
-      setIsSubmitting(false);
-    }
+    create({
+      content: content.trim(),
+      tagIds: tagIds.length > 0 ? tagIds : undefined,
+    });
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -134,11 +147,11 @@ function CreateNoteModal({
               Cancel
             </button>
             <button
-              onClick={() => void handleSubmit()}
-              disabled={!content.trim() || isSubmitting}
+              onClick={handleSubmit}
+              disabled={!content.trim()}
               className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? "Creating..." : "Create Note"}
+              Create Note
             </button>
           </div>
         </div>
@@ -223,8 +236,8 @@ function NoteCard({
     setEditTagIds(tags.map((t) => t._id));
   };
 
-  const saveChanges = async () => {
-    await update({
+  const saveChanges = () => {
+    update({
       id,
       content: editContent,
       tagIds: editTagIds,

@@ -86,11 +86,33 @@ function CreateTaskModal({
   const [status, setStatus] = useState<TaskStatus>("not_started");
   const [priority, setPriority] = useState<TaskPriority>("triage");
   const [dueDate, setDueDate] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
-  const create = useTrackedMutation(api.tasks.create);
+  const create = useTrackedMutation(api.tasks.create).withOptimisticUpdate(
+    (localStore, args) => {
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        const allTagsFull = localStore.getQuery(api.tags.list, {});
+        const selectedTagsFull = (args.tagIds ?? [])
+          .map((tagId) => allTagsFull?.find((t) => t._id === tagId))
+          .filter((t): t is NonNullable<typeof t> => t !== undefined);
+
+        const tempTask = {
+          _id: crypto.randomUUID() as Id<"tasks">,
+          _creationTime: Number.MAX_SAFE_INTEGER,
+          userId: "",
+          content: args.content,
+          tagIds: args.tagIds ?? [],
+          status: args.status ?? ("not_started" as const),
+          priority: args.priority ?? ("triage" as const),
+          dueDate: args.dueDate,
+          tags: selectedTagsFull,
+        };
+        localStore.setQuery(api.tasks.list, {}, [tempTask, ...tasks]);
+      }
+    }
+  );
 
   // Reset form when modal opens with new initialTagId
   useEffect(() => {
@@ -130,22 +152,16 @@ function CreateTaskModal({
     .map((id) => allTags.find((t) => t._id === id))
     .filter((t): t is Tag => t !== undefined);
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!content.trim()) return;
-    
-    setIsSubmitting(true);
-    try {
-      await create({
-        content: content.trim(),
-        tagIds: tagIds.length > 0 ? tagIds : undefined,
-        status,
-        priority,
-        dueDate: dueDate || undefined,
-      });
-      onClose();
-    } finally {
-      setIsSubmitting(false);
-    }
+    create({
+      content: content.trim(),
+      tagIds: tagIds.length > 0 ? tagIds : undefined,
+      status,
+      priority,
+      dueDate: dueDate || undefined,
+    });
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -252,11 +268,11 @@ function CreateTaskModal({
               Cancel
             </button>
             <button
-              onClick={() => void handleSubmit()}
-              disabled={!content.trim() || isSubmitting}
+              onClick={handleSubmit}
+              disabled={!content.trim()}
               className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? "Creating..." : "Create Task"}
+              Create Task
             </button>
           </div>
         </div>
@@ -439,14 +455,54 @@ function TaskEditModal({
   const [editStatus, setEditStatus] = useState<TaskStatus>(task.status);
   const [editPriority, setEditPriority] = useState<TaskPriority>(task.priority);
   const [editDueDate, setEditDueDate] = useState(task.dueDate || "");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
-  const update = useTrackedMutation(api.tasks.update);
-  const remove = useTrackedMutation(api.tasks.remove);
+  const update = useTrackedMutation(api.tasks.update).withOptimisticUpdate(
+    (localStore, args) => {
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        const allTagsFull = localStore.getQuery(api.tags.list, {});
+        localStore.setQuery(
+          api.tasks.list,
+          {},
+          tasks.map((t) => {
+            if (t._id !== args.id) return t;
+            return {
+              ...t,
+              content: args.content ?? t.content,
+              tagIds: args.tagIds ?? t.tagIds,
+              status: args.status ?? t.status,
+              priority: args.priority ?? t.priority,
+              dueDate: args.dueDate !== undefined
+                ? (args.dueDate ?? undefined)
+                : t.dueDate,
+              tags: args.tagIds
+                ? args.tagIds
+                    .map((tagId) => allTagsFull?.find((tag) => tag._id === tagId))
+                    .filter((tag): tag is NonNullable<typeof tag> => tag !== undefined)
+                : t.tags,
+            };
+          })
+        );
+      }
+    }
+  );
+
+  const remove = useTrackedMutation(api.tasks.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        localStore.setQuery(
+          api.tasks.list,
+          {},
+          tasks.filter((t) => t._id !== args.id)
+        );
+      }
+    }
+  );
 
   // Check if there are unsaved changes
   const hasUnsavedChanges = useMemo(() => {
@@ -513,23 +569,17 @@ function TaskEditModal({
     .map((id) => allTags.find((t) => t._id === id))
     .filter((t): t is Tag => t !== undefined);
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!editContent.trim()) return;
-    
-    setIsSubmitting(true);
-    try {
-      await update({
-        id: task._id,
-        content: editContent.trim(),
-        tagIds: editTagIds,
-        status: editStatus,
-        priority: editPriority,
-        dueDate: editDueDate || null,
-      });
-      onClose();
-    } finally {
-      setIsSubmitting(false);
-    }
+    update({
+      id: task._id,
+      content: editContent.trim(),
+      tagIds: editTagIds,
+      status: editStatus,
+      priority: editPriority,
+      dueDate: editDueDate || null,
+    });
+    onClose();
   };
 
   const handleDelete = () => {
@@ -653,11 +703,11 @@ function TaskEditModal({
               Cancel
             </button>
             <button
-              onClick={() => void handleSubmit()}
-              disabled={!editContent.trim() || isSubmitting}
+              onClick={handleSubmit}
+              disabled={!editContent.trim()}
               className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? "Saving..." : "Save Changes"}
+              Save Changes
             </button>
           </div>
         </div>
