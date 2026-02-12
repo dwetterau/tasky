@@ -380,10 +380,11 @@ export function TaskModal({
       
       {/* Modal */}
       <div 
-        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-2xl w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
+        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl max-w-2xl w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 mb-6">
+        {/* Fixed header */}
+        <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
               {isEditing ? (
@@ -411,92 +412,96 @@ export function TaskModal({
           )}
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-(--muted) mb-1">Content</label>
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              onKeyDown={submitOnCmdEnter(handleSubmit)}
-              className="w-full min-h-[200px] px-4 py-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
-              placeholder="What needs to be done?"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 min-h-0">
+          <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-(--muted) mb-1">Status</label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
-              >
-                {STATUS_ORDER.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_CONFIG[s].label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-(--muted) mb-1">Priority</label>
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
-              >
-                {(["triage", "low", "medium", "high"] as TaskPriority[]).map((p) => (
-                  <option key={p} value={p}>
-                    {PRIORITY_CONFIG[p].label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-(--muted) mb-1">Due Date</label>
-            <div className="relative w-full h-[38px] bg-background border border-(--card-border) rounded-lg focus-within:border-accent transition-colors">
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="absolute inset-0 w-full h-full px-3 bg-transparent focus:outline-none text-sm scheme-light dark:scheme-dark [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+              <label className="block text-xs font-medium text-(--muted) mb-1">Content</label>
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                onKeyDown={submitOnCmdEnter(handleSubmit)}
+                className="w-full min-h-[200px] px-4 py-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
+                placeholder="What needs to be done?"
               />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-(--muted)">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-(--muted) mb-1">Status</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as TaskStatus)}
+                  className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
+                >
+                  {STATUS_ORDER.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_CONFIG[s].label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-(--muted) mb-1">Priority</label>
+                <select
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value as TaskPriority)}
+                  className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
+                >
+                  {(["triage", "low", "medium", "high"] as TaskPriority[]).map((p) => (
+                    <option key={p} value={p}>
+                      {PRIORITY_CONFIG[p].label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs font-medium text-(--muted) mb-1">Tags</label>
-            <TagSelector
-              selectedTags={selectedTags}
-              onTagsChange={setTagIds}
-              allTags={allTags}
-            />
-          </div>
+            <div>
+              <label className="block text-xs font-medium text-(--muted) mb-1">Due Date</label>
+              <div className="relative w-full h-[38px] bg-background border border-(--card-border) rounded-lg focus-within:border-accent transition-colors">
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="absolute inset-0 w-full h-full px-3 bg-transparent focus:outline-none text-sm scheme-light dark:scheme-dark [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-(--muted)">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              onClick={handleCloseAttempt}
-              className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={!content.trim()}
-              className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isEditing ? "Save Changes" : "Create Task"}
-            </button>
+            <div>
+              <label className="block text-xs font-medium text-(--muted) mb-1">Tags</label>
+              <TagSelector
+                selectedTags={selectedTags}
+                onTagsChange={setTagIds}
+                allTags={allTags}
+              />
+            </div>
           </div>
+        </div>
+
+        {/* Fixed footer */}
+        <div className="flex items-center justify-end gap-3 px-5 pb-4 pt-4 border-t border-(--card-border) mt-4">
+          <button
+            onClick={handleCloseAttempt}
+            className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!content.trim()}
+            className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isEditing ? "Save Changes" : "Create Task"}
+          </button>
         </div>
 
         {isEditing && (

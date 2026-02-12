@@ -64,6 +64,15 @@ function TaskCard({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (el) {
+      setIsOverflowing(el.scrollHeight > el.clientHeight);
+    }
+  }, [task.content]);
 
   const remove = useTrackedMutation(api.tasks.remove).withOptimisticUpdate(
     (localStore, args) => {
@@ -179,25 +188,33 @@ function TaskCard({
           )}
         </div>
 
-        <div className="prose dark:prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 text-sm wrap-break-word prose-a:text-accent prose-a:no-underline hover:prose-a:underline">
-          <ReactMarkdown
-            components={{
-              a: ({ href, children }) => (
-                <a
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="text-accent hover:underline"
-                >
-                  {children}
-                </a>
-              ),
-            }}
+        <div className="relative">
+          <div
+            ref={contentRef}
+            className="prose dark:prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 text-sm wrap-break-word prose-a:text-accent prose-a:no-underline hover:prose-a:underline max-h-[200px] overflow-hidden"
           >
-            {task.content}
-          </ReactMarkdown>
+            <ReactMarkdown
+              components={{
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="text-accent hover:underline"
+                  >
+                    {children}
+                  </a>
+                ),
+              }}
+            >
+              {task.content}
+            </ReactMarkdown>
+          </div>
+          {isOverflowing && (
+            <div className="absolute bottom-0 left-0 right-0 h-16 bg-linear-to-t from-(--card-bg) to-transparent pointer-events-none" />
+          )}
         </div>
 
         <DeleteConfirmModal
