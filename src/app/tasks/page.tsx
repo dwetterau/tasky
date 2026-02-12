@@ -1407,7 +1407,24 @@ function TasksList() {
             </div>
 
             <div className="flex items-center justify-between">
+              <p className="text-(--muted) text-sm">
+                {tasks === undefined
+                  ? "Loading..."
+                  : isSearching
+                  ? `${displayedTaskCount} result${displayedTaskCount === 1 ? "" : "s"}${hideClosed && tasks.length !== displayedTaskCount ? ` (${tasks.length - displayedTaskCount} closed hidden)` : ""}`
+                  : displayedTaskCount === 0 && !hideClosed
+                  ? "No tasks yet"
+                  : `${displayedTaskCount} task${displayedTaskCount === 1 ? "" : "s"}${hideClosed && tasks.length !== displayedTaskCount ? ` (${tasks.length - displayedTaskCount} closed hidden)` : ""}`}
+              </p>
               <div className="flex items-center gap-3">
+                {isSearching && (
+                  <button
+                    onClick={clearSearch}
+                    className="text-sm text-accent hover:underline"
+                  >
+                    Clear search
+                  </button>
+                )}
                 <button
                   onClick={() => setHideClosed(!hideClosed)}
                   className={`flex items-center gap-1.5 text-xs transition-colors ${
@@ -1419,24 +1436,7 @@ function TasksList() {
                   </div>
                   Hide closed
                 </button>
-                <p className="text-(--muted) text-sm">
-                  {tasks === undefined
-                    ? "Loading..."
-                    : isSearching
-                    ? `${displayedTaskCount} result${displayedTaskCount === 1 ? "" : "s"}${hideClosed && tasks.length !== displayedTaskCount ? ` (${tasks.length - displayedTaskCount} closed hidden)` : ""}`
-                    : displayedTaskCount === 0 && !hideClosed
-                    ? "No tasks yet"
-                    : `${displayedTaskCount} task${displayedTaskCount === 1 ? "" : "s"}${hideClosed && tasks.length !== displayedTaskCount ? ` (${tasks.length - displayedTaskCount} closed hidden)` : ""}`}
-                </p>
               </div>
-              {isSearching && (
-                <button
-                  onClick={clearSearch}
-                  className="text-sm text-accent hover:underline"
-                >
-                  Clear search
-                </button>
-              )}
             </div>
           </div>
 
