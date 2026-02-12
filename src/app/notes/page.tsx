@@ -12,6 +12,7 @@ import ReactMarkdown from "react-markdown";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useSelectedTag } from "@/lib/useSelectedTag";
 import { CapturesSidebar } from "@/components/CapturesSidebar";
+import { submitOnCmdEnter } from "@/lib/keyboard";
 
 function CreateNoteModal({
   isOpen,
@@ -134,6 +135,7 @@ function CreateNoteModal({
               ref={textareaRef}
               value={content}
               onChange={(e) => setContent(e.target.value)}
+              onKeyDown={submitOnCmdEnter(handleSubmit)}
               className="w-full min-h-[150px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
               placeholder="Write your note in markdown..."
             />
@@ -277,6 +279,7 @@ function NoteCard({
             ref={textareaRef}
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
+            onKeyDown={submitOnCmdEnter(() => void saveChanges())}
             className="w-full min-h-[120px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
             placeholder="Write your note in markdown..."
           />

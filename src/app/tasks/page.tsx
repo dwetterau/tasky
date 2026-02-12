@@ -12,6 +12,7 @@ import ReactMarkdown from "react-markdown";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useSelectedTag } from "@/lib/useSelectedTag";
 import { CapturesSidebar } from "@/components/CapturesSidebar";
+import { submitOnCmdEnter } from "@/lib/keyboard";
 import {
   DndContext,
   DragOverlay,
@@ -70,22 +71,37 @@ const STATUS_WEIGHT: Record<TaskStatus, number> = {
 
 type KanbanMode = "status" | "priority";
 
-function CreateTaskModal({
+type TaskForEdit = {
+  _id: Id<"tasks">;
+  content: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate?: string;
+  tags: Tag[];
+};
+
+function TaskModal({
   isOpen,
   onClose,
+  task,
   allTags,
   initialTagId,
 }: {
   isOpen: boolean;
   onClose: () => void;
+  task?: TaskForEdit | null;
   allTags: Tag[];
-  initialTagId: Id<"tags"> | null;
+  initialTagId?: Id<"tags"> | null;
 }) {
+  const isEditing = !!task;
+
   const [content, setContent] = useState("");
-  const [tagIds, setTagIds] = useState<Id<"tags">[]>(initialTagId ? [initialTagId] : []);
+  const [tagIds, setTagIds] = useState<Id<"tags">[]>([]);
   const [status, setStatus] = useState<TaskStatus>("not_started");
   const [priority, setPriority] = useState<TaskPriority>("triage");
   const [dueDate, setDueDate] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
@@ -114,26 +130,107 @@ function CreateTaskModal({
     }
   );
 
-  // Reset form when modal opens with new initialTagId
+  const update = useTrackedMutation(api.tasks.update).withOptimisticUpdate(
+    (localStore, args) => {
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        const allTagsFull = localStore.getQuery(api.tags.list, {});
+        localStore.setQuery(
+          api.tasks.list,
+          {},
+          tasks.map((t) => {
+            if (t._id !== args.id) return t;
+            return {
+              ...t,
+              content: args.content ?? t.content,
+              tagIds: args.tagIds ?? t.tagIds,
+              status: args.status ?? t.status,
+              priority: args.priority ?? t.priority,
+              dueDate: args.dueDate !== undefined
+                ? (args.dueDate ?? undefined)
+                : t.dueDate,
+              tags: args.tagIds
+                ? args.tagIds
+                    .map((tagId) => allTagsFull?.find((tag) => tag._id === tagId))
+                    .filter((tag): tag is NonNullable<typeof tag> => tag !== undefined)
+                : t.tags,
+            };
+          })
+        );
+      }
+    }
+  );
+
+  const remove = useTrackedMutation(api.tasks.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const tasks = localStore.getQuery(api.tasks.list, {});
+      if (tasks !== undefined) {
+        localStore.setQuery(
+          api.tasks.list,
+          {},
+          tasks.filter((t) => t._id !== args.id)
+        );
+      }
+    }
+  );
+
+  // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
-      setContent("");
-      setTagIds(initialTagId ? [initialTagId] : []);
-      setStatus("not_started");
-      setPriority("triage");
-      setDueDate("");
+      if (task) {
+        setContent(task.content);
+        setTagIds(task.tags.map((t) => t._id));
+        setStatus(task.status);
+        setPriority(task.priority);
+        setDueDate(task.dueDate || "");
+      } else {
+        setContent("");
+        setTagIds(initialTagId ? [initialTagId] : []);
+        setStatus("not_started");
+        setPriority("triage");
+        setDueDate("");
+      }
+      setShowDeleteConfirm(false);
+      setShowUnsavedChanges(false);
     }
-  }, [isOpen, initialTagId]);
+  }, [isOpen, task, initialTagId]);
+
+  // Check if there are unsaved changes (edit mode only)
+  const hasUnsavedChanges = useMemo(() => {
+    if (!task) return false;
+    const originalTagIds = task.tags.map((t) => t._id).sort();
+    const currentTagIds = [...tagIds].sort();
+    const tagsChanged =
+      originalTagIds.length !== currentTagIds.length ||
+      originalTagIds.some((id, i) => id !== currentTagIds[i]);
+
+    return (
+      content !== task.content ||
+      status !== task.status ||
+      priority !== task.priority ||
+      dueDate !== (task.dueDate || "") ||
+      tagsChanged
+    );
+  }, [content, status, priority, dueDate, tagIds, task]);
+
+  // Handle close attempt - check for unsaved changes in edit mode
+  const handleCloseAttempt = useCallback(() => {
+    if (isEditing && hasUnsavedChanges) {
+      setShowUnsavedChanges(true);
+    } else {
+      onClose();
+    }
+  }, [isEditing, hasUnsavedChanges, onClose]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        onClose();
+      if (e.key === "Escape" && isOpen && !showDeleteConfirm && !showUnsavedChanges) {
+        handleCloseAttempt();
       }
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [isOpen, onClose]);
+  }, [isOpen, handleCloseAttempt, showDeleteConfirm, showUnsavedChanges]);
 
   useEffect(() => {
     if (textareaRef.current && isOpen) {
@@ -154,14 +251,33 @@ function CreateTaskModal({
 
   const handleSubmit = () => {
     if (!content.trim()) return;
-    create({
-      content: content.trim(),
-      tagIds: tagIds.length > 0 ? tagIds : undefined,
-      status,
-      priority,
-      dueDate: dueDate || undefined,
-    });
+    if (task) {
+      update({
+        id: task._id,
+        content: content.trim(),
+        tagIds,
+        status,
+        priority,
+        dueDate: dueDate || null,
+      });
+    } else {
+      create({
+        content: content.trim(),
+        tagIds: tagIds.length > 0 ? tagIds : undefined,
+        status,
+        priority,
+        dueDate: dueDate || undefined,
+      });
+    }
     onClose();
+  };
+
+  const handleDelete = () => {
+    if (task) {
+      remove({ id: task._id });
+      setShowDeleteConfirm(false);
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
@@ -170,7 +286,7 @@ function CreateTaskModal({
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
       onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
-      onClick={(e) => { if (e.target === mouseDownTargetRef.current) onClose(); }}
+      onClick={(e) => { if (e.target === mouseDownTargetRef.current) handleCloseAttempt(); }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
@@ -178,16 +294,35 @@ function CreateTaskModal({
       
       {/* Modal */}
       <div 
-        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-2xl w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
-            <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
+              {isEditing ? (
+                <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              )}
+            </div>
+            <h3 className="text-lg font-semibold">{isEditing ? "Edit Task" : "Create Task"}</h3>
           </div>
-          <h3 className="text-lg font-semibold">Create Task</h3>
+          {isEditing && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="text-(--muted) hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-400/10"
+              title="Delete task"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -197,7 +332,8 @@ function CreateTaskModal({
               ref={textareaRef}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="w-full min-h-[100px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
+              onKeyDown={submitOnCmdEnter(handleSubmit)}
+              className="w-full min-h-[200px] px-4 py-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
               placeholder="What needs to be done?"
             />
           </div>
@@ -262,7 +398,7 @@ function CreateTaskModal({
 
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
-              onClick={onClose}
+              onClick={handleCloseAttempt}
               className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
             >
               Cancel
@@ -272,10 +408,27 @@ function CreateTaskModal({
               disabled={!content.trim()}
               className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Create Task
+              {isEditing ? "Save Changes" : "Create Task"}
             </button>
           </div>
         </div>
+
+        {isEditing && (
+          <>
+            <DeleteConfirmModal
+              isOpen={showDeleteConfirm}
+              onClose={() => setShowDeleteConfirm(false)}
+              onConfirm={handleDelete}
+              taskContent={task!.content}
+            />
+
+            <UnsavedChangesModal
+              isOpen={showUnsavedChanges}
+              onClose={() => setShowUnsavedChanges(false)}
+              onDiscard={onClose}
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -427,303 +580,6 @@ function UnsavedChangesModal({
             Discard Changes
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function TaskEditModal({
-  isOpen,
-  onClose,
-  task,
-  allTags,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  task: {
-    _id: Id<"tasks">;
-    content: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueDate?: string;
-    tags: Tag[];
-  };
-  allTags: Tag[];
-}) {
-  const [editContent, setEditContent] = useState(task.content);
-  const [editTagIds, setEditTagIds] = useState<Id<"tags">[]>(task.tags.map((t) => t._id));
-  const [editStatus, setEditStatus] = useState<TaskStatus>(task.status);
-  const [editPriority, setEditPriority] = useState<TaskPriority>(task.priority);
-  const [editDueDate, setEditDueDate] = useState(task.dueDate || "");
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const mouseDownTargetRef = useRef<EventTarget | null>(null);
-
-  const update = useTrackedMutation(api.tasks.update).withOptimisticUpdate(
-    (localStore, args) => {
-      const tasks = localStore.getQuery(api.tasks.list, {});
-      if (tasks !== undefined) {
-        const allTagsFull = localStore.getQuery(api.tags.list, {});
-        localStore.setQuery(
-          api.tasks.list,
-          {},
-          tasks.map((t) => {
-            if (t._id !== args.id) return t;
-            return {
-              ...t,
-              content: args.content ?? t.content,
-              tagIds: args.tagIds ?? t.tagIds,
-              status: args.status ?? t.status,
-              priority: args.priority ?? t.priority,
-              dueDate: args.dueDate !== undefined
-                ? (args.dueDate ?? undefined)
-                : t.dueDate,
-              tags: args.tagIds
-                ? args.tagIds
-                    .map((tagId) => allTagsFull?.find((tag) => tag._id === tagId))
-                    .filter((tag): tag is NonNullable<typeof tag> => tag !== undefined)
-                : t.tags,
-            };
-          })
-        );
-      }
-    }
-  );
-
-  const remove = useTrackedMutation(api.tasks.remove).withOptimisticUpdate(
-    (localStore, args) => {
-      const tasks = localStore.getQuery(api.tasks.list, {});
-      if (tasks !== undefined) {
-        localStore.setQuery(
-          api.tasks.list,
-          {},
-          tasks.filter((t) => t._id !== args.id)
-        );
-      }
-    }
-  );
-
-  // Check if there are unsaved changes
-  const hasUnsavedChanges = useMemo(() => {
-    const originalTagIds = task.tags.map((t) => t._id).sort();
-    const currentTagIds = [...editTagIds].sort();
-    const tagsChanged = 
-      originalTagIds.length !== currentTagIds.length ||
-      originalTagIds.some((id, i) => id !== currentTagIds[i]);
-    
-    return (
-      editContent !== task.content ||
-      editStatus !== task.status ||
-      editPriority !== task.priority ||
-      editDueDate !== (task.dueDate || "") ||
-      tagsChanged
-    );
-  }, [editContent, editStatus, editPriority, editDueDate, editTagIds, task]);
-
-  // Handle close attempt - check for unsaved changes
-  const handleCloseAttempt = useCallback(() => {
-    if (hasUnsavedChanges) {
-      setShowUnsavedChanges(true);
-    } else {
-      onClose();
-    }
-  }, [hasUnsavedChanges, onClose]);
-
-  // Reset form when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setEditContent(task.content);
-      setEditTagIds(task.tags.map((t) => t._id));
-      setEditStatus(task.status);
-      setEditPriority(task.priority);
-      setEditDueDate(task.dueDate || "");
-      setShowUnsavedChanges(false);
-    }
-  }, [isOpen, task]);
-
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen && !showDeleteConfirm && !showUnsavedChanges) {
-        handleCloseAttempt();
-      }
-    };
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [isOpen, handleCloseAttempt, showDeleteConfirm, showUnsavedChanges]);
-
-  useEffect(() => {
-    if (textareaRef.current && isOpen) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
-    }
-  }, [editContent, isOpen]);
-
-  useEffect(() => {
-    if (isOpen && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [isOpen]);
-
-  const editTags = editTagIds
-    .map((id) => allTags.find((t) => t._id === id))
-    .filter((t): t is Tag => t !== undefined);
-
-  const handleSubmit = () => {
-    if (!editContent.trim()) return;
-    update({
-      id: task._id,
-      content: editContent.trim(),
-      tagIds: editTagIds,
-      status: editStatus,
-      priority: editPriority,
-      dueDate: editDueDate || null,
-    });
-    onClose();
-  };
-
-  const handleDelete = () => {
-    remove({ id: task._id });
-    setShowDeleteConfirm(false);
-    onClose();
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
-      onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
-      onClick={(e) => { if (e.target === mouseDownTargetRef.current) handleCloseAttempt(); }}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      
-      {/* Modal */}
-      <div 
-        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-2xl w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
-              <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold">Edit Task</h3>
-          </div>
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="text-(--muted) hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-400/10"
-            title="Delete task"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-(--muted) mb-1">Content</label>
-            <textarea
-              ref={textareaRef}
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              className="w-full min-h-[200px] px-4 py-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
-              placeholder="What needs to be done?"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-(--muted) mb-1">Status</label>
-              <select
-                value={editStatus}
-                onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
-                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
-              >
-                {STATUS_ORDER.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_CONFIG[s].label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-(--muted) mb-1">Priority</label>
-              <select
-                value={editPriority}
-                onChange={(e) => setEditPriority(e.target.value as TaskPriority)}
-                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
-              >
-                {(["triage", "low", "medium", "high"] as TaskPriority[]).map((p) => (
-                  <option key={p} value={p}>
-                    {PRIORITY_CONFIG[p].label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-(--muted) mb-1">Due Date</label>
-            <div className="relative w-full h-[38px] bg-background border border-(--card-border) rounded-lg focus-within:border-accent transition-colors">
-              <input
-                type="date"
-                value={editDueDate}
-                onChange={(e) => setEditDueDate(e.target.value)}
-                className="absolute inset-0 w-full h-full px-3 bg-transparent focus:outline-none text-sm scheme-light dark:scheme-dark [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-              />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-(--muted)">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-(--muted) mb-1">Tags</label>
-            <TagSelector
-              selectedTags={editTags}
-              onTagsChange={setEditTagIds}
-              allTags={allTags}
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              onClick={handleCloseAttempt}
-              className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={!editContent.trim()}
-              className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Save Changes
-            </button>
-          </div>
-        </div>
-
-        <DeleteConfirmModal
-          isOpen={showDeleteConfirm}
-          onClose={() => setShowDeleteConfirm(false)}
-          onConfirm={handleDelete}
-          taskContent={task.content}
-        />
-
-        <UnsavedChangesModal
-          isOpen={showUnsavedChanges}
-          onClose={() => setShowUnsavedChanges(false)}
-          onDiscard={onClose}
-        />
       </div>
     </div>
   );
@@ -1006,15 +862,6 @@ function KanbanColumn({
     </div>
   );
 }
-
-type TaskForEdit = {
-  _id: Id<"tasks">;
-  content: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  dueDate?: string;
-  tags: Tag[];
-};
 
 function TasksList() {
   const [searchText, setSearchText] = useState("");
@@ -1513,7 +1360,7 @@ function TasksList() {
         <CapturesSidebar pageSelectedTagId={selectedTagId} />
       </div>
 
-      <CreateTaskModal
+      <TaskModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         allTags={allTagsFormatted}
@@ -1521,7 +1368,7 @@ function TasksList() {
       />
 
       {editingTask && (
-        <TaskEditModal
+        <TaskModal
           isOpen={true}
           onClose={() => setEditingTask(null)}
           task={editingTask}

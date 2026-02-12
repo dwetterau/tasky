@@ -95,7 +95,7 @@ export function Navigation() {
 
   return (
     <nav className="fixed top-0 left-0 right-0 bg-(--card-bg) border-b border-(--card-border) z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div className="px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Logo and Nav Links */}
         <div className="flex items-center gap-6">
           <Link href="/" className="text-xl font-bold bg-linear-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
@@ -205,7 +205,7 @@ export function Navigation() {
       {/* Mobile Menu */}
       {menuOpen && (
         <div className="md:hidden border-t border-(--card-border) bg-(--card-bg)">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 space-y-1">
+          <div className="px-4 sm:px-6 lg:px-8 py-2 space-y-1">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
