@@ -49,6 +49,7 @@ export const create = mutation({
       content: args.content,
       tagIds: args.tagIds ?? [],
       createdFromCaptureId: args.createdFromCaptureId,
+      updatedAt: Date.now(),
     });
 
     // If created from a capture, delete the source capture
@@ -85,6 +86,7 @@ export const createFromCapture = mutation({
       content: capture.text,
       tagIds: args.tagIds ?? [],
       createdFromCaptureId: args.captureId,
+      updatedAt: Date.now(),
     });
 
     // Delete the capture after converting to note
@@ -110,7 +112,9 @@ export const update = mutation({
       throw new Error("Note not found or access denied");
     }
 
-    const updates: { content?: string; tagIds?: typeof args.tagIds } = {};
+    const updates: { content?: string; tagIds?: typeof args.tagIds; updatedAt: number } = {
+      updatedAt: Date.now(),
+    };
     if (args.content !== undefined) updates.content = args.content;
     if (args.tagIds !== undefined) updates.tagIds = args.tagIds;
 

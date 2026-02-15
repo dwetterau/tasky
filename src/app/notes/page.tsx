@@ -60,6 +60,7 @@ function NoteCard({
               ...n,
               content: args.content ?? n.content,
               tagIds: args.tagIds ?? n.tagIds,
+              updatedAt: Date.now(),
               // Update tags if tagIds changed
               tags: args.tagIds
                 ? args.tagIds
@@ -229,7 +230,17 @@ function NotesList() {
       : "skip"
   );
 
-  const notes = isSearching ? searchResults : allNotes;
+  const unsortedNotes = isSearching ? searchResults : allNotes;
+
+  // Sort notes by edit time descending (most recently edited first)
+  const notes = useMemo(() => {
+    if (!unsortedNotes) return unsortedNotes;
+    return [...unsortedNotes].sort((a, b) => {
+      const aTime = a.updatedAt ?? a._creationTime;
+      const bTime = b.updatedAt ?? b._creationTime;
+      return bTime - aTime;
+    });
+  }, [unsortedNotes]);
 
   const selectedTag = selectedTagId
     ? allTagsFormatted.find((t) => t._id === selectedTagId) ?? null

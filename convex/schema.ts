@@ -40,6 +40,7 @@ export default defineSchema({
     content: v.string(), // Markdown content
     tagIds: v.array(v.id("tags")),
     createdFromCaptureId: v.optional(v.id("captures")), // Track source capture
+    updatedAt: v.optional(v.number()), // Unix timestamp (ms) of last edit
   })
     .index("by_user", ["userId"])
     .searchIndex("search_content", {
