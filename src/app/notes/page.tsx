@@ -9,10 +9,10 @@ import { TagSelector, SearchTagSelector, Tag } from "../../components/TagSelecto
 import { useAuthSession } from "@/lib/useAuthSession";
 import { SignIn } from "@/components/SignIn";
 import ReactMarkdown from "react-markdown";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSelectedTag } from "@/lib/useSelectedTag";
 import { CapturesSidebar } from "@/components/CapturesSidebar";
-import { submitOnCmdEnter } from "@/lib/keyboard";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { NoteModal } from "./NoteModal";
 
 type FullTag = NonNullable<ReturnType<typeof useQuery<typeof api.tags.list>>>[number];
@@ -31,7 +31,6 @@ function NoteCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
   const [editTagIds, setEditTagIds] = useState<Id<"tags">[]>(tags.map((t) => t._id));
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const remove = useTrackedMutation(api.notes.remove).withOptimisticUpdate(
     (localStore, args) => {
@@ -100,21 +99,6 @@ function NoteCard({
     setIsEditing(false);
   };
 
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current && isEditing) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
-    }
-  }, [editContent, isEditing]);
-
-  // Focus textarea when entering edit mode
-  useEffect(() => {
-    if (isEditing && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [isEditing]);
-
   if (isEditing) {
     return (
       <div className="bg-(--card-bg) border border-(--accent)/50 rounded-xl p-6 transition-all duration-200">
@@ -127,14 +111,14 @@ function NoteCard({
           />
         </div>
         <div className="mb-4">
-          <label className="block text-xs font-medium text-(--muted) mb-2">Content (Markdown)</label>
-          <textarea
-            ref={textareaRef}
+          <label className="block text-xs font-medium text-(--muted) mb-2">Content</label>
+          <MarkdownEditor
             value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            onKeyDown={submitOnCmdEnter(() => void saveChanges())}
-            className="w-full min-h-[120px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
+            onChange={setEditContent}
+            onSubmit={() => void saveChanges()}
             placeholder="Write your note in markdown..."
+            minHeight="120px"
+            autoFocus
           />
         </div>
         <div className="flex items-center justify-end gap-2">

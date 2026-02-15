@@ -5,7 +5,7 @@ import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { TagSelector, Tag } from "../../components/TagSelector";
-import { submitOnCmdEnter } from "@/lib/keyboard";
+import { MarkdownEditor } from "../../components/MarkdownEditor";
 import {
   type TaskStatus,
   type TaskPriority,
@@ -188,7 +188,6 @@ export function TaskModal({
   const [dueDate, setDueDate] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   const create = useTrackedMutation(api.tasks.create).withOptimisticUpdate(
@@ -318,19 +317,6 @@ export function TaskModal({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [isOpen, handleCloseAttempt, showDeleteConfirm, showUnsavedChanges]);
 
-  useEffect(() => {
-    if (textareaRef.current && isOpen) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
-    }
-  }, [content, isOpen]);
-
-  useEffect(() => {
-    if (isOpen && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [isOpen]);
-
   const selectedTags = tagIds
     .map((id) => allTags.find((t) => t._id === id))
     .filter((t): t is Tag => t !== undefined);
@@ -417,13 +403,13 @@ export function TaskModal({
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-(--muted) mb-1">Content</label>
-              <textarea
-                ref={textareaRef}
+              <MarkdownEditor
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
-                onKeyDown={submitOnCmdEnter(handleSubmit)}
-                className="w-full min-h-[200px] px-4 py-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
+                onChange={setContent}
+                onSubmit={handleSubmit}
                 placeholder="What needs to be done?"
+                minHeight="200px"
+                autoFocus
               />
             </div>
 

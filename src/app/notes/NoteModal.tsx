@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { TagSelector, Tag } from "../../components/TagSelector";
-import { submitOnCmdEnter } from "@/lib/keyboard";
+import { MarkdownEditor } from "../../components/MarkdownEditor";
 
 export function NoteModal({
   isOpen,
@@ -20,7 +20,6 @@ export function NoteModal({
 }) {
   const [content, setContent] = useState("");
   const [tagIds, setTagIds] = useState<Id<"tags">[]>(initialTagId ? [initialTagId] : []);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const create = useTrackedMutation(api.notes.create).withOptimisticUpdate(
     (localStore, args) => {
@@ -61,19 +60,6 @@ export function NoteModal({
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
   }, [isOpen, onClose]);
-
-  useEffect(() => {
-    if (textareaRef.current && isOpen) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
-    }
-  }, [content, isOpen]);
-
-  useEffect(() => {
-    if (isOpen && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [isOpen]);
 
   const selectedTags = tagIds
     .map((id) => allTags.find((t) => t._id === id))
@@ -123,14 +109,14 @@ export function NoteModal({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-(--muted) mb-1">Content (Markdown)</label>
-            <textarea
-              ref={textareaRef}
+            <label className="block text-xs font-medium text-(--muted) mb-1">Content</label>
+            <MarkdownEditor
               value={content}
-              onChange={(e) => setContent(e.target.value)}
-              onKeyDown={submitOnCmdEnter(handleSubmit)}
-              className="w-full min-h-[150px] px-3 py-2 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors resize-none font-mono text-sm"
+              onChange={setContent}
+              onSubmit={handleSubmit}
               placeholder="Write your note in markdown..."
+              minHeight="150px"
+              autoFocus
             />
           </div>
 
