@@ -174,12 +174,18 @@ export function TaskModal({
   task,
   allTags,
   initialTagId,
+  initialContent,
+  createdFromCaptureId,
 }: {
   isOpen: boolean;
   onClose: () => void;
   task?: TaskForEdit | null;
   allTags: Tag[];
   initialTagId?: Id<"tags"> | null;
+  /** Pre-fill content when creating a new task (e.g. from a capture) */
+  initialContent?: string;
+  /** When set, the source capture will be deleted after task creation */
+  createdFromCaptureId?: Id<"captures">;
 }) {
   const isEditing = !!task;
 
@@ -213,6 +219,20 @@ export function TaskModal({
           tags: selectedTagsFull,
         };
         localStore.setQuery(api.tasks.list, {}, [tempTask, ...tasks]);
+      }
+
+      // If created from a capture, optimistically remove it from capture lists
+      if (args.createdFromCaptureId) {
+        for (const includeCompleted of [true, false]) {
+          const captures = localStore.getQuery(api.captures.list, { includeCompleted });
+          if (captures !== undefined) {
+            localStore.setQuery(
+              api.captures.list,
+              { includeCompleted },
+              captures.filter((c) => c._id !== args.createdFromCaptureId)
+            );
+          }
+        }
       }
     }
   );
@@ -271,7 +291,7 @@ export function TaskModal({
         setPriority(task.priority);
         setDueDate(task.dueDate || "");
       } else {
-        setContent("");
+        setContent(initialContent ?? "");
         setTagIds(initialTagId ? [initialTagId] : []);
         setStatus("not_started");
         setPriority("triage");
@@ -280,7 +300,7 @@ export function TaskModal({
       setShowDeleteConfirm(false);
       setShowUnsavedChanges(false);
     }
-  }, [isOpen, task, initialTagId]);
+  }, [isOpen, task, initialTagId, initialContent]);
 
   // Check if there are unsaved changes (edit mode only)
   const hasUnsavedChanges = useMemo(() => {
@@ -341,6 +361,7 @@ export function TaskModal({
         status,
         priority,
         dueDate: dueDate || undefined,
+        createdFromCaptureId,
       });
     }
     onClose();

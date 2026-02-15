@@ -1,11 +1,15 @@
 "use client";
 
 import { api } from "../../convex/_generated/api";
+import { useQuery } from "convex/react";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { CreateFromCaptureModal } from "./CreateFromCaptureModal";
-import type { TaskPriority } from "../../convex/schema";
+import { TaskModal } from "../app/tasks/TaskModal";
+import { Tag } from "./TagSelector";
+
+const LOCAL_STORAGE_KEY = "tasky-last-selected-tag";
 
 export function CaptureItem({
   id,
@@ -21,10 +25,27 @@ export function CaptureItem({
   pageSelectedTagId?: Id<"tags"> | null;
 }) {
   const queryArgs = { includeCompleted };
-  const [modalState, setModalState] = useState<{
-    isOpen: boolean;
-    type: "note" | "task";
-  }>({ isOpen: false, type: "note" });
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+
+  // Fetch tags for TaskModal
+  const allTagsQuery = useQuery(api.tags.list);
+  const allTags: Tag[] = useMemo(
+    () => allTagsQuery?.map((t) => ({ _id: t._id, name: t.name, color: t.color })) ?? [],
+    [allTagsQuery]
+  );
+
+  // Compute initial tag ID: pageSelectedTagId > localStorage > none
+  const initialTagId = useMemo(() => {
+    if (pageSelectedTagId && allTags.some((t) => t._id === pageSelectedTagId)) {
+      return pageSelectedTagId;
+    }
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (saved && allTags.some((t) => t._id === saved)) {
+      return saved as Id<"tags">;
+    }
+    return null;
+  }, [pageSelectedTagId, allTags]);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
 
@@ -59,19 +80,6 @@ export function CaptureItem({
   );
 
   const createNoteFromCapture = useTrackedMutation(api.notes.createFromCapture).withOptimisticUpdate(
-    (localStore, args) => {
-      const captures = localStore.getQuery(api.captures.list, queryArgs);
-      if (captures !== undefined) {
-        localStore.setQuery(
-          api.captures.list,
-          queryArgs,
-          captures.filter((capture) => capture._id !== args.captureId)
-        );
-      }
-    }
-  );
-
-  const createTaskFromCapture = useTrackedMutation(api.tasks.createFromCapture).withOptimisticUpdate(
     (localStore, args) => {
       const captures = localStore.getQuery(api.captures.list, queryArgs);
       if (captures !== undefined) {
@@ -155,21 +163,9 @@ export function CaptureItem({
     }
   }, [isEditing, editText]);
 
-  const handleOpenModal = (type: "note" | "task") => {
-    setModalState({ isOpen: true, type });
-  };
-
-  const handleCloseModal = () => {
-    setModalState({ isOpen: false, type: modalState.type });
-  };
-
-  const handleConfirm = (tagIds: Id<"tags">[], priority?: TaskPriority) => {
-    if (modalState.type === "task") {
-      createTaskFromCapture({ captureId: id, tagIds, priority });
-    } else {
-      createNoteFromCapture({ captureId: id, tagIds });
-    }
-    handleCloseModal();
+  const handleNoteConfirm = (tagIds: Id<"tags">[]) => {
+    createNoteFromCapture({ captureId: id, tagIds });
+    setShowNoteModal(false);
   };
 
   return (
@@ -193,7 +189,7 @@ export function CaptureItem({
 
           <div className="flex items-center gap-0.5">
             <button
-              onClick={() => handleOpenModal("task")}
+              onClick={() => setShowTaskModal(true)}
               className="text-(--muted) hover:text-accent transition-colors p-1 rounded hover:bg-accent/10"
               title="Create task"
             >
@@ -202,7 +198,7 @@ export function CaptureItem({
               </svg>
             </button>
             <button
-              onClick={() => handleOpenModal("note")}
+              onClick={() => setShowNoteModal(true)}
               className="text-(--muted) hover:text-accent transition-colors p-1 rounded hover:bg-accent/10"
               title="Create note"
             >
@@ -245,12 +241,21 @@ export function CaptureItem({
         </div>
       </div>
 
+      <TaskModal
+        isOpen={showTaskModal}
+        onClose={() => setShowTaskModal(false)}
+        allTags={allTags}
+        initialTagId={initialTagId}
+        initialContent={text}
+        createdFromCaptureId={id}
+      />
+
       <CreateFromCaptureModal
-        isOpen={modalState.isOpen}
-        onClose={handleCloseModal}
-        onConfirm={handleConfirm}
+        isOpen={showNoteModal}
+        onClose={() => setShowNoteModal(false)}
+        onConfirm={handleNoteConfirm}
         captureText={text}
-        type={modalState.type}
+        type="note"
         pageSelectedTagId={pageSelectedTagId}
       />
     </>

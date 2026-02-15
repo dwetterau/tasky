@@ -49,7 +49,7 @@ export const create = mutation({
     }
     const now = Date.now();
     const status = args.status ?? "not_started";
-    return await ctx.db.insert("tasks", {
+    const taskId = await ctx.db.insert("tasks", {
       userId,
       content: args.content,
       tagIds: args.tagIds ?? [],
@@ -60,6 +60,16 @@ export const create = mutation({
       statusUpdatedAt: now,
       completedAt: status === "closed" ? now : undefined,
     });
+
+    // If created from a capture, delete the source capture
+    if (args.createdFromCaptureId) {
+      const capture = await ctx.db.get(args.createdFromCaptureId);
+      if (capture && capture.userId === userId) {
+        await ctx.db.delete(args.createdFromCaptureId);
+      }
+    }
+
+    return taskId;
   },
 });
 
