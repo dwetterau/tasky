@@ -599,6 +599,7 @@ function TasksList() {
     status: TaskStatus;
     priority: TaskPriority;
     dueDate?: string;
+    completedAt?: number;
     tags: Tag[];
   };
 
@@ -629,8 +630,14 @@ function TasksList() {
   }
 
   // Sort tasks within each status column: by priority (high first), then by creation time descending
+  // Exception: closed column sorts only by time (most recently closed first), ignoring priority
   for (const status of STATUS_ORDER) {
     tasksByStatus[status].sort((a, b) => {
+      if (status === "closed") {
+        const aTime = a.completedAt ?? a._creationTime;
+        const bTime = b.completedAt ?? b._creationTime;
+        return bTime - aTime;
+      }
       const priorityDiff = PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
       if (priorityDiff !== 0) return priorityDiff;
       return b._creationTime - a._creationTime;
