@@ -6,6 +6,7 @@ import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { useState, useEffect } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
 import { Navigation } from "../../components/Navigation";
+import { ConfirmModal } from "../../components/ConfirmModal";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { SignIn } from "@/components/SignIn";
 
@@ -308,51 +309,6 @@ function TagModal({
   );
 }
 
-function DeleteConfirmModal({
-  isOpen,
-  onClose,
-  onConfirm,
-  tagName,
-  hasChildren,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  tagName: string;
-  hasChildren: boolean;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 w-full max-w-md shadow-2xl">
-        <h2 className="text-xl font-semibold mb-2">Delete Tag</h2>
-        <p className="text-(--muted) mb-4">
-          Are you sure you want to delete &quot;{tagName}&quot;?
-          {hasChildren && (
-            <span className="block mt-2 text-amber-500">
-              This tag has children. They will be moved to this tag&apos;s parent.
-            </span>
-          )}
-        </p>
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-colors"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function TagManager() {
   const tree = useQuery(api.tags.getTree);
@@ -477,15 +433,17 @@ function TagManager() {
         allTags={tree || []}
       />
 
-      <DeleteConfirmModal
+      <ConfirmModal
         isOpen={deleteModalOpen}
         onClose={() => {
           setDeleteModalOpen(false);
           setTagToDelete(undefined);
         }}
         onConfirm={confirmDelete}
-        tagName={tagToDelete?.name || ""}
-        hasChildren={(tagToDelete?.children.length || 0) > 0}
+        title="Delete Tag"
+        message={`Are you sure you want to delete "${tagToDelete?.name || ""}"?`}
+        warning={(tagToDelete?.children.length || 0) > 0 ? "This tag has children. They will be moved to this tag's parent." : undefined}
+        confirmLabel="Delete"
       />
     </>
   );

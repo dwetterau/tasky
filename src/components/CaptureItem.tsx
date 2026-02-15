@@ -7,6 +7,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { TaskModal } from "../app/tasks/TaskModal";
 import { NoteModal } from "../app/notes/NoteModal";
+import { ConfirmModal } from "./ConfirmModal";
 import { Tag } from "./TagSelector";
 
 const LOCAL_STORAGE_KEY = "tasky-last-selected-tag";
@@ -27,6 +28,7 @@ export function CaptureItem({
   const queryArgs = { includeCompleted };
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Fetch tags for TaskModal
   const allTagsQuery = useQuery(api.tags.list);
@@ -156,16 +158,12 @@ export function CaptureItem({
         {/* Action row - always visible */}
         <div className="flex items-center justify-between pb-1">
           <button
-            onClick={() => toggle({ id })}
-            className={`p-1 rounded transition-colors ${
-              completed
-                ? "text-accent hover:bg-green-500/10"
-                : "text-(--muted) hover:text-accent hover:bg-green-500/10"
-            }`}
-            title={completed ? "Mark incomplete" : "Mark complete"}
+            onClick={() => setShowDeleteConfirm(true)}
+            className="text-(--muted) hover:text-red-400 transition-colors p-1 rounded hover:bg-red-400/10"
+            title="Delete"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </button>
 
@@ -189,12 +187,16 @@ export function CaptureItem({
               </svg>
             </button>
             <button
-              onClick={() => remove({ id })}
-              className="text-(--muted) hover:text-red-400 transition-colors p-1 rounded hover:bg-red-400/10"
-              title="Delete"
+              onClick={() => toggle({ id })}
+              className={`p-1 rounded transition-colors ${
+                completed
+                  ? "text-accent hover:bg-green-500/10"
+                  : "text-(--muted) hover:text-accent hover:bg-green-500/10"
+              }`}
+              title={completed ? "Mark incomplete" : "Mark complete"}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </button>
           </div>
@@ -239,6 +241,19 @@ export function CaptureItem({
         initialTagId={initialTagId}
         initialContent={text}
         createdFromCaptureId={id}
+      />
+
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={() => {
+          remove({ id });
+          setShowDeleteConfirm(false);
+        }}
+        title="Delete Capture"
+        message="Are you sure you want to delete this capture? This action cannot be undone."
+        itemPreview={text}
+        confirmLabel="Delete"
       />
     </>
   );

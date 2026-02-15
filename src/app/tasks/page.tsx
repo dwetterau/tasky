@@ -27,7 +27,8 @@ import {
 import { useSortable } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { TaskModal, DeleteConfirmModal } from "./TaskModal";
+import { TaskModal } from "./TaskModal";
+import { ConfirmModal } from "../../components/ConfirmModal";
 import {
   type TaskStatus,
   type TaskPriority,
@@ -217,14 +218,17 @@ function TaskCard({
           )}
         </div>
 
-        <DeleteConfirmModal
+        <ConfirmModal
           isOpen={showDeleteConfirm}
           onClose={() => setShowDeleteConfirm(false)}
           onConfirm={() => {
             remove({ id: task._id });
             setShowDeleteConfirm(false);
           }}
-          taskContent={task.content}
+          title="Delete Task"
+          message="Are you sure you want to delete this task? This action cannot be undone."
+          itemPreview={task.content}
+          confirmLabel="Delete Task"
         />
 
         {(task.dueDate || (kanbanMode === "status" && task.priority !== "triage") || (kanbanMode === "priority" && task.status !== "not_started")) && (
