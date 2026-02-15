@@ -1,52 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Id } from "../../convex/_generated/dataModel";
+import { usePopover } from "@/lib/usePopover";
 
 export type Tag = { _id: Id<"tags">; name: string; color?: string };
-
-// Hook to calculate and update dropdown position
-function useDropdownPosition(
-  containerRef: React.RefObject<HTMLDivElement | null>,
-  isOpen: boolean
-) {
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
-  const [isPositionReady, setIsPositionReady] = useState(false);
-
-  const updatePosition = useCallback(() => {
-    if (containerRef.current && isOpen) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setPosition({
-        top: rect.bottom + 4,
-        left: rect.left,
-        width: rect.width,
-      });
-      setIsPositionReady(true);
-    }
-  }, [containerRef, isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      // Reset ready state when dropdown closes
-      setIsPositionReady(false);
-      return;
-    }
-
-    updatePosition();
-
-    // Update position on scroll/resize
-    window.addEventListener("scroll", updatePosition, true);
-    window.addEventListener("resize", updatePosition);
-
-    return () => {
-      window.removeEventListener("scroll", updatePosition, true);
-      window.removeEventListener("resize", updatePosition);
-    };
-  }, [isOpen, updatePosition]);
-
-  return { position, isPositionReady };
-}
 
 // Multi-select tag selector for editing items
 export function TagSelector({
@@ -62,11 +21,9 @@ export function TagSelector({
   const [search, setSearch] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const { position, isPositionReady } = useDropdownPosition(containerRef, isOpen);
+  const { refs, floatingStyles } = usePopover(isOpen);
 
   const selectedIds = new Set(selectedTags.map((t) => t._id));
   const availableTags = allTags.filter(
@@ -92,18 +49,19 @@ export function TagSelector({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
+      const reference = refs.domReference.current;
+      const floating = refs.floating.current;
       if (
-        containerRef.current &&
-        !containerRef.current.contains(target) &&
-        dropdownRef.current &&
-        !dropdownRef.current.contains(target)
+        reference &&
+        !reference.contains(target) &&
+        (!floating || !floating.contains(target))
       ) {
         setIsOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [refs]);
 
   const addTag = (tag: Tag) => {
     onTagsChange([...selectedTags.map((t) => t._id), tag._id]);
@@ -117,6 +75,13 @@ export function TagSelector({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Backspace removes the last selected tag when input is empty
+    if (e.key === "Backspace" && search === "" && selectedTags.length > 0) {
+      e.preventDefault();
+      removeTag(selectedTags[selectedTags.length - 1]._id);
+      return;
+    }
+
     if (!isOpen || availableTags.length === 0) return;
 
     switch (e.key) {
@@ -146,20 +111,16 @@ export function TagSelector({
   };
 
   const renderDropdown = () => {
-    if (!isOpen || !isPositionReady) return null;
+    if (!isOpen) return null;
 
     // Reset refs array
     itemRefs.current = [];
 
     const dropdownContent = availableTags.length > 0 ? (
       <div
-        ref={dropdownRef}
-        className="fixed z-50 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl max-h-48 overflow-y-auto"
-        style={{
-          top: position.top,
-          left: position.left,
-          width: position.width,
-        }}
+        ref={refs.setFloating}
+        style={floatingStyles}
+        className="z-50 bg-(--card-bg) border border-(--card-border) rounded-lg shadow-xl max-h-48 overflow-y-auto"
       >
         {availableTags.map((tag, index) => (
           <button
@@ -169,8 +130,8 @@ export function TagSelector({
             onMouseEnter={() => setHighlightedIndex(index)}
             className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
               index === highlightedIndex
-                ? "bg-[var(--accent)]/10 text-[var(--accent)]"
-                : "hover:bg-[var(--card-border)]"
+                ? "bg-(--accent)/10 text-accent"
+                : "hover:bg-(--card-border)"
             }`}
           >
             <span
@@ -183,13 +144,9 @@ export function TagSelector({
       </div>
     ) : search ? (
       <div
-        ref={dropdownRef}
-        className="fixed z-50 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl p-3 text-sm text-[var(--muted)]"
-        style={{
-          top: position.top,
-          left: position.left,
-          width: position.width,
-        }}
+        ref={refs.setFloating}
+        style={floatingStyles}
+        className="z-50 bg-(--card-bg) border border-(--card-border) rounded-lg shadow-xl p-3 text-sm text-(--muted)"
       >
         No matching tags
       </div>
@@ -201,9 +158,9 @@ export function TagSelector({
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={refs.setReference}>
       <div
-        className="flex flex-wrap items-center gap-2 min-h-[38px] px-3 py-2 bg-[var(--background)] border border-[var(--card-border)] rounded-lg cursor-text focus-within:border-[var(--accent)] transition-colors"
+        className="flex flex-wrap items-center gap-2 min-h-[38px] px-3 py-2 bg-background border border-(--card-border) rounded-lg cursor-text focus-within:border-accent transition-colors"
         onClick={() => {
           setIsOpen(true);
           inputRef.current?.focus();
@@ -240,7 +197,7 @@ export function TagSelector({
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={selectedTags.length === 0 ? "Add tags..." : ""}
-          className="flex-1 min-w-[80px] bg-transparent outline-none text-sm placeholder:text-[var(--muted)]"
+          className="flex-1 min-w-[80px] bg-transparent outline-none text-sm placeholder:text-(--muted)"
         />
       </div>
 
@@ -268,12 +225,10 @@ export function SearchTagSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const { position, isPositionReady } = useDropdownPosition(containerRef, isOpen);
+  const { refs, floatingStyles } = usePopover(isOpen, { matchWidth: false });
 
   const availableTags = allTags.filter((tag) =>
     tag.name.toLowerCase().includes(search.toLowerCase())
@@ -296,18 +251,19 @@ export function SearchTagSelector({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
+      const reference = refs.domReference.current;
+      const floating = refs.floating.current;
       if (
-        containerRef.current &&
-        !containerRef.current.contains(target) &&
-        dropdownRef.current &&
-        !dropdownRef.current.contains(target)
+        reference &&
+        !reference.contains(target) &&
+        (!floating || !floating.contains(target))
       ) {
         setIsOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [refs]);
 
   const selectTag = (tag: Tag) => {
     onTagChange(tag._id);
@@ -362,22 +318,18 @@ export function SearchTagSelector({
   };
 
   const renderDropdown = () => {
-    if (!isOpen || !isPositionReady) return null;
+    if (!isOpen) return null;
 
     // Reset refs array
     itemRefs.current = [];
 
     const dropdownContent = (
       <div
-        ref={dropdownRef}
-        className="fixed z-50 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl min-w-[200px] max-h-64 overflow-hidden"
-        style={{
-          top: position.top,
-          left: position.left,
-          minWidth: Math.max(position.width, 200),
-        }}
+        ref={refs.setFloating}
+        style={floatingStyles}
+        className="z-50 bg-(--card-bg) border border-(--card-border) rounded-lg shadow-xl min-w-[200px] max-h-64 overflow-hidden"
       >
-        <div className="p-2 border-b border-[var(--card-border)]">
+        <div className="p-2 border-b border-(--card-border)">
           <input
             ref={inputRef}
             type="text"
@@ -385,13 +337,13 @@ export function SearchTagSelector({
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search tags..."
-            className="w-full px-2 py-1 bg-[var(--background)] border border-[var(--card-border)] rounded text-sm focus:outline-none focus:border-[var(--accent)]"
+            className="w-full px-2 py-1 bg-background border border-(--card-border) rounded text-sm focus:outline-none focus:border-accent"
             autoFocus
           />
         </div>
         <div className="max-h-48 overflow-y-auto">
           {totalItems === 0 ? (
-            <div className="px-3 py-2 text-sm text-[var(--muted)]">No tags found</div>
+            <div className="px-3 py-2 text-sm text-(--muted)">No tags found</div>
           ) : (
             <>
               {showNoTagOption && (
@@ -401,11 +353,11 @@ export function SearchTagSelector({
                   onMouseEnter={() => setHighlightedIndex(0)}
                   className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
                     highlightedIndex === 0
-                      ? "bg-[var(--accent)]/10 text-[var(--accent)]"
-                      : "hover:bg-[var(--card-border)]"
+                      ? "bg-(--accent)/10 text-accent"
+                      : "hover:bg-(--card-border)"
                   }`}
                 >
-                  <span className="w-3 h-3 rounded-full border-2 border-[var(--muted)] border-dashed" />
+                  <span className="w-3 h-3 rounded-full border-2 border-(--muted) border-dashed" />
                   No tag
                 </button>
               )}
@@ -419,8 +371,8 @@ export function SearchTagSelector({
                     onMouseEnter={() => setHighlightedIndex(itemIndex)}
                     className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
                       itemIndex === highlightedIndex
-                        ? "bg-[var(--accent)]/10 text-[var(--accent)]"
-                        : "hover:bg-[var(--card-border)]"
+                        ? "bg-(--accent)/10 text-accent"
+                        : "hover:bg-(--card-border)"
                     }`}
                   >
                     <span
@@ -441,14 +393,14 @@ export function SearchTagSelector({
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={refs.setReference}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 h-[38px] px-3 bg-[var(--background)] border border-[var(--card-border)] rounded-lg hover:border-[var(--accent)] transition-colors text-sm"
+        className="flex items-center gap-2 h-[38px] px-3 bg-background border border-(--card-border) rounded-lg hover:border-accent transition-colors text-sm"
       >
         {selectedNoTag ? (
           <span className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full border-2 border-[var(--muted)] border-dashed" />
+            <span className="w-3 h-3 rounded-full border-2 border-(--muted) border-dashed" />
             <span>No tag</span>
             <span
               role="button"
@@ -484,7 +436,7 @@ export function SearchTagSelector({
             </span>
           </span>
         ) : (
-          <span className="text-[var(--muted)] flex items-center gap-2">
+          <span className="text-(--muted) flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
             </svg>

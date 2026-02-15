@@ -67,6 +67,7 @@ export const createFromCapture = mutation({
   args: {
     captureId: v.id("captures"),
     tagIds: v.optional(v.array(v.id("tags"))),
+    priority: v.optional(taskPriority),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -87,7 +88,7 @@ export const createFromCapture = mutation({
       content: capture.text,
       tagIds: args.tagIds ?? [],
       status: "not_started",
-      priority: "triage",
+      priority: args.priority ?? "triage",
       createdFromCaptureId: args.captureId,
       statusUpdatedAt: now,
     });

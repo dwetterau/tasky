@@ -5,6 +5,7 @@ import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { useState, useRef, useEffect } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { CreateFromCaptureModal } from "./CreateFromCaptureModal";
+import type { TaskPriority } from "../../convex/schema";
 
 export function CaptureItem({
   id,
@@ -162,9 +163,9 @@ export function CaptureItem({
     setModalState({ isOpen: false, type: modalState.type });
   };
 
-  const handleConfirm = (tagIds: Id<"tags">[]) => {
+  const handleConfirm = (tagIds: Id<"tags">[], priority?: TaskPriority) => {
     if (modalState.type === "task") {
-      createTaskFromCapture({ captureId: id, tagIds });
+      createTaskFromCapture({ captureId: id, tagIds, priority });
     } else {
       createNoteFromCapture({ captureId: id, tagIds });
     }

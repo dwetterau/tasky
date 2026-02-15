@@ -5,6 +5,7 @@ import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { TagSelector, Tag } from "../../components/TagSelector";
+import { StyledSelect, type SelectOption } from "../../components/StyledSelect";
 import { MarkdownEditor } from "../../components/MarkdownEditor";
 import {
   type TaskStatus,
@@ -13,6 +14,7 @@ import {
   STATUS_CONFIG,
   STATUS_ORDER,
   PRIORITY_CONFIG,
+  PRIORITY_ORDER,
 } from "./constants";
 
 export function DeleteConfirmModal({
@@ -416,32 +418,28 @@ export function TaskModal({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-(--muted) mb-1">Status</label>
-                <select
+                <StyledSelect
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                  className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
-                >
-                  {STATUS_ORDER.map((s) => (
-                    <option key={s} value={s}>
-                      {STATUS_CONFIG[s].label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setStatus(v as TaskStatus)}
+                  options={STATUS_ORDER.map((s): SelectOption => ({
+                    value: s,
+                    label: STATUS_CONFIG[s].label,
+                    color: STATUS_CONFIG[s].color,
+                  }))}
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-(--muted) mb-1">Priority</label>
-                <select
+                <StyledSelect
                   value={priority}
-                  onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                  className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
-                >
-                  {(["triage", "low", "medium", "high"] as TaskPriority[]).map((p) => (
-                    <option key={p} value={p}>
-                      {PRIORITY_CONFIG[p].label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setPriority(v as TaskPriority)}
+                  options={PRIORITY_ORDER.map((p): SelectOption => ({
+                    value: p,
+                    label: PRIORITY_CONFIG[p].label,
+                    color: PRIORITY_CONFIG[p].color,
+                  }))}
+                />
               </div>
             </div>
 
