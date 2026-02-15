@@ -44,12 +44,22 @@ export const create = mutation({
     if (!userId) {
       throw new Error("Not authenticated");
     }
-    return await ctx.db.insert("notes", {
+    const noteId = await ctx.db.insert("notes", {
       userId,
       content: args.content,
       tagIds: args.tagIds ?? [],
       createdFromCaptureId: args.createdFromCaptureId,
     });
+
+    // If created from a capture, delete the source capture
+    if (args.createdFromCaptureId) {
+      const capture = await ctx.db.get(args.createdFromCaptureId);
+      if (capture && capture.userId === userId) {
+        await ctx.db.delete(args.createdFromCaptureId);
+      }
+    }
+
+    return noteId;
   },
 });
 

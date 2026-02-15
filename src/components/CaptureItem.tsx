@@ -5,8 +5,8 @@ import { useQuery } from "convex/react";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { Id } from "../../convex/_generated/dataModel";
-import { CreateFromCaptureModal } from "./CreateFromCaptureModal";
 import { TaskModal } from "../app/tasks/TaskModal";
+import { NoteModal } from "../app/notes/NoteModal";
 import { Tag } from "./TagSelector";
 
 const LOCAL_STORAGE_KEY = "tasky-last-selected-tag";
@@ -74,19 +74,6 @@ export function CaptureItem({
           api.captures.list,
           queryArgs,
           captures.filter((capture) => capture._id !== args.id)
-        );
-      }
-    }
-  );
-
-  const createNoteFromCapture = useTrackedMutation(api.notes.createFromCapture).withOptimisticUpdate(
-    (localStore, args) => {
-      const captures = localStore.getQuery(api.captures.list, queryArgs);
-      if (captures !== undefined) {
-        localStore.setQuery(
-          api.captures.list,
-          queryArgs,
-          captures.filter((capture) => capture._id !== args.captureId)
         );
       }
     }
@@ -162,11 +149,6 @@ export function CaptureItem({
       }
     }
   }, [isEditing, editText]);
-
-  const handleNoteConfirm = (tagIds: Id<"tags">[]) => {
-    createNoteFromCapture({ captureId: id, tagIds });
-    setShowNoteModal(false);
-  };
 
   return (
     <>
@@ -250,13 +232,13 @@ export function CaptureItem({
         createdFromCaptureId={id}
       />
 
-      <CreateFromCaptureModal
+      <NoteModal
         isOpen={showNoteModal}
         onClose={() => setShowNoteModal(false)}
-        onConfirm={handleNoteConfirm}
-        captureText={text}
-        type="note"
-        pageSelectedTagId={pageSelectedTagId}
+        allTags={allTags}
+        initialTagId={initialTagId}
+        initialContent={text}
+        createdFromCaptureId={id}
       />
     </>
   );

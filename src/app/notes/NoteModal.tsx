@@ -12,11 +12,17 @@ export function NoteModal({
   onClose,
   allTags,
   initialTagId,
+  initialContent,
+  createdFromCaptureId,
 }: {
   isOpen: boolean;
   onClose: () => void;
   allTags: Tag[];
   initialTagId: Id<"tags"> | null;
+  /** Pre-fill content when creating a new note (e.g. from a capture) */
+  initialContent?: string;
+  /** When set, the source capture will be deleted after note creation */
+  createdFromCaptureId?: Id<"captures">;
 }) {
   const [content, setContent] = useState("");
   const [tagIds, setTagIds] = useState<Id<"tags">[]>(initialTagId ? [initialTagId] : []);
@@ -40,16 +46,30 @@ export function NoteModal({
         };
         localStore.setQuery(api.notes.list, {}, [tempNote, ...notes]);
       }
+
+      // If created from a capture, optimistically remove it from capture lists
+      if (args.createdFromCaptureId) {
+        for (const includeCompleted of [true, false]) {
+          const captures = localStore.getQuery(api.captures.list, { includeCompleted });
+          if (captures !== undefined) {
+            localStore.setQuery(
+              api.captures.list,
+              { includeCompleted },
+              captures.filter((c) => c._id !== args.createdFromCaptureId)
+            );
+          }
+        }
+      }
     }
   );
 
   // Reset form when modal opens with new initialTagId
   useEffect(() => {
     if (isOpen) {
-      setContent("");
+      setContent(initialContent ?? "");
       setTagIds(initialTagId ? [initialTagId] : []);
     }
-  }, [isOpen, initialTagId]);
+  }, [isOpen, initialTagId, initialContent]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -70,6 +90,7 @@ export function NoteModal({
     create({
       content: content.trim(),
       tagIds: tagIds.length > 0 ? tagIds : undefined,
+      createdFromCaptureId,
     });
     onClose();
   };
