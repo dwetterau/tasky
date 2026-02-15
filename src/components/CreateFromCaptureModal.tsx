@@ -149,9 +149,18 @@ export function CreateFromCaptureModal({
           <p className="text-sm line-clamp-3">{captureText}</p>
         </div>
 
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-2">Tags</label>
+          <TagSelector
+            selectedTags={selectedTags}
+            onTagsChange={setSelectedTagIds}
+            allTags={allTags}
+          />
+        </div>
+
         {/* Priority selector - only for tasks */}
         {type === "task" && (
-          <div className="mb-4">
+          <div className="mb-6">
             <label className="block text-sm font-medium mb-2">Priority</label>
             <StyledSelect
               value={priority}
@@ -160,17 +169,6 @@ export function CreateFromCaptureModal({
             />
           </div>
         )}
-
-        <div className="mb-6">
-          <label className="block text-sm font-medium mb-2">
-            Tags (optional)
-          </label>
-          <TagSelector
-            selectedTags={selectedTags}
-            onTagsChange={setSelectedTagIds}
-            allTags={allTags}
-          />
-        </div>
 
         <div className="flex gap-3">
           <button
