@@ -181,10 +181,10 @@ export function TagSelector({
                 e.stopPropagation();
                 removeTag(tag._id);
               }}
-              className="hover:opacity-70 transition-opacity"
+              className="inline-flex items-center justify-center rounded-full p-0.5 -mr-0.5 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
             >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg className="w-2.5 h-2.5 -translate-y-px" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </span>
@@ -408,10 +408,10 @@ export function SearchTagSelector({
                 e.stopPropagation();
                 onTagChange(null);
               }}
-              className="hover:opacity-70 transition-opacity ml-1 cursor-pointer"
+              className="inline-flex items-center justify-center rounded-full p-0.5 ml-0.5 cursor-pointer hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
             >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg className="w-2.5 h-2.5 -translate-y-px" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </span>
           </span>
@@ -428,10 +428,10 @@ export function SearchTagSelector({
                 e.stopPropagation();
                 onTagChange(null);
               }}
-              className="hover:opacity-70 transition-opacity ml-1 cursor-pointer"
+              className="inline-flex items-center justify-center rounded-full p-0.5 ml-0.5 cursor-pointer hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
             >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg className="w-2.5 h-2.5 -translate-y-px" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </span>
           </span>

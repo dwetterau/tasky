@@ -2,8 +2,8 @@
 """Generate favicon.ico for the Tasky app.
 
 Draws a kanban board icon: emerald green rounded square background
-with white card rectangles arranged in 3 columns (3, 2, 1 cards)
-to suggest tasks flowing through stages.
+with white card rectangles arranged in 2 columns with irregular
+heights to suggest a real kanban board with varied task sizes.
 
 Uses the app's accent color: #10b981 (emerald green).
 """
@@ -28,30 +28,25 @@ def create_favicon(size: int) -> Image.Image:
         fill=EMERALD,
     )
 
-    card_r = max(1, int(1.2 * s))
+    card_r = max(1, int(1.5 * s))
 
-    # Column 1 — 3 cards
-    for y in (5, 12, 19):
+    # Column 1 — 3 cards, irregular heights (9, 5.5, 6)
+    col1_cards = [(4, 4, 14.5, 13), (4, 15, 14.5, 20.5), (4, 22.5, 14.5, 28.5)]
+    for x1, y1, x2, y2 in col1_cards:
         draw.rounded_rectangle(
-            [(int(3 * s), int(y * s)), (int(10.5 * s), int((y + 5) * s))],
+            [(int(x1 * s), int(y1 * s)), (int(x2 * s), int(y2 * s))],
             radius=card_r,
             fill=CARD_COLOR,
         )
 
-    # Column 2 — 2 cards
-    for y in (5, 12):
+    # Column 2 — 2 cards, irregular heights (6.5, 10)
+    col2_cards = [(17.5, 4, 28, 10.5), (17.5, 12.5, 28, 22.5)]
+    for x1, y1, x2, y2 in col2_cards:
         draw.rounded_rectangle(
-            [(int(12.25 * s), int(y * s)), (int(19.75 * s), int((y + 5) * s))],
+            [(int(x1 * s), int(y1 * s)), (int(x2 * s), int(y2 * s))],
             radius=card_r,
             fill=CARD_COLOR,
         )
-
-    # Column 3 — 1 card
-    draw.rounded_rectangle(
-        [(int(21.5 * s), int(5 * s)), (int(29 * s), int(10 * s))],
-        radius=card_r,
-        fill=CARD_COLOR,
-    )
 
     return img
 
