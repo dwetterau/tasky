@@ -146,7 +146,7 @@ function TaskCard({
       {...listeners}
       onPointerDown={handlePointerDown}
       onClick={handleClick}
-      className={`group relative bg-(--card-bg) border border-(--card-border) rounded-xl overflow-hidden transition-all duration-200 hover:border-(--accent)/30 flex cursor-grab active:cursor-grabbing ${isDraggingProp ? "ring-2 ring-accent shadow-lg" : ""}`}
+      className={`group relative bg-(--card-bg) border border-(--card-border) rounded-xl overflow-hidden transition-all duration-200 [&:hover:not(:has(a:hover))]:border-(--accent)/30 flex cursor-grab active:cursor-grabbing ${isDraggingProp ? "ring-2 ring-accent shadow-lg" : ""}`}
     >
       {/* Accent bar */}
       <div
@@ -192,7 +192,7 @@ function TaskCard({
         <div className="relative">
           <div
             ref={contentRef}
-            className="prose dark:prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 text-sm wrap-break-word prose-a:text-accent prose-a:no-underline hover:prose-a:underline max-h-[200px] overflow-hidden"
+            className="prose dark:prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 text-sm wrap-break-word prose-a:text-accent prose-a:no-underline max-h-[200px] overflow-hidden"
           >
             <ReactMarkdown
               components={{
