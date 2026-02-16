@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as captures from "../captures.js";
+import type * as events from "../events.js";
 import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
 import type * as notes from "../notes.js";
@@ -26,6 +27,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   captures: typeof captures;
+  events: typeof events;
   http: typeof http;
   migrations: typeof migrations;
   notes: typeof notes;

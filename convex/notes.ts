@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "./auth";
 import { Id } from "./_generated/dataModel";
+import { insertEvent } from "./events";
 
 export const list = query({
   args: {},
@@ -44,18 +45,31 @@ export const create = mutation({
     if (!userId) {
       throw new Error("Not authenticated");
     }
+    const tagIds = args.tagIds ?? [];
     const noteId = await ctx.db.insert("notes", {
       userId,
       content: args.content,
-      tagIds: args.tagIds ?? [],
+      tagIds,
       createdFromCaptureId: args.createdFromCaptureId,
       updatedAt: Date.now(),
+    });
+
+    await insertEvent(ctx, {
+      userId,
+      entityId: noteId,
+      action: { type: "note.created" },
+      tagIds: tagIds.length > 0 ? tagIds : undefined,
     });
 
     // If created from a capture, delete the source capture
     if (args.createdFromCaptureId) {
       const capture = await ctx.db.get(args.createdFromCaptureId);
       if (capture && capture.userId === userId) {
+        await insertEvent(ctx, {
+          userId,
+          entityId: args.createdFromCaptureId,
+          action: { type: "capture.filed_as_note" },
+        });
         await ctx.db.delete(args.createdFromCaptureId);
       }
     }
@@ -80,13 +94,26 @@ export const createFromCapture = mutation({
       throw new Error("Capture not found or access denied");
     }
 
+    const tagIds = args.tagIds ?? [];
     // Create a note with the capture text as initial content
     const noteId = await ctx.db.insert("notes", {
       userId,
       content: capture.text,
-      tagIds: args.tagIds ?? [],
+      tagIds,
       createdFromCaptureId: args.captureId,
       updatedAt: Date.now(),
+    });
+
+    await insertEvent(ctx, {
+      userId,
+      entityId: noteId,
+      action: { type: "note.created" },
+      tagIds: tagIds.length > 0 ? tagIds : undefined,
+    });
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.captureId,
+      action: { type: "capture.filed_as_note" },
     });
 
     // Delete the capture after converting to note
@@ -119,6 +146,14 @@ export const update = mutation({
     if (args.tagIds !== undefined) updates.tagIds = args.tagIds;
 
     await ctx.db.patch(args.id, updates);
+
+    const effectiveTagIds = args.tagIds ?? note.tagIds;
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.id,
+      action: { type: "note.edited" },
+      tagIds: effectiveTagIds.length > 0 ? effectiveTagIds : undefined,
+    });
   },
 });
 
@@ -133,6 +168,12 @@ export const remove = mutation({
     if (!note || note.userId !== userId) {
       throw new Error("Note not found or access denied");
     }
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.id,
+      action: { type: "note.deleted" },
+      tagIds: note.tagIds.length > 0 ? note.tagIds : undefined,
+    });
     await ctx.db.delete(args.id);
   },
 });

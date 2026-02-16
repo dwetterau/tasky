@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "./auth";
 import { Id } from "./_generated/dataModel";
 import { taskStatus, taskPriority } from "./schema";
+import { insertEvent } from "./events";
 
 export const list = query({
   args: {},
@@ -61,10 +62,23 @@ export const create = mutation({
       completedAt: status === "closed" ? now : undefined,
     });
 
+    const tagIds = args.tagIds ?? [];
+    await insertEvent(ctx, {
+      userId,
+      entityId: taskId,
+      action: { type: "task.created" },
+      tagIds: tagIds.length > 0 ? tagIds : undefined,
+    });
+
     // If created from a capture, delete the source capture
     if (args.createdFromCaptureId) {
       const capture = await ctx.db.get(args.createdFromCaptureId);
       if (capture && capture.userId === userId) {
+        await insertEvent(ctx, {
+          userId,
+          entityId: args.createdFromCaptureId,
+          action: { type: "capture.filed_as_task" },
+        });
         await ctx.db.delete(args.createdFromCaptureId);
       }
     }
@@ -101,6 +115,19 @@ export const createFromCapture = mutation({
       priority: args.priority ?? "triage",
       createdFromCaptureId: args.captureId,
       statusUpdatedAt: now,
+    });
+
+    const tagIds = args.tagIds ?? [];
+    await insertEvent(ctx, {
+      userId,
+      entityId: taskId,
+      action: { type: "task.created" },
+      tagIds: tagIds.length > 0 ? tagIds : undefined,
+    });
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.captureId,
+      action: { type: "capture.filed_as_task" },
     });
 
     // Delete the capture after converting to task
@@ -156,6 +183,34 @@ export const update = mutation({
     if (args.dueDate !== undefined) updates.dueDate = args.dueDate ?? undefined;
 
     await ctx.db.patch(args.id, updates);
+
+    const effectiveTagIds = args.tagIds ?? task.tagIds;
+    const eventTagIds = effectiveTagIds.length > 0 ? effectiveTagIds : undefined;
+
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.id,
+      action: { type: "task.edited" },
+      tagIds: eventTagIds,
+    });
+
+    if (args.status !== undefined && args.status !== task.status) {
+      await insertEvent(ctx, {
+        userId,
+        entityId: args.id,
+        action: { type: "task.status_changed", from: task.status, to: args.status },
+        tagIds: eventTagIds,
+      });
+    }
+
+    if (args.priority !== undefined && args.priority !== task.priority) {
+      await insertEvent(ctx, {
+        userId,
+        entityId: args.id,
+        action: { type: "task.priority_changed", from: task.priority, to: args.priority },
+        tagIds: eventTagIds,
+      });
+    }
   },
 });
 
@@ -198,6 +253,13 @@ export const updateStatus = mutation({
     }
 
     await ctx.db.patch(args.id, updates);
+
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.id,
+      action: { type: "task.status_changed", from: task.status, to: args.status },
+      tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+    });
   },
 });
 
@@ -223,6 +285,13 @@ export const updatePriority = mutation({
     }
 
     await ctx.db.patch(args.id, { priority: args.priority });
+
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.id,
+      action: { type: "task.priority_changed", from: task.priority, to: args.priority },
+      tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+    });
   },
 });
 
@@ -237,6 +306,12 @@ export const remove = mutation({
     if (!task || task.userId !== userId) {
       throw new Error("Task not found or access denied");
     }
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.id,
+      action: { type: "task.deleted" },
+      tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+    });
     await ctx.db.delete(args.id);
   },
 });

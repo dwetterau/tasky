@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "./auth";
+import { insertEvent } from "./events";
 
 export const list = query({
   args: {
@@ -43,11 +44,17 @@ export const create = mutation({
     if (!userId) {
       throw new Error("Not authenticated");
     }
-    return await ctx.db.insert("captures", {
+    const captureId = await ctx.db.insert("captures", {
       userId,
       text: args.text,
       completed: false,
     });
+    await insertEvent(ctx, {
+      userId,
+      entityId: captureId,
+      action: { type: "capture.created" },
+    });
+    return captureId;
   },
 });
 
@@ -62,9 +69,15 @@ export const toggle = mutation({
     if (!capture || capture.userId !== userId) {
       throw new Error("Capture not found or access denied");
     }
+    const newCompleted = !capture.completed;
     await ctx.db.patch(args.id, {
-      completed: !capture.completed,
+      completed: newCompleted,
       statusUpdatedAt: Date.now(),
+    });
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.id,
+      action: { type: newCompleted ? "capture.completed" : "capture.uncompleted" },
     });
   },
 });
@@ -80,6 +93,11 @@ export const remove = mutation({
     if (!capture || capture.userId !== userId) {
       throw new Error("Capture not found or access denied");
     }
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.id,
+      action: { type: "capture.deleted" },
+    });
     await ctx.db.delete(args.id);
   },
 });
@@ -96,5 +114,10 @@ export const update = mutation({
       throw new Error("Capture not found or access denied");
     }
     await ctx.db.patch(args.id, { text: args.text });
+    await insertEvent(ctx, {
+      userId,
+      entityId: args.id,
+      action: { type: "capture.edited" },
+    });
   },
 });

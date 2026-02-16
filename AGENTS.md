@@ -1,4 +1,4 @@
-# Tasky - Agent Context
+t st# Tasky - Agent Context
 
 ## What this is
 
@@ -25,6 +25,8 @@ src/
       NoteModal.tsx        # Create note modal (shared by page + captures)
     tags/
       page.tsx            # Hierarchical tag manager
+    dashboard/
+      page.tsx            # Activity dashboard with Recharts visualizations
     ConvexClientProvider.tsx
     layout.tsx
   components/
@@ -47,6 +49,7 @@ convex/
   captures.ts             # Capture CRUD
   tasks.ts                # Task CRUD + search + status/priority updates
   notes.ts                # Note CRUD + search
+  events.ts               # Event logging helper + time-range query for dashboard
   tags.ts                 # Tag CRUD with recursive hierarchy management
   http.ts                 # HTTP routes for auth callbacks
 ```
@@ -56,9 +59,10 @@ convex/
 - **captures**: `userId`, `text`, `completed`, `statusUpdatedAt`
 - **tasks**: `userId`, `content` (markdown), `tagIds[]`, `status` (not_started/in_progress/blocked/closed), `priority` (triage/low/medium/high), `dueDate`, `completedAt`, `statusUpdatedAt`, `createdFromCaptureId`
 - **notes**: `userId`, `content` (markdown), `tagIds[]`, `createdFromCaptureId`
+- **events**: `userId`, `timestamp`, `entityId` (string), `action` (discriminated union by `type` e.g. `"task.status_changed"` with `from`/`to`), `tagIds[]` (snapshot at event time)
 - **tags**: `userId`, `name`, `parentId`, `color`, `childrenRecursive[]` (denormalized descendant IDs)
 
-All tables have a `by_user` index. Tasks/notes have full-text `search_content` indexes.
+All tables have a `by_user` index. Tasks/notes have full-text `search_content` indexes. Events has `by_user_timestamp` for time-range queries.
 
 ## Key patterns
 
@@ -67,6 +71,7 @@ All tables have a `by_user` index. Tasks/notes have full-text `search_content` i
 - **Capture conversion**: Captures can be converted to tasks or notes. The `tasks.create` and `notes.create` mutations accept `createdFromCaptureId` and atomically delete the source capture.
 - **Tag hierarchy**: Tags support parent-child relationships. `childrenRecursive` is maintained on write so queries can efficiently filter by a tag and all descendants.
 - **Auth guard**: Every query/mutation calls `getAuthUserId(ctx)`. Queries return `[]` if unauthenticated; mutations throw.
+- **Auth (client-side)**: `useAuthSession()` (from `src/lib/useAuthSession.ts`) wraps Better Auth's `authClient.useSession()` and returns `{ session, isPending }`. Pages check auth by destructuring these two fields: show a spinner while `isPending` is true, render `<SignIn />` if `!session`, otherwise render page content. There is no `isAuthenticated` field -- use `session` as a truthy check instead.
 
 ## Conventions
 

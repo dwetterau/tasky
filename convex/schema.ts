@@ -23,6 +23,30 @@ export const taskPriority = v.union(
   v.literal("high")
 );
 
+// Event action discriminated union -- keyed by `type`, entity type encoded in prefix
+export const eventAction = v.union(
+  // Capture actions
+  v.object({ type: v.literal("capture.created") }),
+  v.object({ type: v.literal("capture.completed") }),
+  v.object({ type: v.literal("capture.uncompleted") }),
+  v.object({ type: v.literal("capture.filed_as_task") }),
+  v.object({ type: v.literal("capture.filed_as_note") }),
+  v.object({ type: v.literal("capture.edited") }),
+  v.object({ type: v.literal("capture.deleted") }),
+  // Task actions
+  v.object({ type: v.literal("task.created") }),
+  v.object({ type: v.literal("task.status_changed"), from: taskStatus, to: taskStatus }),
+  v.object({ type: v.literal("task.priority_changed"), from: taskPriority, to: taskPriority }),
+  v.object({ type: v.literal("task.edited") }),
+  v.object({ type: v.literal("task.deleted") }),
+  // Note actions
+  v.object({ type: v.literal("note.created") }),
+  v.object({ type: v.literal("note.edited") }),
+  v.object({ type: v.literal("note.deleted") }),
+);
+
+export type EventAction = typeof eventAction.type;
+
 // Note: better-auth manages its own tables (users, sessions, accounts, verifications)
 // through the component. Our app tables use string userId to reference better-auth users.
 export default defineSchema({
@@ -65,6 +89,15 @@ export default defineSchema({
       searchField: "content",
       filterFields: ["userId"],
     }),
+
+  events: defineTable({
+    userId: v.string(),
+    timestamp: v.number(), // Unix ms
+    entityId: v.string(), // Doc ID as string (entity may be deleted later)
+    action: eventAction,
+    tagIds: v.optional(v.array(v.id("tags"))), // snapshot of entity tags at event time
+  })
+    .index("by_user_timestamp", ["userId", "timestamp"]),
 
   tags: defineTable({
     userId: v.string(),
