@@ -28,7 +28,6 @@ import { useSortable } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { TaskModal } from "./TaskModal";
-import { ConfirmModal } from "../../components/ConfirmModal";
 import {
   type TaskStatus,
   type TaskPriority,
@@ -62,7 +61,6 @@ function TaskCard({
   isColumnDropTarget?: boolean;
   onOpenEditModal?: () => void;
 }) {
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -74,20 +72,6 @@ function TaskCard({
       setIsOverflowing(el.scrollHeight > el.clientHeight);
     }
   }, [task.content]);
-
-  const remove = useTrackedMutation(api.tasks.remove).withOptimisticUpdate(
-    (localStore, args) => {
-      // Update list query
-      const tasks = localStore.getQuery(api.tasks.list, {});
-      if (tasks !== undefined) {
-        localStore.setQuery(
-          api.tasks.list,
-          {},
-          tasks.filter((t) => t._id !== args.id)
-        );
-      }
-    }
-  );
 
   const {
     attributes,
@@ -155,22 +139,7 @@ function TaskCard({
       />
 
       <div className="flex-1 p-4 min-w-0">
-        {/* Delete button - positioned absolutely to avoid being pushed off */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowDeleteConfirm(true);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 text-(--muted) hover:text-red-400 transition-all duration-200 p-1.5 rounded-lg bg-(--card-bg)/80 backdrop-blur-sm hover:bg-red-400/10 shadow-sm"
-          title="Delete task"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-
-        <div className="flex flex-wrap gap-1.5 mb-2 pr-10">
+        <div className="flex flex-wrap gap-1.5 mb-2">
           {task.tags.length === 0 ? (
             <span className="text-xs text-(--muted)">No tags</span>
           ) : (
@@ -217,19 +186,6 @@ function TaskCard({
             <div className="absolute bottom-0 left-0 right-0 h-16 bg-linear-to-t from-(--card-bg) to-transparent pointer-events-none" />
           )}
         </div>
-
-        <ConfirmModal
-          isOpen={showDeleteConfirm}
-          onClose={() => setShowDeleteConfirm(false)}
-          onConfirm={() => {
-            remove({ id: task._id });
-            setShowDeleteConfirm(false);
-          }}
-          title="Delete Task"
-          message="Are you sure you want to delete this task? This action cannot be undone."
-          itemPreview={task.content}
-          confirmLabel="Delete Task"
-        />
 
         {(task.dueDate || (kanbanMode === "status" && task.priority !== "triage") || (kanbanMode === "priority" && task.status !== "not_started")) && (
           <div className="flex items-center gap-3 mt-3 text-xs text-(--muted)">

@@ -93,12 +93,15 @@ export function MarkdownEditor({
     },
   });
 
-  // Sync external value changes into the editor
+  // Sync external value changes into the editor.
+  // emitUpdate: false prevents onUpdate from firing, which would call onChange
+  // with the re-serialized (possibly slightly different) markdown, causing
+  // false-positive "unsaved changes" detection in parent components.
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     const currentMd = getMarkdown(editor);
     if (value !== currentMd) {
-      editor.commands.setContent(value);
+      editor.commands.setContent(value, { emitUpdate: false });
     }
   }, [value, editor]);
 
