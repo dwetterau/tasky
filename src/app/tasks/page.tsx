@@ -27,7 +27,7 @@ import {
 import { useSortable } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { TaskModal } from "./TaskModal";
+import { TaskModal, type TaskSearchArgs } from "./TaskModal";
 import {
   type TaskStatus,
   type TaskPriority,
@@ -433,6 +433,15 @@ function TasksList() {
 
   const isSearching = debouncedSearchText.trim() !== "" || selectedTagId !== null || selectedNoTag;
 
+  const activeSearchArgs: TaskSearchArgs | undefined = useMemo(() => {
+    if (!isSearching) return undefined;
+    return {
+      searchText: debouncedSearchText.trim() || undefined,
+      tagId: selectedTagId ?? undefined,
+      noTag: selectedNoTag || undefined,
+    };
+  }, [isSearching, debouncedSearchText, selectedTagId, selectedNoTag]);
+
   const allTasks = useQuery(api.tasks.list);
   const searchResults = useQuery(
     api.tasks.search,
@@ -797,7 +806,7 @@ function TasksList() {
           )}
           </div>
         </div>
-        <CapturesSidebar pageSelectedTagId={selectedTagId} />
+        <CapturesSidebar pageSelectedTagId={selectedTagId} pageTaskSearchArgs={activeSearchArgs} />
       </div>
 
       <TaskModal
@@ -805,6 +814,7 @@ function TasksList() {
         onClose={() => setShowCreateModal(false)}
         allTags={allTagsFormatted}
         initialTagId={selectedTagId}
+        activeSearchArgs={activeSearchArgs}
       />
 
       {editingTask && (
@@ -813,6 +823,7 @@ function TasksList() {
           onClose={() => setEditingTask(null)}
           task={editingTask}
           allTags={allTagsFormatted}
+          activeSearchArgs={activeSearchArgs}
         />
       )}
     </div>

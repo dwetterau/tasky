@@ -34,8 +34,10 @@ function useSidebarCollapsed() {
 
 export function CapturesSidebar({
   pageSelectedTagId,
+  pageTaskSearchArgs,
 }: {
   pageSelectedTagId?: Id<"tags"> | null;
+  pageTaskSearchArgs?: { searchText?: string; tagId?: Id<"tags">; noTag?: boolean };
 } = {}) {
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const [isCollapsed, setCollapsed] = useSidebarCollapsed();
@@ -199,6 +201,7 @@ export function CapturesSidebar({
               completed={capture.completed}
               includeCompleted={includeCompleted}
               pageSelectedTagId={pageSelectedTagId}
+              pageTaskSearchArgs={pageTaskSearchArgs}
             />
           ))
         )}

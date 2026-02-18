@@ -18,12 +18,14 @@ export function CaptureItem({
   completed,
   includeCompleted,
   pageSelectedTagId,
+  pageTaskSearchArgs,
 }: {
   id: Id<"captures">;
   text: string;
   completed: boolean;
   includeCompleted: boolean;
   pageSelectedTagId?: Id<"tags"> | null;
+  pageTaskSearchArgs?: { searchText?: string; tagId?: Id<"tags">; noTag?: boolean };
 }) {
   const queryArgs = { includeCompleted };
   const [showNoteModal, setShowNoteModal] = useState(false);
@@ -232,6 +234,7 @@ export function CaptureItem({
         initialTagId={initialTagId}
         initialContent={text}
         createdFromCaptureId={id}
+        activeSearchArgs={pageTaskSearchArgs}
       />
 
       <NoteModal

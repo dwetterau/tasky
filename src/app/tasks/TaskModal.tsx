@@ -88,6 +88,12 @@ function UnsavedChangesModal({
   );
 }
 
+export type TaskSearchArgs = {
+  searchText?: string;
+  tagId?: Id<"tags">;
+  noTag?: boolean;
+};
+
 export function TaskModal({
   isOpen,
   onClose,
@@ -96,6 +102,7 @@ export function TaskModal({
   initialTagId,
   initialContent,
   createdFromCaptureId,
+  activeSearchArgs,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -106,6 +113,8 @@ export function TaskModal({
   initialContent?: string;
   /** When set, the source capture will be deleted after task creation */
   createdFromCaptureId?: Id<"captures">;
+  /** Current search/filter args on the tasks page, so optimistic updates also patch the search query */
+  activeSearchArgs?: TaskSearchArgs;
 }) {
   const isEditing = !!task;
 
@@ -120,28 +129,56 @@ export function TaskModal({
 
   const create = useTrackedMutation(api.tasks.create).withOptimisticUpdate(
     (localStore, args) => {
+      const allTagsFull = localStore.getQuery(api.tags.list, {});
+      const selectedTagsFull = (args.tagIds ?? [])
+        .map((tagId) => allTagsFull?.find((t) => t._id === tagId))
+        .filter((t): t is NonNullable<typeof t> => t !== undefined);
+
+      const tempTask = {
+        _id: crypto.randomUUID() as Id<"tasks">,
+        _creationTime: Number.MAX_SAFE_INTEGER,
+        userId: "",
+        content: args.content,
+        tagIds: args.tagIds ?? [],
+        status: args.status ?? ("not_started" as const),
+        priority: args.priority ?? ("triage" as const),
+        dueDate: args.dueDate,
+        tags: selectedTagsFull,
+      };
+
       const tasks = localStore.getQuery(api.tasks.list, {});
       if (tasks !== undefined) {
-        const allTagsFull = localStore.getQuery(api.tags.list, {});
-        const selectedTagsFull = (args.tagIds ?? [])
-          .map((tagId) => allTagsFull?.find((t) => t._id === tagId))
-          .filter((t): t is NonNullable<typeof t> => t !== undefined);
-
-        const tempTask = {
-          _id: crypto.randomUUID() as Id<"tasks">,
-          _creationTime: Number.MAX_SAFE_INTEGER,
-          userId: "",
-          content: args.content,
-          tagIds: args.tagIds ?? [],
-          status: args.status ?? ("not_started" as const),
-          priority: args.priority ?? ("triage" as const),
-          dueDate: args.dueDate,
-          tags: selectedTagsFull,
-        };
         localStore.setQuery(api.tasks.list, {}, [tempTask, ...tasks]);
       }
 
-      // If created from a capture, optimistically remove it from capture lists
+      if (activeSearchArgs) {
+        const searchTasks = localStore.getQuery(api.tasks.search, activeSearchArgs);
+        if (searchTasks !== undefined) {
+          const taskTagIds = args.tagIds ?? [];
+          let matches = true;
+
+          if (activeSearchArgs.noTag) {
+            matches = taskTagIds.length === 0;
+          } else if (activeSearchArgs.tagId) {
+            const filterTag = allTagsFull?.find(t => t._id === activeSearchArgs.tagId);
+            const matchingIds = new Set<Id<"tags">>([activeSearchArgs.tagId]);
+            if (filterTag?.childrenRecursive) {
+              for (const childId of filterTag.childrenRecursive) {
+                matchingIds.add(childId);
+              }
+            }
+            matches = taskTagIds.some(id => matchingIds.has(id));
+          }
+          if (activeSearchArgs.searchText && matches) {
+            matches = args.content.toLowerCase().includes(activeSearchArgs.searchText.toLowerCase());
+          }
+
+          if (matches) {
+            localStore.setQuery(api.tasks.search, activeSearchArgs, [tempTask, ...searchTasks]);
+          }
+        }
+      }
+
       if (args.createdFromCaptureId) {
         for (const includeCompleted of [true, false]) {
           const captures = localStore.getQuery(api.captures.list, { includeCompleted });
@@ -159,31 +196,37 @@ export function TaskModal({
 
   const update = useTrackedMutation(api.tasks.update).withOptimisticUpdate(
     (localStore, args) => {
+      const allTagsFull = localStore.getQuery(api.tags.list, {});
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const applyUpdate = (t: any) => {
+        if (t._id !== args.id) return t;
+        return {
+          ...t,
+          content: args.content ?? t.content,
+          tagIds: args.tagIds ?? t.tagIds,
+          status: args.status ?? t.status,
+          priority: args.priority ?? t.priority,
+          dueDate: args.dueDate !== undefined
+            ? (args.dueDate ?? undefined)
+            : t.dueDate,
+          tags: args.tagIds
+            ? args.tagIds
+                .map((tagId) => allTagsFull?.find((tag) => tag._id === tagId))
+                .filter((tag): tag is NonNullable<typeof tag> => tag !== undefined)
+            : t.tags,
+        };
+      };
+
       const tasks = localStore.getQuery(api.tasks.list, {});
       if (tasks !== undefined) {
-        const allTagsFull = localStore.getQuery(api.tags.list, {});
-        localStore.setQuery(
-          api.tasks.list,
-          {},
-          tasks.map((t) => {
-            if (t._id !== args.id) return t;
-            return {
-              ...t,
-              content: args.content ?? t.content,
-              tagIds: args.tagIds ?? t.tagIds,
-              status: args.status ?? t.status,
-              priority: args.priority ?? t.priority,
-              dueDate: args.dueDate !== undefined
-                ? (args.dueDate ?? undefined)
-                : t.dueDate,
-              tags: args.tagIds
-                ? args.tagIds
-                    .map((tagId) => allTagsFull?.find((tag) => tag._id === tagId))
-                    .filter((tag): tag is NonNullable<typeof tag> => tag !== undefined)
-                : t.tags,
-            };
-          })
-        );
+        localStore.setQuery(api.tasks.list, {}, tasks.map(applyUpdate));
+      }
+
+      if (activeSearchArgs) {
+        const searchTasks = localStore.getQuery(api.tasks.search, activeSearchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(api.tasks.search, activeSearchArgs, searchTasks.map(applyUpdate));
+        }
       }
     }
   );
@@ -192,11 +235,14 @@ export function TaskModal({
     (localStore, args) => {
       const tasks = localStore.getQuery(api.tasks.list, {});
       if (tasks !== undefined) {
-        localStore.setQuery(
-          api.tasks.list,
-          {},
-          tasks.filter((t) => t._id !== args.id)
-        );
+        localStore.setQuery(api.tasks.list, {}, tasks.filter((t) => t._id !== args.id));
+      }
+
+      if (activeSearchArgs) {
+        const searchTasks = localStore.getQuery(api.tasks.search, activeSearchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(api.tasks.search, activeSearchArgs, searchTasks.filter((t) => t._id !== args.id));
+        }
       }
     }
   );
