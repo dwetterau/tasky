@@ -10,7 +10,7 @@ import { useAuthSession } from "@/lib/useAuthSession";
 import { SignIn } from "@/components/SignIn";
 import ReactMarkdown from "react-markdown";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useSelectedTag } from "@/lib/useSelectedTag";
+import { usePageTagFilter } from "@/lib/usePageTagFilter";
 import { CapturesSidebar } from "@/components/CapturesSidebar";
 import {
   DndContext,
@@ -306,12 +306,8 @@ function TasksList() {
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<TaskForEdit | null>(null);
 
-  const tagsQuery = useQuery(api.tags.list);
-  const allTags = useMemo(() => tagsQuery ?? [], [tagsQuery]);
-  
-  // Use the shared tag selection hook
-  const validTagIds = useMemo(() => allTags.map(t => t._id), [allTags]);
-  const { selectedTagId, selectedNoTag, handleTagChange } = useSelectedTag(tagsQuery !== undefined ? validTagIds : undefined);
+  const { allTags, selectedTag, selectedTagId, selectedNoTag, handleTagChange } =
+    usePageTagFilter({ allowNoTag: true });
 
   // Refs to capture current filter state for optimistic updates
   const searchTextRef = useRef<string>("");
@@ -405,12 +401,6 @@ function TasksList() {
   );
   /* eslint-enable */
 
-  const allTagsFormatted: Tag[] = allTags.map((tag) => ({
-    _id: tag._id,
-    name: tag.name,
-    color: tag.color,
-  }));
-
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchText(searchText);
@@ -455,10 +445,6 @@ function TasksList() {
   );
 
   const tasks = isSearching ? searchResults : allTasks;
-
-  const selectedTag = selectedTagId
-    ? allTagsFormatted.find((t) => t._id === selectedTagId) ?? null
-    : null;
 
   const clearSearch = () => {
     setSearchText("");
@@ -663,7 +649,7 @@ function TasksList() {
               <SearchTagSelector
                 selectedTag={selectedTag}
                 onTagChange={handleTagChange}
-                allTags={allTagsFormatted}
+                allTags={allTags}
                 selectedNoTag={selectedNoTag}
               />
 
@@ -812,7 +798,7 @@ function TasksList() {
       <TaskModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        allTags={allTagsFormatted}
+        allTags={allTags}
         initialTagId={selectedTagId}
         activeSearchArgs={activeSearchArgs}
       />
@@ -822,7 +808,7 @@ function TasksList() {
           isOpen={true}
           onClose={() => setEditingTask(null)}
           task={editingTask}
-          allTags={allTagsFormatted}
+          allTags={allTags}
           activeSearchArgs={activeSearchArgs}
         />
       )}

@@ -4,10 +4,11 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { Navigation } from "../../components/Navigation";
-import { SearchTagSelector, Tag } from "../../components/TagSelector";
+import { SearchTagSelector } from "../../components/TagSelector";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { SignIn } from "@/components/SignIn";
 import { useState, useMemo, useEffect } from "react";
+import { usePageTagFilter } from "@/lib/usePageTagFilter";
 import {
   Bar,
   BarChart,
@@ -195,21 +196,11 @@ const TOOLTIP_STYLE = {
 
 function DashboardContent() {
   const [timeRange, setTimeRange] = useState<TimeRange>(() => getStoredTimeRange());
-  const [tagId, setTagId] = useState<Id<"tags"> | null>(null);
+  const { allTags, selectedTag, selectedTagId, handleTagChange } = usePageTagFilter();
 
   useEffect(() => {
     localStorage.setItem(DASHBOARD_TIME_RANGE_KEY, timeRange);
   }, [timeRange]);
-
-  const tags = useQuery(api.tags.list);
-  const allTags: Tag[] = useMemo(
-    () => (tags ?? []).map((t) => ({ _id: t._id, name: t.name, color: t.color })),
-    [tags]
-  );
-  const selectedTag = useMemo(
-    () => allTags.find((t) => t._id === tagId) ?? null,
-    [allTags, tagId]
-  );
 
   const { startTime, endTime } = useMemo(
     () => getTimeRangeBounds(timeRange),
@@ -218,7 +209,7 @@ function DashboardContent() {
   const events = useQuery(api.events.listByTimeRange, {
     startTime,
     endTime,
-    tagId: tagId ?? undefined,
+    tagId: selectedTagId ?? undefined,
   });
 
   const granularity: "day" | "week" =
@@ -443,13 +434,7 @@ function DashboardContent() {
             {/* Tag filter */}
             <SearchTagSelector
               selectedTag={selectedTag}
-              onTagChange={(value) => {
-                if (value === null || value === "__no_tag__") {
-                  setTagId(null);
-                } else {
-                  setTagId(value as Id<"tags">);
-                }
-              }}
+              onTagChange={handleTagChange}
               allTags={allTags}
             />
           </div>

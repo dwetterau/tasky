@@ -5,12 +5,12 @@ import { api } from "../../../convex/_generated/api";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { Id } from "../../../convex/_generated/dataModel";
 import { Navigation } from "../../components/Navigation";
-import { TagSelector, SearchTagSelector, Tag } from "../../components/TagSelector";
+import { TagSelector, SearchTagSelector } from "../../components/TagSelector";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { SignIn } from "@/components/SignIn";
 import ReactMarkdown from "react-markdown";
 import { useState, useEffect, useMemo } from "react";
-import { useSelectedTag } from "@/lib/useSelectedTag";
+import { usePageTagFilter } from "@/lib/usePageTagFilter";
 import { CapturesSidebar } from "@/components/CapturesSidebar";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { NoteModal } from "./NoteModal";
@@ -194,19 +194,8 @@ function NotesList() {
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  const tagsQuery = useQuery(api.tags.list);
-  const allTags = useMemo(() => tagsQuery ?? [], [tagsQuery]);
-
-  // Convert tags to the expected format
-  const allTagsFormatted: Tag[] = allTags.map((tag) => ({
-    _id: tag._id,
-    name: tag.name,
-    color: tag.color,
-  }));
-
-  // Use the shared tag selection hook
-  const validTagIds = useMemo(() => allTags.map(t => t._id), [allTags]);
-  const { selectedTagId, handleTagChange } = useSelectedTag(tagsQuery !== undefined ? validTagIds : undefined);
+  const { allTagsRaw, allTags, selectedTag, selectedTagId, handleTagChange } =
+    usePageTagFilter();
 
   // Debounce search text to avoid too many queries
   useEffect(() => {
@@ -241,10 +230,6 @@ function NotesList() {
       return bTime - aTime;
     });
   }, [unsortedNotes]);
-
-  const selectedTag = selectedTagId
-    ? allTagsFormatted.find((t) => t._id === selectedTagId) ?? null
-    : null;
 
   const clearSearch = () => {
     setSearchText("");
@@ -298,7 +283,7 @@ function NotesList() {
               <SearchTagSelector
                 selectedTag={selectedTag}
                 onTagChange={handleTagChange}
-                allTags={allTagsFormatted}
+                allTags={allTags}
               />
 
               <button
@@ -367,7 +352,7 @@ function NotesList() {
                   id={note._id}
                   content={note.content}
                   tags={note.tags}
-                  allTags={allTags}
+                  allTags={allTagsRaw}
                 />
               ))
             )}
@@ -380,7 +365,7 @@ function NotesList() {
       <NoteModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        allTags={allTagsFormatted}
+        allTags={allTags}
         initialTagId={selectedTagId}
       />
     </div>
