@@ -232,7 +232,7 @@ function DashboardContent() {
     timeRange === "90d" || timeRange === "all" ? "week" : "day";
 
   // Pre-compute aggregated data
-  const { summaryStats, openCaptureStats, taskFlowData, taskByTagData, captureAgeData, taskTagSeries, noteTypeData } =
+  const { summaryStats, openCaptureStats, taskFlowData, taskByTagData, captureAgeData, taskTagSeries, noteByTagData } =
     useMemo(() => {
       const getKey = granularity === "day" ? getDayKey : getWeekKey;
       if (!events) {
@@ -254,7 +254,7 @@ function DashboardContent() {
             count: 0,
           })),
           taskTagSeries: [] as { key: string; name: string; color: string }[],
-          noteTypeData: [] as { name: string; count: number; fill: string }[],
+          noteByTagData: [] as { name: string; count: number; fill: string }[],
         };
       }
 
@@ -423,15 +423,22 @@ function DashboardContent() {
         }
       }
 
-      // Chart 4: Notes by type (horizontal bars, sorted desc)
-      const notesCreated = events.filter((e) => e.action.type === "note.created").length;
-      const notesEdited = events.filter((e) => e.action.type === "note.edited").length;
-      const notesDeleted = events.filter((e) => e.action.type === "note.deleted").length;
-      const noteTypeData = [
-        { name: "Created", count: notesCreated, fill: CHART_COLORS.created },
-        { name: "Edited", count: notesEdited, fill: CHART_COLORS.edited },
-        { name: "Deleted", count: notesDeleted, fill: CHART_COLORS.deleted },
-      ].sort((a, b) => b.count - a.count);
+      // Chart 4: Notes by tag (horizontal bars, sorted desc)
+      const noteTagCounter = new Map<string, number>();
+      for (const e of events) {
+        if (getEntityType(e.action.type) !== "note") continue;
+        const primaryTag = e.tagIds?.[0] ?? "__untagged__";
+        noteTagCounter.set(primaryTag, (noteTagCounter.get(primaryTag) ?? 0) + 1);
+      }
+      const noteTagKeys = Array.from(noteTagCounter.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([tagId]) => tagId);
+      const noteByTagData = noteTagKeys.map((tagKey) => {
+        const count = noteTagCounter.get(tagKey)!;
+        const name = tagKey === "__untagged__" ? "Untagged" : (allTags.find((t) => t._id === tagKey)?.name ?? "Unknown");
+        const fill = tagKey === "__untagged__" ? "#94a3b8" : (allTags.find((t) => t._id === tagKey)?.color ?? fallbackColorFromId(tagKey));
+        return { name, count, fill };
+      });
 
       // Open capture stats (for first card)
       const openCount = openCaptures?.length ?? 0;
@@ -450,7 +457,7 @@ function DashboardContent() {
         taskByTagData,
         captureAgeData,
         taskTagSeries,
-        noteTypeData,
+        noteByTagData,
       };
     }, [events, timeRange, startTime, endTime, granularity, allTags, openCaptures]);
 
@@ -690,10 +697,10 @@ function DashboardContent() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              {/* Chart 4: Notes by Type */}
-              <ChartCard title="Notes by Type">
+              {/* Chart 4: Notes by Tag */}
+              <ChartCard title="Notes by Tag">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={noteTypeData} layout="vertical">
+                  <BarChart data={noteByTagData} layout="vertical">
                     <CartesianGrid
                       strokeDasharray="3 3"
                       stroke="var(--card-border)"
@@ -719,7 +726,7 @@ function DashboardContent() {
                       name="Notes"
                       radius={[0, 4, 4, 0]}
                     >
-                      {noteTypeData.map((entry) => (
+                      {noteByTagData.map((entry) => (
                         <Cell key={entry.name} fill={entry.fill} />
                       ))}
                     </Bar>
