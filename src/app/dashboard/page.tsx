@@ -7,7 +7,7 @@ import { Navigation } from "../../components/Navigation";
 import { SearchTagSelector, Tag } from "../../components/TagSelector";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { SignIn } from "@/components/SignIn";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Bar,
   BarChart,
@@ -30,6 +30,16 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
+const DASHBOARD_TIME_RANGE_KEY = "tasky-dashboard-time-range";
+
+function getStoredTimeRange(): TimeRange {
+  if (typeof window === "undefined") return "30d";
+  const stored = localStorage.getItem(DASHBOARD_TIME_RANGE_KEY);
+  if (stored && TIME_RANGES.some((range) => range.value === stored)) {
+    return stored as TimeRange;
+  }
+  return "30d";
+}
 
 function getTimeRangeBounds(range: TimeRange): { startTime: number; endTime: number } {
   const endTime = Date.now();
@@ -184,8 +194,12 @@ const TOOLTIP_STYLE = {
 };
 
 function DashboardContent() {
-  const [timeRange, setTimeRange] = useState<TimeRange>("30d");
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => getStoredTimeRange());
   const [tagId, setTagId] = useState<Id<"tags"> | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem(DASHBOARD_TIME_RANGE_KEY, timeRange);
+  }, [timeRange]);
 
   const tags = useQuery(api.tags.list);
   const allTags: Tag[] = useMemo(

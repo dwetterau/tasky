@@ -94,6 +94,8 @@ export type TaskSearchArgs = {
   noTag?: boolean;
 };
 
+const LAST_SELECTED_TAG_KEY = "tasky-last-selected-tag";
+
 export function TaskModal({
   isOpen,
   onClose,
@@ -309,6 +311,16 @@ export function TaskModal({
     .map((id) => allTags.find((t) => t._id === id))
     .filter((t): t is Tag => t !== undefined);
 
+  const persistLastCaptureTag = useCallback((nextTagIds: Id<"tags">[]) => {
+    if (typeof window === "undefined") return;
+    const lastTagId = nextTagIds[nextTagIds.length - 1];
+    if (lastTagId) {
+      localStorage.setItem(LAST_SELECTED_TAG_KEY, lastTagId);
+    } else {
+      localStorage.removeItem(LAST_SELECTED_TAG_KEY);
+    }
+  }, []);
+
   const handleSubmit = () => {
     if (!content.trim()) return;
     if (task) {
@@ -321,6 +333,9 @@ export function TaskModal({
         dueDate: dueDate || null,
       });
     } else {
+      if (createdFromCaptureId) {
+        persistLastCaptureTag(tagIds);
+      }
       create({
         content: content.trim(),
         tagIds: tagIds.length > 0 ? tagIds : undefined,
@@ -415,19 +430,6 @@ export function TaskModal({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-(--muted) mb-1">Status</label>
-                <StyledSelect
-                  value={status}
-                  onChange={(v) => setStatus(v as TaskStatus)}
-                  options={STATUS_ORDER.map((s): SelectOption => ({
-                    value: s,
-                    label: STATUS_CONFIG[s].label,
-                    color: STATUS_CONFIG[s].color,
-                  }))}
-                />
-              </div>
-
-              <div>
                 <label className="block text-xs font-medium text-(--muted) mb-1">Priority</label>
                 <StyledSelect
                   value={priority}
@@ -436,6 +438,19 @@ export function TaskModal({
                     value: p,
                     label: PRIORITY_CONFIG[p].label,
                     color: PRIORITY_CONFIG[p].color,
+                  }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-(--muted) mb-1">Status</label>
+                <StyledSelect
+                  value={status}
+                  onChange={(v) => setStatus(v as TaskStatus)}
+                  options={STATUS_ORDER.map((s): SelectOption => ({
+                    value: s,
+                    label: STATUS_CONFIG[s].label,
+                    color: STATUS_CONFIG[s].color,
                   }))}
                 />
               </div>

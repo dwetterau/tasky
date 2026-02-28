@@ -39,17 +39,18 @@ export function CaptureItem({
     [allTagsQuery]
   );
 
-  // Compute initial tag ID: pageSelectedTagId > localStorage > none
-  const initialTagId = useMemo(() => {
-    if (pageSelectedTagId && allTags.some((t) => t._id === pageSelectedTagId)) {
-      return pageSelectedTagId;
-    }
+  // Compute initial tag ID: localStorage > pageSelectedTagId > none
+  // Keep this non-memoized so it always reflects the latest localStorage write.
+  const initialTagId = (() => {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (saved && allTags.some((t) => t._id === saved)) {
       return saved as Id<"tags">;
     }
+    if (pageSelectedTagId && allTags.some((t) => t._id === pageSelectedTagId)) {
+      return pageSelectedTagId;
+    }
     return null;
-  }, [pageSelectedTagId, allTags]);
+  })();
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
 
