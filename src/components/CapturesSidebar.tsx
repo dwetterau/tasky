@@ -121,7 +121,7 @@ export function CapturesSidebar({
 
   return (
     <div className="w-80 shrink-0 flex flex-col h-full border-l border-(--card-border) bg-background">
-      <div className="px-3 py-2 border-b border-(--card-border) space-y-2">
+      <div className="px-3 pt-2 pb-4 border-b border-(--card-border) space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-(--muted) text-xs">
             {totalCount === 0
