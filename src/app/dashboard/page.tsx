@@ -2,7 +2,6 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { Id } from "../../../convex/_generated/dataModel";
 import { Navigation } from "../../components/Navigation";
 import { SearchTagSelector } from "../../components/TagSelector";
 import { useAuthSession } from "@/lib/useAuthSession";
@@ -13,7 +12,10 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -60,18 +62,6 @@ function getEntityType(actionType: string): string {
   return actionType.split(".")[0];
 }
 
-function formatDate(timestamp: number): string {
-  const d = new Date(timestamp);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-function formatWeek(timestamp: number): string {
-  const d = new Date(timestamp);
-  const weekStart = new Date(d);
-  weekStart.setDate(d.getDate() - d.getDay());
-  return `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
-}
-
 function getDayKey(timestamp: number): string {
   const d = new Date(timestamp);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -113,19 +103,12 @@ function generateTimeBuckets(
 }
 
 function bucketLabel(key: string, granularity: "day" | "week"): string {
-  const [y, m, d] = key.split("-").map(Number);
+  const [, m, d] = key.split("-").map(Number);
   if (granularity === "week") {
     return `Week of ${m}/${d}`;
   }
   return `${m}/${d}`;
 }
-
-type Event = {
-  _id: string;
-  timestamp: number;
-  action: { type: string; from?: string; to?: string };
-  tagIds?: string[];
-};
 
 const CHART_COLORS = {
   capture: "#f59e0b",
@@ -142,6 +125,38 @@ const CHART_COLORS = {
   // Notes
   created: "#10b981",
   edited: "#6366f1",
+  deleted: "#ef4444",
+};
+
+const TAG_FALLBACK_COLORS = [
+  "#6366f1",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#06b6d4",
+];
+
+const CAPTURE_AGE_BUCKETS: { key: string; label: string; minDays: number; maxDays?: number }[] = [
+  { key: "today", label: "0-1d", minDays: 0, maxDays: 1 },
+  { key: "recent", label: "2-3d", minDays: 2, maxDays: 3 },
+  { key: "week", label: "4-7d", minDays: 4, maxDays: 7 },
+  { key: "fortnight", label: "8-14d", minDays: 8, maxDays: 14 },
+  { key: "stale", label: "15d+", minDays: 15 },
+];
+
+function fallbackColorFromId(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return TAG_FALLBACK_COLORS[hash % TAG_FALLBACK_COLORS.length];
+}
+
+const STAT_COLORS = {
+  neutral: "var(--foreground)",
+  good: "#22c55e",
+  bad: "#ef4444",
 };
 
 function StatCard({
@@ -149,21 +164,21 @@ function StatCard({
   stats,
 }: {
   title: string;
-  stats: { label: string; value: number; color?: string }[];
+  stats: { label: string; value: number | string; color?: "neutral" | "good" | "bad" }[];
 }) {
   return (
     <div className="bg-(--card-bg) border border-(--card-border) rounded-xl p-5">
       <h3 className="text-sm font-medium text-(--muted) mb-3">{title}</h3>
-      <div className="flex flex-wrap gap-x-6 gap-y-2">
+      <div className="flex flex-col gap-2">
         {stats.map((stat) => (
-          <div key={stat.label}>
-            <div
-              className="text-2xl font-bold"
-              style={{ color: stat.color }}
+          <div key={stat.label} className="flex items-baseline justify-between gap-4">
+            <span className="text-xs text-(--muted)">{stat.label}</span>
+            <span
+              className="text-xl font-bold tabular-nums"
+              style={{ color: stat.color ? STAT_COLORS[stat.color] : STAT_COLORS.neutral }}
             >
               {stat.value}
-            </div>
-            <div className="text-xs text-(--muted)">{stat.label}</div>
+            </span>
           </div>
         ))}
       </div>
@@ -211,21 +226,35 @@ function DashboardContent() {
     endTime,
     tagId: selectedTagId ?? undefined,
   });
+  const openCaptures = useQuery(api.captures.listOpenForDashboard, {});
 
   const granularity: "day" | "week" =
     timeRange === "90d" || timeRange === "all" ? "week" : "day";
 
   // Pre-compute aggregated data
-  const { summaryStats, activityData, captureData, taskData, noteData } =
+  const { summaryStats, openCaptureStats, taskFlowData, taskByTagData, captureAgeData, taskTagSeries, noteTypeData } =
     useMemo(() => {
       const getKey = granularity === "day" ? getDayKey : getWeekKey;
       if (!events) {
+        const openCount = openCaptures?.length ?? 0;
+        const avgAgeDays =
+          openCount > 0 && openCaptures
+            ? openCaptures.reduce(
+                (sum, c) => sum + (endTime - c._creationTime) / DAY_MS,
+                0
+              ) / openCount
+            : null;
         return {
           summaryStats: null,
-          activityData: [],
-          captureData: [],
-          taskData: [],
-          noteData: [],
+          openCaptureStats: { count: openCount, avgAgeDays },
+          taskFlowData: [],
+          taskByTagData: [],
+          captureAgeData: CAPTURE_AGE_BUCKETS.map((bucket) => ({
+            name: bucket.label,
+            count: 0,
+          })),
+          taskTagSeries: [] as { key: string; name: string; color: string }[],
+          noteTypeData: [] as { name: string; count: number; fill: string }[],
         };
       }
 
@@ -250,21 +279,12 @@ function DashboardContent() {
           "to" in e.action &&
           e.action.to === "closed"
       ).length;
-      const notesCreated = events.filter(
-        (e) => e.action.type === "note.created"
-      ).length;
-      const notesEdited = events.filter(
-        (e) => e.action.type === "note.edited"
-      ).length;
-
       const summaryStats = {
         capturesAdded,
         capturesCompleted,
         capturesFiled,
         tasksOpened,
         tasksClosed,
-        notesCreated,
-        notesEdited,
         totalEvents: events.length,
       };
 
@@ -275,80 +295,7 @@ function DashboardContent() {
           : startTime;
       const buckets = generateTimeBuckets(effectiveStart, endTime, granularity);
 
-      // Chart 1: Activity Overview -- events by entity type per bucket
-      const activityMap = new Map<
-        string,
-        { capture: number; task: number; note: number }
-      >();
-      for (const key of buckets) {
-        activityMap.set(key, { capture: 0, task: 0, note: 0 });
-      }
-      for (const e of events) {
-        const key = getKey(e.timestamp);
-        const entityType = getEntityType(e.action.type);
-        if (!activityMap.has(key)) {
-          activityMap.set(key, { capture: 0, task: 0, note: 0 });
-        }
-        const bucket = activityMap.get(key)!;
-        if (entityType === "capture") bucket.capture++;
-        else if (entityType === "task") bucket.task++;
-        else if (entityType === "note") bucket.note++;
-      }
-      const activityData = Array.from(activityMap.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, counts]) => ({
-          name: bucketLabel(key, granularity),
-          ...counts,
-        }));
-
-      // Chart 2: Capture lifecycle
-      const captureMap = new Map<
-        string,
-        { created: number; completed: number; filedAsTask: number; filedAsNote: number }
-      >();
-      for (const key of buckets) {
-        captureMap.set(key, {
-          created: 0,
-          completed: 0,
-          filedAsTask: 0,
-          filedAsNote: 0,
-        });
-      }
-      for (const e of events) {
-        if (getEntityType(e.action.type) !== "capture") continue;
-        const key = getKey(e.timestamp);
-        if (!captureMap.has(key)) {
-          captureMap.set(key, {
-            created: 0,
-            completed: 0,
-            filedAsTask: 0,
-            filedAsNote: 0,
-          });
-        }
-        const bucket = captureMap.get(key)!;
-        switch (e.action.type) {
-          case "capture.created":
-            bucket.created++;
-            break;
-          case "capture.completed":
-            bucket.completed++;
-            break;
-          case "capture.filed_as_task":
-            bucket.filedAsTask++;
-            break;
-          case "capture.filed_as_note":
-            bucket.filedAsNote++;
-            break;
-        }
-      }
-      const captureData = Array.from(captureMap.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, counts]) => ({
-          name: bucketLabel(key, granularity),
-          ...counts,
-        }));
-
-      // Chart 3: Task flow -- opened vs closed
+      // Chart 1: Task flow -- opened vs closed
       const taskMap = new Map<string, { opened: number; closed: number }>();
       for (const key of buckets) {
         taskMap.set(key, { opened: 0, closed: 0 });
@@ -377,35 +324,137 @@ function DashboardContent() {
           ...counts,
         }));
 
-      // Chart 4: Notes activity -- created vs edited
-      const noteMap = new Map<string, { created: number; edited: number }>();
+      // Chart 2: Task activity by tag -- opened + closed
+      const taskTagCounter = new Map<string, number>();
+      for (const e of events) {
+        if (getEntityType(e.action.type) !== "task") continue;
+        const isTrackedTaskEvent =
+          e.action.type === "task.created" ||
+          (e.action.type === "task.status_changed" &&
+            "to" in e.action &&
+            e.action.to === "closed");
+        if (!isTrackedTaskEvent) continue;
+
+        const eventTagIds = e.tagIds && e.tagIds.length > 0 ? e.tagIds : (["__untagged__"] as string[]);
+        for (const tagId of eventTagIds) {
+          taskTagCounter.set(tagId, (taskTagCounter.get(tagId) ?? 0) + 1);
+        }
+      }
+
+      const taskTagKeys = Array.from(taskTagCounter.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([tagId]) => tagId);
+      if (!taskTagKeys.includes("__untagged__") && taskTagCounter.has("__untagged__")) {
+        taskTagKeys.push("__untagged__");
+      }
+
+      const taskByTagMap = new Map<string, Record<string, number>>();
       for (const key of buckets) {
-        noteMap.set(key, { created: 0, edited: 0 });
+        const row: Record<string, number> = {};
+        for (const tagKey of taskTagKeys) {
+          row[tagKey] = 0;
+        }
+        taskByTagMap.set(key, row);
       }
       for (const e of events) {
-        if (getEntityType(e.action.type) !== "note") continue;
+        if (getEntityType(e.action.type) !== "task") continue;
+        const isTrackedTaskEvent =
+          e.action.type === "task.created" ||
+          (e.action.type === "task.status_changed" &&
+            "to" in e.action &&
+            e.action.to === "closed");
+        if (!isTrackedTaskEvent) continue;
+
         const key = getKey(e.timestamp);
-        if (!noteMap.has(key)) {
-          noteMap.set(key, { created: 0, edited: 0 });
+        if (!taskByTagMap.has(key)) {
+          const row: Record<string, number> = {};
+          for (const tagKey of taskTagKeys) {
+            row[tagKey] = 0;
+          }
+          taskByTagMap.set(key, row);
         }
-        const bucket = noteMap.get(key)!;
-        if (e.action.type === "note.created") {
-          bucket.created++;
-        } else if (e.action.type === "note.edited") {
-          bucket.edited++;
+
+        const candidateTagId =
+          e.tagIds?.find((tagId) => taskTagKeys.includes(tagId)) ??
+          (taskTagKeys.includes("__untagged__") ? "__untagged__" : null);
+        if (!candidateTagId) {
+          continue;
         }
+
+        const bucket = taskByTagMap.get(key)!;
+        bucket[candidateTagId] = (bucket[candidateTagId] ?? 0) + 1;
       }
-      const noteData = Array.from(noteMap.entries())
+      const taskByTagData = Array.from(taskByTagMap.entries())
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, counts]) => ({
           name: bucketLabel(key, granularity),
           ...counts,
         }));
 
-      return { summaryStats, activityData, captureData, taskData, noteData };
-    }, [events, timeRange, startTime, endTime, granularity]);
+      const taskTagSeries = taskTagKeys.map((tagKey) => {
+        if (tagKey === "__untagged__") {
+          return { key: tagKey, name: "Untagged", color: "#94a3b8" };
+        }
+        const tag = allTags.find((t) => t._id === tagKey);
+        return {
+          key: tagKey,
+          name: tag?.name ?? "Unknown Tag",
+          color: tag?.color ?? fallbackColorFromId(tagKey),
+        };
+      });
 
-  const isLoading = events === undefined;
+      // Chart 3: Open capture age distribution
+      const captureAgeData = CAPTURE_AGE_BUCKETS.map((bucket) => ({
+        name: bucket.label,
+        count: 0,
+      }));
+
+      for (const capture of openCaptures ?? []) {
+        const ageDays = Math.floor((endTime - capture._creationTime) / DAY_MS);
+        const bucketIndex = CAPTURE_AGE_BUCKETS.findIndex((bucket) => {
+          if (bucket.maxDays === undefined) {
+            return ageDays >= bucket.minDays;
+          }
+          return ageDays >= bucket.minDays && ageDays <= bucket.maxDays;
+        });
+        if (bucketIndex >= 0) {
+          captureAgeData[bucketIndex].count++;
+        }
+      }
+
+      // Chart 4: Notes by type (horizontal bars, sorted desc)
+      const notesCreated = events.filter((e) => e.action.type === "note.created").length;
+      const notesEdited = events.filter((e) => e.action.type === "note.edited").length;
+      const notesDeleted = events.filter((e) => e.action.type === "note.deleted").length;
+      const noteTypeData = [
+        { name: "Created", count: notesCreated, fill: CHART_COLORS.created },
+        { name: "Edited", count: notesEdited, fill: CHART_COLORS.edited },
+        { name: "Deleted", count: notesDeleted, fill: CHART_COLORS.deleted },
+      ].sort((a, b) => b.count - a.count);
+
+      // Open capture stats (for first card)
+      const openCount = openCaptures?.length ?? 0;
+      const avgAgeDays =
+        openCount > 0 && openCaptures
+          ? openCaptures.reduce(
+              (sum, c) => sum + (endTime - c._creationTime) / DAY_MS,
+              0
+            ) / openCount
+          : null;
+
+      return {
+        summaryStats,
+        openCaptureStats: { count: openCount, avgAgeDays },
+        taskFlowData: taskData,
+        taskByTagData,
+        captureAgeData,
+        taskTagSeries,
+        noteTypeData,
+      };
+    }, [events, timeRange, startTime, endTime, granularity, allTags, openCaptures]);
+
+  const isLoading = events === undefined || openCaptures === undefined;
 
   return (
     <div className="min-h-screen bg-background">
@@ -488,171 +537,53 @@ function DashboardContent() {
         ) : (
           <>
             {/* Summary Stat Cards */}
-            {summaryStats && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {(summaryStats || openCaptureStats) && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                 <StatCard
-                  title="Captures"
+                  title="Open Captures"
                   stats={[
                     {
-                      label: "Added",
-                      value: summaryStats.capturesAdded,
-                      color: CHART_COLORS["capture.created"],
+                      label: "Count",
+                      value: openCaptureStats.count,
+                      color: openCaptureStats.count === 0 ? "good" : "bad",
                     },
-                    {
-                      label: "Completed",
-                      value: summaryStats.capturesCompleted,
-                      color: CHART_COLORS["capture.completed"],
-                    },
-                    {
-                      label: "Filed",
-                      value: summaryStats.capturesFiled,
-                      color: CHART_COLORS["capture.filed_as_task"],
-                    },
+                    ...(openCaptureStats.avgAgeDays != null
+                      ? [
+                          {
+                            label: "Avg age",
+                            value: `${openCaptureStats.avgAgeDays.toFixed(1)}d`,
+                            color: "neutral" as const,
+                          },
+                        ]
+                      : []),
                   ]}
                 />
-                <StatCard
-                  title="Tasks"
-                  stats={[
-                    {
-                      label: "Opened",
-                      value: summaryStats.tasksOpened,
-                      color: CHART_COLORS.opened,
-                    },
-                    {
-                      label: "Closed",
-                      value: summaryStats.tasksClosed,
-                      color: CHART_COLORS.closed,
-                    },
-                  ]}
-                />
-                <StatCard
-                  title="Notes"
-                  stats={[
-                    {
-                      label: "Created",
-                      value: summaryStats.notesCreated,
-                      color: CHART_COLORS.created,
-                    },
-                    {
-                      label: "Edited",
-                      value: summaryStats.notesEdited,
-                      color: CHART_COLORS.edited,
-                    },
-                  ]}
-                />
-                <StatCard
-                  title="Total Activity"
-                  stats={[
-                    { label: "Events", value: summaryStats.totalEvents },
-                  ]}
-                />
+                {summaryStats && (
+                  <>
+                    <StatCard
+                      title="Tasks"
+                      stats={[
+                        { label: "Opened", value: summaryStats.tasksOpened, color: "neutral" as const },
+                        { label: "Closed", value: summaryStats.tasksClosed, color: "good" as const },
+                      ]}
+                    />
+                    <StatCard
+                      title="Total Activity"
+                      stats={[
+                        { label: "Events", value: summaryStats.totalEvents, color: "neutral" as const },
+                      ]}
+                    />
+                  </>
+                )}
               </div>
             )}
 
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Chart 1: Activity Overview */}
-              <ChartCard title="Activity Overview">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={activityData}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="var(--card-border)"
-                    />
-                    <XAxis
-                      dataKey="name"
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={{ stroke: "var(--card-border)" }}
-                    />
-                    <YAxis
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={{ stroke: "var(--card-border)" }}
-                      allowDecimals={false}
-                    />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
-                    <Legend />
-                    <Bar
-                      dataKey="capture"
-                      name="Captures"
-                      fill={CHART_COLORS.capture}
-                      stackId="activity"
-                      radius={[0, 0, 0, 0]}
-                    />
-                    <Bar
-                      dataKey="task"
-                      name="Tasks"
-                      fill={CHART_COLORS.task}
-                      stackId="activity"
-                      radius={[0, 0, 0, 0]}
-                    />
-                    <Bar
-                      dataKey="note"
-                      name="Notes"
-                      fill={CHART_COLORS.note}
-                      stackId="activity"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              {/* Chart 2: Capture Lifecycle */}
-              <ChartCard title="Capture Lifecycle">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={captureData}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="var(--card-border)"
-                    />
-                    <XAxis
-                      dataKey="name"
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={{ stroke: "var(--card-border)" }}
-                    />
-                    <YAxis
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={{ stroke: "var(--card-border)" }}
-                      allowDecimals={false}
-                    />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
-                    <Legend />
-                    <Bar
-                      dataKey="created"
-                      name="Created"
-                      fill={CHART_COLORS["capture.created"]}
-                      stackId="capture"
-                    />
-                    <Bar
-                      dataKey="completed"
-                      name="Completed"
-                      fill={CHART_COLORS["capture.completed"]}
-                      stackId="capture"
-                    />
-                    <Bar
-                      dataKey="filedAsTask"
-                      name="Filed as Task"
-                      fill={CHART_COLORS["capture.filed_as_task"]}
-                      stackId="capture"
-                    />
-                    <Bar
-                      dataKey="filedAsNote"
-                      name="Filed as Note"
-                      fill={CHART_COLORS["capture.filed_as_note"]}
-                      stackId="capture"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              {/* Chart 3: Task Flow */}
+              {/* Chart 1: Task Flow */}
               <ChartCard title="Task Flow">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={taskData}>
+                  <LineChart data={taskFlowData}>
                     <CartesianGrid
                       strokeDasharray="3 3"
                       stroke="var(--card-border)"
@@ -671,56 +602,127 @@ function DashboardContent() {
                     />
                     <Tooltip contentStyle={TOOLTIP_STYLE} />
                     <Legend />
-                    <Bar
+                    <Line
+                      type="monotone"
                       dataKey="opened"
                       name="Opened"
-                      fill={CHART_COLORS.opened}
-                      radius={[4, 4, 0, 0]}
+                      stroke={CHART_COLORS.opened}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
                     />
-                    <Bar
+                    <Line
+                      type="monotone"
                       dataKey="closed"
                       name="Closed"
-                      fill={CHART_COLORS.closed}
+                      stroke={CHART_COLORS.closed}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              {/* Chart 2: Task Activity by Tag */}
+              <ChartCard title="Task Activity by Tag">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={taskByTagData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--card-border)"
+                    />
+                    <XAxis
+                      dataKey="name"
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={{ stroke: "var(--card-border)" }}
+                    />
+                    <YAxis
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={{ stroke: "var(--card-border)" }}
+                      allowDecimals={false}
+                    />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Legend />
+                    {taskTagSeries.map((series) => (
+                      <Bar
+                        key={series.key}
+                        dataKey={series.key}
+                        name={series.name}
+                        fill={series.color}
+                        stackId="task-by-tag"
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              {/* Chart 3: Open Capture Age */}
+              <ChartCard title="Open Capture Age">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={captureAgeData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--card-border)"
+                    />
+                    <XAxis
+                      dataKey="name"
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={{ stroke: "var(--card-border)" }}
+                    />
+                    <YAxis
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={{ stroke: "var(--card-border)" }}
+                      allowDecimals={false}
+                    />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Bar
+                      dataKey="count"
+                      name="Open captures"
+                      fill={CHART_COLORS["capture.created"]}
                       radius={[4, 4, 0, 0]}
                     />
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
 
-              {/* Chart 4: Notes Activity */}
-              <ChartCard title="Notes Activity">
+              {/* Chart 4: Notes by Type */}
+              <ChartCard title="Notes by Type">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={noteData}>
+                  <BarChart data={noteTypeData} layout="vertical">
                     <CartesianGrid
                       strokeDasharray="3 3"
                       stroke="var(--card-border)"
                     />
                     <XAxis
-                      dataKey="name"
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={{ stroke: "var(--card-border)" }}
-                    />
-                    <YAxis
+                      type="number"
                       fontSize={11}
                       tickLine={false}
                       axisLine={{ stroke: "var(--card-border)" }}
                       allowDecimals={false}
                     />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={{ stroke: "var(--card-border)" }}
+                      width={70}
+                    />
                     <Tooltip contentStyle={TOOLTIP_STYLE} />
-                    <Legend />
                     <Bar
-                      dataKey="created"
-                      name="Created"
-                      fill={CHART_COLORS.created}
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Bar
-                      dataKey="edited"
-                      name="Edited"
-                      fill={CHART_COLORS.edited}
-                      radius={[4, 4, 0, 0]}
-                    />
+                      dataKey="count"
+                      name="Notes"
+                      radius={[0, 4, 4, 0]}
+                    >
+                      {noteTypeData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.fill} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>

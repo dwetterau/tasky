@@ -37,6 +37,24 @@ export const list = query({
   },
 });
 
+export const listOpenForDashboard = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return [];
+    }
+
+    // Dashboard capture age needs the full open set, not a paginated slice.
+    return await ctx.db
+      .query("captures")
+      .withIndex("by_user_completed", (q) =>
+        q.eq("userId", userId).eq("completed", false)
+      )
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: { text: v.string() },
   handler: async (ctx, args) => {
