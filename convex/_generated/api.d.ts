@@ -14,6 +14,8 @@ import type * as auth from "../auth.js";
 import type * as captures from "../captures.js";
 import type * as events from "../events.js";
 import type * as http from "../http.js";
+import type * as mcp from "../mcp.js";
+import type * as mcpScopes from "../mcpScopes.js";
 import type * as migrations from "../migrations.js";
 import type * as notes from "../notes.js";
 import type * as pullRequests from "../pullRequests.js";
@@ -34,6 +36,8 @@ declare const fullApi: ApiFromModules<{
   captures: typeof captures;
   events: typeof events;
   http: typeof http;
+  mcp: typeof mcp;
+  mcpScopes: typeof mcpScopes;
   migrations: typeof migrations;
   notes: typeof notes;
   pullRequests: typeof pullRequests;

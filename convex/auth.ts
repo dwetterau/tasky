@@ -1,14 +1,46 @@
 import { betterAuth } from "better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
+import { jwt } from "better-auth/plugins/jwt";
+import { mcp } from "better-auth/plugins";
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
 
+// Convex runtime may not expose URL.canParse yet. Better Auth OAuth/MCP uses it.
+const urlWithCanParse = URL as unknown as {
+  canParse?: (url: string, base?: string) => boolean;
+};
+if (typeof urlWithCanParse.canParse !== "function") {
+  urlWithCanParse.canParse = (url: string, base?: string) => {
+    try {
+      // URL constructor validation mirrors canParse semantics.
+      void new URL(url, base);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+}
+
 // SITE_URL is the frontend URL (Next.js app) - where users get redirected after auth
 const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
 // CONVEX_SITE_URL is where Better Auth is hosted (Convex HTTP endpoints)
 const convexSiteUrl = process.env.CONVEX_SITE_URL!;
+const mcpResourceUrl = `${convexSiteUrl}/api/mcp`;
+const oauthLoginPage = `${siteUrl}/oauth/login`;
+const oauthConsentPage = `${siteUrl}/oauth/consent`;
+
+export const oauthIssuer = convexSiteUrl;
+export const mcpResource = mcpResourceUrl;
+export const oauthScopes = [
+  "openid",
+  "profile",
+  "email",
+  "offline_access",
+  "tasks:read",
+  "tasks:write",
+] as const;
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
@@ -19,6 +51,33 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
     trustedOrigins: [siteUrl, convexSiteUrl],
     database: authComponent.adapter(ctx),
     plugins: [
+      jwt({
+        jwt: {
+          issuer: oauthIssuer,
+          audience: mcpResource,
+        },
+        // MCP clients should use bearer tokens, not session response headers.
+        disableSettingJwtHeader: true,
+      }),
+      mcp({
+        loginPage: oauthLoginPage,
+        resource: mcpResource,
+        oidcConfig: {
+          loginPage: oauthLoginPage,
+          consentPage: oauthConsentPage,
+          scopes: [...oauthScopes],
+          defaultScope: "openid offline_access tasks:read",
+          allowDynamicClientRegistration: true,
+          useJWTPlugin: true,
+          schema: {
+            oauthApplication: {
+              fields: {
+                redirectUrls: "redirectURLs",
+              },
+            },
+          },
+        },
+      }),
       // crossDomain redirects users back to the frontend after OAuth
       crossDomain({ siteUrl }),
       convex({ authConfig }),

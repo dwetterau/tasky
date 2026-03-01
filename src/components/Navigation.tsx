@@ -3,13 +3,13 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
 import { AUTH_PENDING_KEY } from "@/lib/useAuthSession";
 import { getStoredTagId } from "@/lib/useSelectedTag";
 import { useSaving } from "@/lib/SavingContext";
+import { UserIdentity } from "@/components/UserIdentity";
 
 const navItems = [
   {
@@ -152,20 +152,12 @@ export function Navigation() {
                 onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
                 className="flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors hover:bg-(--card-border)"
               >
-                {user.image && (
-                  <Image
-                    src={user.image}
-                    alt={user.name || "User"}
-                    width={32}
-                    height={32}
-                    className="w-8 h-8 rounded-full border border-(--card-border)"
-                  />
-                )}
-                {user.name && (
-                  <span className="text-sm text-foreground">
-                    {user.name}
-                  </span>
-                )}
+                <UserIdentity
+                  name={user.name}
+                  email={user.email}
+                  image={user.image}
+                  imageSize={32}
+                />
                 <svg
                   className={`w-4 h-4 text-(--muted) transition-transform ${profileDropdownOpen ? "rotate-180" : ""}`}
                   fill="none"
