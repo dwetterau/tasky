@@ -7,6 +7,8 @@ import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { TagSelector, Tag } from "../../components/TagSelector";
 import { MarkdownEditor } from "../../components/MarkdownEditor";
 
+const LAST_SELECTED_TAG_KEY = "tasky-last-selected-tag";
+
 export function NoteModal({
   isOpen,
   onClose,
@@ -87,6 +89,14 @@ export function NoteModal({
 
   const handleSubmit = () => {
     if (!content.trim()) return;
+    if (createdFromCaptureId) {
+      const lastTagId = tagIds[tagIds.length - 1];
+      if (lastTagId) {
+        localStorage.setItem(LAST_SELECTED_TAG_KEY, lastTagId);
+      } else {
+        localStorage.removeItem(LAST_SELECTED_TAG_KEY);
+      }
+    }
     create({
       content: content.trim(),
       tagIds: tagIds.length > 0 ? tagIds : undefined,

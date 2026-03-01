@@ -41,6 +41,33 @@ import {
   STATUS_WEIGHT,
 } from "./constants";
 
+function formatDueDateForViewer(dueDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueDate);
+  if (!match) {
+    const fallbackDate = new Date(dueDate);
+    return Number.isNaN(fallbackDate.getTime())
+      ? dueDate
+      : fallbackDate.toLocaleDateString();
+  }
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const localDate = new Date(year, monthIndex, day);
+
+  // Guard against invalid/overflowing values (e.g. 2026-02-31).
+  if (
+    Number.isNaN(localDate.getTime()) ||
+    localDate.getFullYear() !== year ||
+    localDate.getMonth() !== monthIndex ||
+    localDate.getDate() !== day
+  ) {
+    return dueDate;
+  }
+
+  return localDate.toLocaleDateString();
+}
+
 function TaskCard({
   task,
   kanbanMode,
@@ -194,7 +221,7 @@ function TaskCard({
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                {new Date(task.dueDate).toLocaleDateString()}
+                {formatDueDateForViewer(task.dueDate)}
               </span>
             )}
             {/* In status mode, show priority badge. In priority mode, show status badge */}
