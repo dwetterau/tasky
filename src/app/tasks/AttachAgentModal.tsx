@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
+import { CURSOR_ICON_VIEWBOX, CURSOR_ICON_PATH } from "./constants";
 
 function extractExternalId(input: string): string | null {
   const trimmed = input.trim();
@@ -84,8 +85,8 @@ export function AttachAgentModal({
       >
         <div className="flex items-center gap-3 mb-5">
           <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
-            <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5V4H2v16h5m10 0v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5m10 0H7" />
+            <svg className="w-4.5 h-5 text-accent" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor">
+              <path d={CURSOR_ICON_PATH} />
             </svg>
           </div>
           <h3 className="text-lg font-semibold">Attach Agent</h3>

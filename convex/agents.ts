@@ -86,7 +86,6 @@ export const createForTask = mutation({
       title: args.title.trim(),
       status: args.status.trim(),
       lastSyncedAt: undefined,
-      createdAt: now,
       updatedAt: now,
     });
 

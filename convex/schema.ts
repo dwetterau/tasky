@@ -115,7 +115,6 @@ export default defineSchema({
     title: v.string(),
     status: v.string(),
     lastSyncedAt: v.optional(v.number()),
-    createdAt: v.number(), // Unix timestamp (ms)
     updatedAt: v.number(), // Unix timestamp (ms)
   })
     .index("by_user", ["userId"])
@@ -130,7 +129,6 @@ export default defineSchema({
     isDraft: v.optional(v.boolean()),
     isMerged: v.optional(v.boolean()),
     lastSyncedAt: v.optional(v.number()),
-    createdAt: v.number(), // Unix timestamp (ms)
     updatedAt: v.number(), // Unix timestamp (ms)
   })
     .index("by_user", ["userId"])
@@ -143,7 +141,6 @@ export default defineSchema({
     encryptedValue: v.string(),
     iv: v.string(), // Base64 IV used by AES-256-GCM
     keyVersion: v.number(),
-    createdAt: v.number(), // Unix timestamp (ms)
     updatedAt: v.number(), // Unix timestamp (ms)
   })
     .index("by_user", ["userId"])

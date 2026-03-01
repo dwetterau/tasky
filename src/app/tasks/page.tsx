@@ -41,6 +41,12 @@ import {
   PRIORITY_ORDER,
   PRIORITY_WEIGHT,
   STATUS_WEIGHT,
+  CURSOR_ICON_VIEWBOX,
+  CURSOR_ICON_PATH,
+  PR_ICON_PATHS,
+  getAgentStatusInfo,
+  getPullRequestStatusInfo,
+  getPullRequestHref,
 } from "./constants";
 import { AttachAgentModal } from "./AttachAgentModal";
 import { AttachPrModal } from "./AttachPrModal";
@@ -109,49 +115,6 @@ function parseGitHubPrUrl(rawUrl: string): PullRequestAttachment["normalized"] {
   }
 }
 
-const CURSOR_ICON_VIEWBOX = "0 0 466.73 532.09";
-const CURSOR_ICON_PATH = "M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z";
-
-function getAgentStatusInfo(status: string): { label: string; color: string } {
-  const s = status.toLowerCase();
-  if (!s) return { label: "Syncing", color: "#94a3b8" };
-  if (s === "completed" || s === "done" || s === "finished") return { label: "Completed", color: "#34d399" };
-  if (s === "running" || s === "generating" || s === "in_progress" || s === "working") return { label: "Running", color: "#60a5fa" };
-  if (s === "failed" || s === "error") return { label: "Failed", color: "#f87171" };
-  if (s === "stopped" || s === "cancelled") return { label: "Stopped", color: "#a1a1aa" };
-  return { label: status || "Unknown", color: "#94a3b8" };
-}
-
-function getPullRequestHref(url: string): string {
-  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url) ? url : `https://${url}`;
-}
-
-const PR_ICON_PATHS = {
-  open: "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z",
-  merged: "M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z",
-  closed: "M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z",
-  draft: "M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z",
-} as const;
-
-function getPullRequestStatusInfo(pullRequest: PullRequestAttachment): {
-  label: string;
-  color: string;
-  iconPath: string;
-} {
-  if (pullRequest.isMerged) {
-    return { label: "Merged", color: "#a78bfa", iconPath: PR_ICON_PATHS.merged };
-  }
-  if (pullRequest.isDraft) {
-    return { label: "Draft", color: "#fbbf24", iconPath: PR_ICON_PATHS.draft };
-  }
-  if (pullRequest.githubState === "OPEN") {
-    return { label: "Open", color: "#34d399", iconPath: PR_ICON_PATHS.open };
-  }
-  if (pullRequest.githubState === "CLOSED") {
-    return { label: "Closed", color: "#a1a1aa", iconPath: PR_ICON_PATHS.closed };
-  }
-  return { label: "PR", color: "#94a3b8", iconPath: PR_ICON_PATHS.open };
-}
 
 function TaskCard({
   task,
@@ -267,7 +230,7 @@ function TaskCard({
               ))
             )}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             <button
               type="button"
               onClick={(e) => {
@@ -275,9 +238,12 @@ function TaskCard({
                 onOpenAttachAgentModal?.();
               }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="px-2 py-0.5 rounded text-[11px] border border-(--card-border) text-(--muted) hover:text-foreground hover:border-(--accent)/40 transition-colors"
+              className="p-1 rounded text-(--muted) opacity-40 hover:opacity-100 hover:text-foreground hover:bg-(--card-border) transition-all"
+              title="Attach agent"
             >
-              + Agent
+              <svg className="w-3.5 h-4 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor">
+                <path d={CURSOR_ICON_PATH} />
+              </svg>
             </button>
             <button
               type="button"
@@ -286,62 +252,15 @@ function TaskCard({
                 onOpenAttachPrModal?.();
               }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="px-2 py-0.5 rounded text-[11px] border border-(--card-border) text-(--muted) hover:text-foreground hover:border-(--accent)/40 transition-colors"
+              className="p-1 rounded text-(--muted) opacity-40 hover:opacity-100 hover:text-foreground hover:bg-(--card-border) transition-all"
+              title="Attach pull request"
             >
-              + PR
+              <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor">
+                <path d={PR_ICON_PATHS.open} />
+              </svg>
             </button>
           </div>
         </div>
-
-        {(task.agents.length > 0 || task.pullRequests.length > 0) && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {task.agents.map((agent) => {
-              const agentStatus = getAgentStatusInfo(agent.status);
-              return (
-                <a
-                  key={agent._id}
-                  href={agent.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs text-(--muted) hover:text-foreground transition-colors"
-                  style={{ backgroundColor: `${agentStatus.color}18` }}
-                  title={`${agent.externalId} · ${agentStatus.label}`}
-                >
-                  <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
-                    <path d={CURSOR_ICON_PATH} />
-                  </svg>
-                  {agent.title}
-                </a>
-              );
-            })}
-            {task.pullRequests.map((pullRequest) => {
-              const label = pullRequest.normalized
-                ? `${pullRequest.normalized.owner}/${pullRequest.normalized.repo}#${pullRequest.normalized.number}`
-                : pullRequest.url;
-              const status = getPullRequestStatusInfo(pullRequest);
-              return (
-                <a
-                  key={pullRequest._id}
-                  href={getPullRequestHref(pullRequest.url)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs text-(--muted) hover:text-foreground transition-colors"
-                  style={{ backgroundColor: `${status.color}18` }}
-                  title={`${label} · ${status.label}`}
-                >
-                  <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
-                    <path d={status.iconPath} />
-                  </svg>
-                  {label}
-                </a>
-              );
-            })}
-          </div>
-        )}
 
         <div className="relative">
           <div
@@ -405,6 +324,56 @@ function TaskCard({
                 {STATUS_CONFIG[task.status].label}
               </span>
             )}
+          </div>
+        )}
+
+        {(task.pullRequests.length > 0 || task.agents.length > 0) && (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {task.pullRequests.map((pullRequest) => {
+              const label = pullRequest.normalized
+                ? `${pullRequest.normalized.owner}/${pullRequest.normalized.repo}#${pullRequest.normalized.number}`
+                : pullRequest.url;
+              const status = getPullRequestStatusInfo(pullRequest);
+              return (
+                <a
+                  key={pullRequest._id}
+                  href={getPullRequestHref(pullRequest.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs text-(--muted) hover:text-foreground transition-colors"
+                  style={{ backgroundColor: `${status.color}18` }}
+                  title={`${label} · ${status.label}`}
+                >
+                  <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
+                    <path d={status.iconPath} />
+                  </svg>
+                  {label}
+                </a>
+              );
+            })}
+            {task.agents.map((agent) => {
+              const agentStatus = getAgentStatusInfo(agent.status);
+              return (
+                <a
+                  key={agent._id}
+                  href={agent.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs text-(--muted) hover:text-foreground transition-colors"
+                  style={{ backgroundColor: `${agentStatus.color}18` }}
+                  title={`${agent.externalId} · ${agentStatus.label}`}
+                >
+                  <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
+                    <path d={CURSOR_ICON_PATH} />
+                  </svg>
+                  {agent.title}
+                </a>
+              );
+            })}
           </div>
         )}
       </div>
@@ -488,7 +457,7 @@ function TasksList() {
   const [hideClosed, setHideClosed] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<Id<"tasks"> | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
-  const [editingTask, setEditingTask] = useState<TaskForEdit | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<Id<"tasks"> | null>(null);
   const [attachAgentTaskId, setAttachAgentTaskId] = useState<Id<"tasks"> | null>(null);
   const [attachPrTaskId, setAttachPrTaskId] = useState<Id<"tasks"> | null>(null);
   const [isRefreshingLinks, setIsRefreshingLinks] = useState(false);
@@ -599,7 +568,6 @@ function TasksList() {
         title: args.title,
         status: args.status,
         lastSyncedAt: undefined,
-        createdAt: now,
         updatedAt: now,
       };
 
@@ -644,7 +612,6 @@ function TasksList() {
         isMerged: undefined,
         lastSyncedAt: undefined,
         normalized: parseGitHubPrUrl(args.url),
-        createdAt: now,
         updatedAt: now,
       };
 
@@ -672,6 +639,50 @@ function TasksList() {
             searchArgs,
             searchTasks.map((task) => applyToTask(task))
           );
+        }
+      }
+    }
+  );
+  const removeAgent = useTrackedMutation(api.agents.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const removeFromTask = <T extends { _id: Id<"tasks">; agents?: AgentAttachment[] }>(t: T): T => ({
+        ...t,
+        agents: (t.agents ?? []).filter((a) => a._id !== args.id),
+      });
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
+        localStore.setQuery(api.tasks.list, {}, listTasks.map(removeFromTask));
+      }
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(api.tasks.search, searchArgs, searchTasks.map(removeFromTask));
+        }
+      }
+    }
+  );
+  const removePullRequest = useTrackedMutation(api.pullRequests.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const removeFromTask = <T extends { _id: Id<"tasks">; pullRequests?: PullRequestAttachment[] }>(t: T): T => ({
+        ...t,
+        pullRequests: (t.pullRequests ?? []).filter((pr) => pr._id !== args.id),
+      });
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
+        localStore.setQuery(api.tasks.list, {}, listTasks.map(removeFromTask));
+      }
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(api.tasks.search, searchArgs, searchTasks.map(removeFromTask));
         }
       }
     }
@@ -723,6 +734,11 @@ function TasksList() {
   );
 
   const tasks = isSearching ? searchResults : allTasks;
+
+  const editingTask = useMemo(() => {
+    if (!editingTaskId) return null;
+    return (allTasks ?? []).find((t) => t._id === editingTaskId) ?? null;
+  }, [editingTaskId, allTasks]);
 
   const clearSearch = () => {
     setSearchText("");
@@ -1131,7 +1147,7 @@ function TasksList() {
                       tasks={tasksByStatus[status]}
                       kanbanMode={kanbanMode}
                       isDropTarget={overColumnId === status}
-                      onOpenEditModal={setEditingTask}
+                      onOpenEditModal={(t) => setEditingTaskId(t._id)}
                       onOpenAttachAgentModal={setAttachAgentTaskId}
                       onOpenAttachPrModal={setAttachPrTaskId}
                     />
@@ -1145,7 +1161,7 @@ function TasksList() {
                       tasks={tasksByPriority[priority]}
                       kanbanMode={kanbanMode}
                       isDropTarget={overColumnId === priority}
-                      onOpenEditModal={setEditingTask}
+                      onOpenEditModal={(t) => setEditingTaskId(t._id)}
                       onOpenAttachAgentModal={setAttachAgentTaskId}
                       onOpenAttachPrModal={setAttachPrTaskId}
                     />
@@ -1188,10 +1204,14 @@ function TasksList() {
       {editingTask && (
         <TaskModal
           isOpen={true}
-          onClose={() => setEditingTask(null)}
+          onClose={() => setEditingTaskId(null)}
           task={editingTask}
           allTags={allTags}
           activeSearchArgs={activeSearchArgs}
+          onAttachAgent={handleAttachAgent}
+          onRemoveAgent={(id) => removeAgent({ id })}
+          onAttachPr={handleAttachPr}
+          onRemovePr={(id) => removePullRequest({ id })}
         />
       )}
 

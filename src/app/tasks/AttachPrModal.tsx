@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
+import { PR_ICON_PATHS } from "./constants";
 
 export function AttachPrModal({
   isOpen,
@@ -54,8 +55,8 @@ export function AttachPrModal({
       >
         <div className="flex items-center gap-3 mb-5">
           <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
-            <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8L10 6m3 11H5a2 2 0 01-2-2V7a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2z" />
+            <svg className="w-5 h-5 text-accent" viewBox="0 0 16 16" fill="currentColor">
+              <path d={PR_ICON_PATHS.open} />
             </svg>
           </div>
           <h3 className="text-lg font-semibold">Attach Pull Request</h3>

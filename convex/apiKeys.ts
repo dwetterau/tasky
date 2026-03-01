@@ -94,7 +94,6 @@ export const list = query({
       name: row.name,
       type: row.type,
       keyVersion: row.keyVersion,
-      createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }));
   },
@@ -130,7 +129,6 @@ export const create = mutation({
       encryptedValue: encrypted.encryptedValue,
       iv: encrypted.iv,
       keyVersion: ENCRYPTION_KEY_VERSION,
-      createdAt: now,
       updatedAt: now,
     });
 

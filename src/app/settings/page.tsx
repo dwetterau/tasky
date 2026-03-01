@@ -30,7 +30,6 @@ function SettingsContent() {
       name: args.name,
       type: args.type,
       keyVersion: 1,
-      createdAt: 0,
       updatedAt: 0,
     };
     localStore.setQuery(api.apiKeys.list, {}, [tempKey, ...current]);
@@ -132,7 +131,7 @@ function SettingsContent() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{key.name}</p>
                     <p className="text-xs text-(--muted)">
-                      {key.type} · saved {formatTimestamp(key.createdAt)}
+                      {key.type} · saved {formatTimestamp(key._creationTime)}
                     </p>
                   </div>
                   <button

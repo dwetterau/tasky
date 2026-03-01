@@ -108,7 +108,6 @@ export const createForTask = mutation({
       userId,
       taskId: args.taskId,
       url: normalized.url,
-      createdAt: now,
       updatedAt: now,
     });
 
