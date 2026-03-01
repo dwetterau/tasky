@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, QueryCtx } from "./_generated/server";
+import { internalQuery, mutation, query, QueryCtx } from "./_generated/server";
 import { getAuthUserId } from "./auth";
 import { Doc, Id } from "./_generated/dataModel";
 import { taskStatus, taskPriority } from "./schema";
@@ -94,6 +94,65 @@ export const list = query({
       .collect();
 
     return await hydrateTasksWithRelations(ctx, userId, tasks);
+  },
+});
+
+const openTaskStatuses: Array<Doc<"tasks">["status"]> = ["not_started", "in_progress", "blocked"];
+const allTaskStatuses: Array<Doc<"tasks">["status"]> = [...openTaskStatuses, "closed"];
+
+export const listForMcp = internalQuery({
+  args: {
+    userId: v.string(),
+    statuses: v.optional(v.array(taskStatus)),
+    includeClosed: v.optional(v.boolean()),
+    tagRootId: v.optional(v.id("tags")),
+  },
+  handler: async (ctx, args) => {
+    const statuses =
+      args.statuses && args.statuses.length > 0
+        ? Array.from(new Set(args.statuses))
+        : args.includeClosed
+          ? allTaskStatuses
+          : openTaskStatuses;
+
+    const taskGroups = await Promise.all(
+      statuses.map((status) =>
+        ctx.db
+          .query("tasks")
+          .withIndex("by_user_status", (q) => q.eq("userId", args.userId).eq("status", status))
+          .collect()
+      )
+    );
+
+    let tasks = taskGroups.flat();
+
+    if (args.tagRootId) {
+      const rootTag = await ctx.db.get(args.tagRootId);
+      if (!rootTag || rootTag.userId !== args.userId) {
+        throw new Error("Tag scope is invalid for this user");
+      }
+
+      const matchingTagIds = new Set<Id<"tags">>([args.tagRootId]);
+      for (const childId of rootTag.childrenRecursive ?? []) {
+        matchingTagIds.add(childId);
+      }
+
+      tasks = tasks.filter((task) => task.tagIds.some((tagId) => matchingTagIds.has(tagId)));
+    }
+
+    return tasks
+      .sort((a, b) => b._creationTime - a._creationTime)
+      .map((task) => ({
+        _id: task._id,
+        _creationTime: task._creationTime,
+        content: task.content,
+        status: task.status,
+        priority: task.priority,
+        dueDate: task.dueDate,
+        completedAt: task.completedAt,
+        statusUpdatedAt: task.statusUpdatedAt,
+        tagIds: task.tagIds,
+      }));
   },
 });
 
