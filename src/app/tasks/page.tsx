@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { Id } from "../../../convex/_generated/dataModel";
@@ -87,21 +87,49 @@ type TaskView = {
 
 function parseGitHubPrUrl(rawUrl: string): PullRequestAttachment["normalized"] {
   try {
-    const parsed = new URL(rawUrl);
-    if (parsed.hostname.toLowerCase() !== "github.com") return null;
+    const parseInput = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawUrl.trim())
+      ? rawUrl.trim()
+      : `https://${rawUrl.trim()}`;
+    const parsed = new URL(parseInput);
+    const hostname = parsed.hostname.toLowerCase();
+    const domain = hostname === "www.github.com" ? "github.com" : hostname;
+    if (domain !== "github.com") return null;
     const parts = parsed.pathname.split("/").filter(Boolean);
-    if (parts.length < 4 || parts[2] !== "pull") return null;
+    if (parts.length < 4 || parts[2].toLowerCase() !== "pull") return null;
     const number = Number(parts[3]);
     if (!Number.isInteger(number) || number <= 0) return null;
     return {
-      domain: parsed.hostname.toLowerCase(),
-      owner: parts[0],
-      repo: parts[1],
+      domain,
+      owner: parts[0].toLowerCase(),
+      repo: parts[1].toLowerCase(),
       number,
     };
   } catch {
     return null;
   }
+}
+
+function getPullRequestHref(url: string): string {
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url) ? url : `https://${url}`;
+}
+
+function getPullRequestLifecycleBadge(pullRequest: PullRequestAttachment): {
+  label: string;
+  className: string;
+} {
+  if (pullRequest.isDraft) {
+    return { label: "Draft", className: "bg-amber-500/20 text-amber-300" };
+  }
+  if (pullRequest.isMerged) {
+    return { label: "Merged", className: "bg-purple-500/20 text-purple-300" };
+  }
+  if (pullRequest.githubState === "OPEN") {
+    return { label: "Open", className: "bg-emerald-500/20 text-emerald-300" };
+  }
+  if (pullRequest.githubState === "CLOSED") {
+    return { label: "Closed", className: "bg-zinc-500/20 text-zinc-300" };
+  }
+  return { label: "Unknown", className: "bg-slate-500/20 text-slate-300" };
 }
 
 function TaskCard({
@@ -264,10 +292,11 @@ function TaskCard({
               const label = pullRequest.normalized
                 ? `${pullRequest.normalized.owner}/${pullRequest.normalized.repo}#${pullRequest.normalized.number}`
                 : pullRequest.url;
+              const lifecycleBadge = getPullRequestLifecycleBadge(pullRequest);
               return (
                 <a
                   key={pullRequest._id}
-                  href={pullRequest.url}
+                  href={getPullRequestHref(pullRequest.url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
@@ -276,6 +305,9 @@ function TaskCard({
                   title={pullRequest.url}
                 >
                   PR: {label}
+                  <span className={`rounded px-1 py-px text-[10px] font-medium ${lifecycleBadge.className}`}>
+                    {lifecycleBadge.label}
+                  </span>
                 </a>
               );
             })}
@@ -430,6 +462,7 @@ function TasksList() {
   const [editingTask, setEditingTask] = useState<TaskForEdit | null>(null);
   const [attachAgentTaskId, setAttachAgentTaskId] = useState<Id<"tasks"> | null>(null);
   const [attachPrTaskId, setAttachPrTaskId] = useState<Id<"tasks"> | null>(null);
+  const [isRefreshingPullRequests, setIsRefreshingPullRequests] = useState(false);
 
   const { allTags, selectedTag, selectedTagId, selectedNoTag, handleTagChange } =
     usePageTagFilter({ allowNoTag: true });
@@ -452,7 +485,6 @@ function TasksList() {
   // Mutations for drag-and-drop
   // Note: The refs are accessed in optimistic update callbacks which run at mutation-invocation
   // time (during drag-and-drop), not during render. This is safe despite the lint warning.
-  /* eslint-disable */
   const updateStatus = useTrackedMutation(api.tasks.updateStatus).withOptimisticUpdate(
     (localStore, args) => {
       // Update the main list query
@@ -577,6 +609,10 @@ function TasksList() {
         userId: "",
         taskId: args.taskId,
         url: args.url,
+        githubState: undefined,
+        isDraft: undefined,
+        isMerged: undefined,
+        lastSyncedAt: undefined,
         normalized: parseGitHubPrUrl(args.url),
         createdAt: now,
         updatedAt: now,
@@ -610,7 +646,7 @@ function TasksList() {
       }
     }
   );
-  /* eslint-enable */
+  const syncPullRequestsBatch = useAction(api.pullRequests.syncPullRequestsBatch);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -675,8 +711,21 @@ function TasksList() {
     });
   };
 
-  const handleAttachPr = (args: { taskId: Id<"tasks">; url: string }) => {
-    createPullRequest(args);
+  const handleAttachPr = async (args: { taskId: Id<"tasks">; url: string }) => {
+    const pullRequestId = await createPullRequest(args);
+    const normalized = parseGitHubPrUrl(args.url);
+    if (!normalized) return;
+    await syncPullRequestsBatch({
+      items: [
+        {
+          pullRequestId,
+          url: args.url,
+          owner: normalized.owner,
+          repo: normalized.repo,
+          number: normalized.number,
+        },
+      ],
+    });
   };
 
   // Helper to determine column from a target ID (could be column or task)
@@ -784,6 +833,13 @@ function TasksList() {
     medium: [],
     high: [],
   };
+  const visiblePullRequestsForSync: Array<{
+    pullRequestId: Id<"pullRequests">;
+    url: string;
+    owner: string;
+    repo: string;
+    number: number;
+  }> = [];
 
   let displayedTaskCount = 0;
   for (const task of tasks ?? []) {
@@ -795,6 +851,17 @@ function TasksList() {
       agents: (task.agents as AgentAttachment[] | undefined) ?? [],
       pullRequests: (task.pullRequests as PullRequestAttachment[] | undefined) ?? [],
     };
+    for (const pullRequest of taskWithRelations.pullRequests) {
+      const normalized = pullRequest.normalized ?? parseGitHubPrUrl(pullRequest.url);
+      if (!normalized) continue;
+      visiblePullRequestsForSync.push({
+        pullRequestId: pullRequest._id,
+        url: pullRequest.url,
+        owner: normalized.owner,
+        repo: normalized.repo,
+        number: normalized.number,
+      });
+    }
     tasksByStatus[task.status].push(taskWithRelations);
     tasksByPriority[task.priority].push(taskWithRelations);
   }
@@ -822,6 +889,24 @@ function TasksList() {
       return b._creationTime - a._creationTime;
     });
   }
+
+  const handleRefreshVisiblePullRequests = async () => {
+    if (visiblePullRequestsForSync.length === 0 || isRefreshingPullRequests) return;
+    setIsRefreshingPullRequests(true);
+    try {
+      await syncPullRequestsBatch({
+        items: visiblePullRequestsForSync.map((item) => ({
+          pullRequestId: item.pullRequestId,
+          url: item.url,
+          owner: item.owner,
+          repo: item.repo,
+          number: item.number,
+        })),
+      });
+    } finally {
+      setIsRefreshingPullRequests(false);
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
@@ -918,6 +1003,15 @@ function TasksList() {
                   : `${displayedTaskCount} task${displayedTaskCount === 1 ? "" : "s"}${hideClosed && tasks.length !== displayedTaskCount ? ` (${tasks.length - displayedTaskCount} closed hidden)` : ""}`}
               </p>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={handleRefreshVisiblePullRequests}
+                  disabled={isRefreshingPullRequests || visiblePullRequestsForSync.length === 0}
+                  className="text-sm text-accent hover:underline disabled:text-(--muted) disabled:no-underline disabled:cursor-not-allowed"
+                >
+                  {isRefreshingPullRequests
+                    ? "Refreshing PRs..."
+                    : `Refresh all PRs${visiblePullRequestsForSync.length > 0 ? ` (${visiblePullRequestsForSync.length})` : ""}`}
+                </button>
                 {isSearching && (
                   <button
                     onClick={clearSearch}

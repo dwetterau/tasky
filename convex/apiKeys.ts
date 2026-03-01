@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { getAuthUserId } from "./auth";
 import { insertEvent } from "./events";
 import { apiKeyType } from "./schema";
@@ -164,5 +164,19 @@ export const remove = mutation({
     });
 
     await ctx.db.delete(args.id);
+  },
+});
+
+export const getLatestByTypeInternal = internalQuery({
+  args: {
+    userId: v.string(),
+    type: apiKeyType,
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("apiKeys")
+      .withIndex("by_user_type", (q) => q.eq("userId", args.userId).eq("type", args.type))
+      .order("desc")
+      .first();
   },
 });

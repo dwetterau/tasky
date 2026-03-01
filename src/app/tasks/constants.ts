@@ -54,6 +54,10 @@ export type PullRequestAttachment = {
   _id: Id<"pullRequests">;
   taskId: Id<"tasks">;
   url: string;
+  githubState?: "OPEN" | "CLOSED";
+  isDraft?: boolean;
+  isMerged?: boolean;
+  lastSyncedAt?: number;
   normalized?: {
     domain: string;
     owner: string;
