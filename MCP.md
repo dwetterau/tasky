@@ -85,10 +85,11 @@ Why this design:
 
 `listForMcp` is an internal query used by `readTasks`.
 
-- Inputs: `userId`, optional `statuses`, optional `includeClosed`, optional `tagRootId`, optional `searchQuery`.
+- Inputs: `userId`, optional `statuses`, optional `includeClosed`, optional `tagRootId`, optional `searchQuery`, optional `filterTag`.
 - Default behavior returns only open statuses unless `includeClosed` or explicit statuses are supplied.
 - Optional `searchQuery` uses Convex full-text search (`search_content`) on task content.
 - Optional `tagRootId` constrains results to a tag subtree via `childrenRecursive`.
+- Optional `filterTag` resolves the closest matching user tag (trimmed/lowercased matching) and constrains results to that tag subtree.
 - Returns task fields plus attachment details:
   - `agents`: full agent docs (including `_id`, `externalId`, `link`, `title`, `status`, sync metadata)
   - `pullRequests`: full pull request docs plus `normalized` URL parse details when available
@@ -147,10 +148,12 @@ Input:
 - `includeClosed?: boolean`
 - `statuses?: Array<"not_started" | "in_progress" | "blocked" | "closed">`
 - `searchQuery?: string`
+- `filterTag?: string`
+  - Matching behavior: both query and tag names are trimmed/lowercased; closest match is selected by priority (exact > prefix > contains variants), then tie-broken by name-length difference.
 
 Output:
 
-- Task list including core task fields, `tagIds`, `agents`, and `pullRequests`.
+- Task list including core task fields, `tags` (tag names only), `agents`, and `pullRequests`.
 
 ### `updateTask` (`tasks:write`)
 

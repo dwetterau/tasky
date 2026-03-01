@@ -100,6 +100,45 @@ export const list = query({
 const openTaskStatuses: Array<Doc<"tasks">["status"]> = ["not_started", "in_progress", "blocked"];
 const allTaskStatuses: Array<Doc<"tasks">["status"]> = [...openTaskStatuses, "closed"];
 
+function normalizeTagText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function findClosestTagByName(tags: Doc<"tags">[], rawFilter: string): Doc<"tags"> | null {
+  const query = normalizeTagText(rawFilter);
+  if (!query) {
+    return null;
+  }
+
+  const candidates = tags.map((tag) => {
+    const normalizedName = normalizeTagText(tag.name);
+    let rank = 99;
+    if (normalizedName === query) {
+      rank = 0;
+    } else if (normalizedName.startsWith(query)) {
+      rank = 1;
+    } else if (query.startsWith(normalizedName)) {
+      rank = 2;
+    } else if (normalizedName.includes(query)) {
+      rank = 3;
+    } else if (query.includes(normalizedName)) {
+      rank = 4;
+    }
+    const lengthDelta = Math.abs(normalizedName.length - query.length);
+    return { tag, normalizedName, rank, lengthDelta };
+  });
+
+  const matched = candidates
+    .filter((candidate) => candidate.rank < 99)
+    .sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      if (a.lengthDelta !== b.lengthDelta) return a.lengthDelta - b.lengthDelta;
+      return a.normalizedName.localeCompare(b.normalizedName);
+    })[0];
+
+  return matched?.tag ?? null;
+}
+
 function extractAgentExternalId(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -126,6 +165,7 @@ export const listForMcp = internalQuery({
     includeClosed: v.optional(v.boolean()),
     tagRootId: v.optional(v.id("tags")),
     searchQuery: v.optional(v.string()),
+    filterTag: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const statuses =
@@ -135,8 +175,11 @@ export const listForMcp = internalQuery({
           ? allTaskStatuses
           : openTaskStatuses;
 
+    const allTags = await ctx.db.query("tags").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect();
+    const tagNameById = new Map(allTags.map((tag) => [tag._id, tag.name]));
+
     const normalizedSearchQuery = args.searchQuery?.trim();
-    let tasks;
+    let tasks: Doc<"tasks">[];
     if (normalizedSearchQuery) {
       tasks = await ctx.db
         .query("tasks")
@@ -158,18 +201,30 @@ export const listForMcp = internalQuery({
       tasks = taskGroups.flat();
     }
 
-    if (args.tagRootId) {
-      const rootTag = await ctx.db.get(args.tagRootId);
+    const applyTagSubtreeFilter = async (rootTagId: Id<"tags">, invalidErrorMessage: string) => {
+      const rootTag = await ctx.db.get(rootTagId);
       if (!rootTag || rootTag.userId !== args.userId) {
-        throw new Error("Tag scope is invalid for this user");
+        throw new Error(invalidErrorMessage);
       }
 
-      const matchingTagIds = new Set<Id<"tags">>([args.tagRootId]);
+      const matchingTagIds = new Set<Id<"tags">>([rootTagId]);
       for (const childId of rootTag.childrenRecursive ?? []) {
         matchingTagIds.add(childId);
       }
-
       tasks = tasks.filter((task) => task.tagIds.some((tagId) => matchingTagIds.has(tagId)));
+    };
+
+    if (args.tagRootId) {
+      await applyTagSubtreeFilter(args.tagRootId, "Tag scope is invalid for this user");
+    }
+
+    const normalizedFilterTag = args.filterTag?.trim();
+    if (normalizedFilterTag) {
+      const matchedTag = findClosestTagByName(allTags, normalizedFilterTag);
+      if (!matchedTag) {
+        return [];
+      }
+      await applyTagSubtreeFilter(matchedTag._id, "filterTag is invalid for this user");
     }
 
     const taskIds = new Set(tasks.map((task) => task._id));
@@ -225,7 +280,9 @@ export const listForMcp = internalQuery({
         dueDate: task.dueDate,
         completedAt: task.completedAt,
         statusUpdatedAt: task.statusUpdatedAt,
-        tagIds: task.tagIds,
+        tags: task.tagIds
+          .map((tagId) => tagNameById.get(tagId))
+          .filter((tagName): tagName is string => Boolean(tagName)),
         agents: agentsByTaskId.get(task._id) ?? [],
         pullRequests: pullRequestsByTaskId.get(task._id) ?? [],
       }));

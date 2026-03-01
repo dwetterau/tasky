@@ -95,6 +95,7 @@ async function handleReadTasksTool(
     statuses?: Array<"not_started" | "in_progress" | "blocked" | "closed">;
     tagRootId?: Id<"tags">;
     searchQuery?: string;
+    filterTag?: string;
   }) => Promise<unknown>,
   rpcId: unknown,
   sessionUserId: string,
@@ -113,6 +114,7 @@ async function handleReadTasksTool(
     includeClosed?: unknown;
     statuses?: unknown;
     searchQuery?: unknown;
+    filterTag?: unknown;
   };
 
   const includeClosed = args.includeClosed === true;
@@ -121,6 +123,10 @@ async function handleReadTasksTool(
     return mcpError(rpcId, -32602, "searchQuery must be a string");
   }
   const searchQuery = typeof args.searchQuery === "string" ? args.searchQuery : undefined;
+  if (args.filterTag !== undefined && typeof args.filterTag !== "string") {
+    return mcpError(rpcId, -32602, "filterTag must be a string");
+  }
+  const filterTag = typeof args.filterTag === "string" ? args.filterTag : undefined;
 
   try {
     const tasks = await executeListForMcp({
@@ -129,6 +135,7 @@ async function handleReadTasksTool(
       statuses,
       tagRootId: parsedScopes.tagRootId,
       searchQuery,
+      filterTag,
     });
     return mcpToolResult(rpcId, tasks);
   } catch (error) {
@@ -293,7 +300,7 @@ function getToolsList() {
     {
       name: "readTasks",
       description:
-        "Return tasks for the authenticated user. By default, only non-closed tasks are returned. Supports optional full-text search via searchQuery.",
+        "Return tasks for the authenticated user. By default, only non-closed tasks are returned. Supports optional full-text search via searchQuery and tag filtering via filterTag.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -307,6 +314,11 @@ function getToolsList() {
             },
           },
           searchQuery: { type: "string" },
+          filterTag: {
+            type: "string",
+            description:
+              "Tag name filter using trimmed/lowercased closest-match logic: exact match first, then prefix/contains variants. Results include tasks at/under the matched tag.",
+          },
         },
       },
     },
