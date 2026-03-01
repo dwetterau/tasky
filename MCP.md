@@ -85,8 +85,9 @@ Why this design:
 
 `listForMcp` is an internal query used by `readTasks`.
 
-- Inputs: `userId`, optional `statuses`, optional `includeClosed`, optional `tagRootId`.
+- Inputs: `userId`, optional `statuses`, optional `includeClosed`, optional `tagRootId`, optional `searchQuery`.
 - Default behavior returns only open statuses unless `includeClosed` or explicit statuses are supplied.
+- Optional `searchQuery` uses Convex full-text search (`search_content`) on task content.
 - Optional `tagRootId` constrains results to a tag subtree via `childrenRecursive`.
 - Returns task fields plus attachment details:
   - `agents`: full agent docs (including `_id`, `externalId`, `link`, `title`, `status`, sync metadata)
@@ -145,6 +146,7 @@ Input:
 
 - `includeClosed?: boolean`
 - `statuses?: Array<"not_started" | "in_progress" | "blocked" | "closed">`
+- `searchQuery?: string`
 
 Output:
 

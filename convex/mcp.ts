@@ -94,6 +94,7 @@ async function handleReadTasksTool(
     includeClosed: boolean;
     statuses?: Array<"not_started" | "in_progress" | "blocked" | "closed">;
     tagRootId?: Id<"tags">;
+    searchQuery?: string;
   }) => Promise<unknown>,
   rpcId: unknown,
   sessionUserId: string,
@@ -111,10 +112,15 @@ async function handleReadTasksTool(
   const args = (rawArgs ?? {}) as {
     includeClosed?: unknown;
     statuses?: unknown;
+    searchQuery?: unknown;
   };
 
   const includeClosed = args.includeClosed === true;
   const statuses = parseTaskStatuses(args.statuses);
+  if (args.searchQuery !== undefined && typeof args.searchQuery !== "string") {
+    return mcpError(rpcId, -32602, "searchQuery must be a string");
+  }
+  const searchQuery = typeof args.searchQuery === "string" ? args.searchQuery : undefined;
 
   try {
     const tasks = await executeListForMcp({
@@ -122,6 +128,7 @@ async function handleReadTasksTool(
       includeClosed,
       statuses,
       tagRootId: parsedScopes.tagRootId,
+      searchQuery,
     });
     return mcpToolResult(rpcId, tasks);
   } catch (error) {
@@ -286,7 +293,7 @@ function getToolsList() {
     {
       name: "readTasks",
       description:
-        "Return tasks for the authenticated user. By default, only non-closed tasks are returned.",
+        "Return tasks for the authenticated user. By default, only non-closed tasks are returned. Supports optional full-text search via searchQuery.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -299,6 +306,7 @@ function getToolsList() {
               enum: ["not_started", "in_progress", "blocked", "closed"],
             },
           },
+          searchQuery: { type: "string" },
         },
       },
     },
