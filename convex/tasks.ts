@@ -1,9 +1,85 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, QueryCtx } from "./_generated/server";
 import { getAuthUserId } from "./auth";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { taskStatus, taskPriority } from "./schema";
 import { insertEvent } from "./events";
+import { parseGitHubPullRequestUrl } from "./pullRequests";
+
+async function hydrateTasksWithRelations<T extends { _id: Id<"tasks">; tagIds: Id<"tags">[] }>(
+  ctx: QueryCtx,
+  userId: string,
+  tasks: T[]
+): Promise<
+  Array<
+    T & {
+      tags: Doc<"tags">[];
+      agents: Doc<"agents">[];
+      pullRequests: Array<
+        Doc<"pullRequests"> & {
+          normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
+        }
+      >;
+    }
+  >
+> {
+  const [allAgents, allPullRequests] = await Promise.all([
+    ctx.db.query("agents").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+    ctx.db.query("pullRequests").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+  ]);
+
+  const agentsByTaskId = new Map<Id<"tasks">, typeof allAgents>();
+  for (const agent of allAgents) {
+    const listForTask = agentsByTaskId.get(agent.taskId);
+    if (listForTask) {
+      listForTask.push(agent);
+    } else {
+      agentsByTaskId.set(agent.taskId, [agent]);
+    }
+  }
+
+  const pullRequestsByTaskId = new Map<
+    Id<"tasks">,
+    Array<
+      (typeof allPullRequests)[number] & {
+        normalized: {
+          url: string;
+          domain: string;
+          owner: string;
+          repo: string;
+          number: number;
+        } | null;
+      }
+    >
+  >();
+  for (const pullRequest of allPullRequests) {
+    let normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null = null;
+    try {
+      normalized = parseGitHubPullRequestUrl(pullRequest.url);
+    } catch {
+      normalized = null;
+    }
+    const next = { ...pullRequest, normalized };
+    const listForTask = pullRequestsByTaskId.get(pullRequest.taskId);
+    if (listForTask) {
+      listForTask.push(next);
+    } else {
+      pullRequestsByTaskId.set(pullRequest.taskId, [next]);
+    }
+  }
+
+  return await Promise.all(
+    tasks.map(async (task) => {
+      const tags = await Promise.all(task.tagIds.map((tagId) => ctx.db.get(tagId)));
+      return {
+        ...task,
+        tags: tags.filter((t) => t !== null),
+        agents: agentsByTaskId.get(task._id) ?? [],
+        pullRequests: pullRequestsByTaskId.get(task._id) ?? [],
+      };
+    })
+  );
+}
 
 export const list = query({
   args: {},
@@ -17,20 +93,7 @@ export const list = query({
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
 
-    // Fetch tags for each task
-    const tasksWithTags = await Promise.all(
-      tasks.map(async (task) => {
-        const tags = await Promise.all(
-          task.tagIds.map((tagId) => ctx.db.get(tagId))
-        );
-        return {
-          ...task,
-          tags: tags.filter((t) => t !== null),
-        };
-      })
-    );
-
-    return tasksWithTags;
+    return await hydrateTasksWithRelations(ctx, userId, tasks);
   },
 });
 
@@ -312,6 +375,23 @@ export const remove = mutation({
       action: { type: "task.deleted" },
       tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
     });
+
+    const [linkedAgents, linkedPullRequests] = await Promise.all([
+      ctx.db
+        .query("agents")
+        .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", args.id))
+        .collect(),
+      ctx.db
+        .query("pullRequests")
+        .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", args.id))
+        .collect(),
+    ]);
+
+    await Promise.all([
+      ...linkedAgents.map((agent) => ctx.db.delete(agent._id)),
+      ...linkedPullRequests.map((pullRequest) => ctx.db.delete(pullRequest._id)),
+    ]);
+
     await ctx.db.delete(args.id);
   },
 });
@@ -377,19 +457,6 @@ export const search = query({
       );
     }
 
-    // Fetch tags for each task
-    const tasksWithTags = await Promise.all(
-      tasks.map(async (task) => {
-        const tags = await Promise.all(
-          task.tagIds.map((tagId) => ctx.db.get(tagId))
-        );
-        return {
-          ...task,
-          tags: tags.filter((t) => t !== null),
-        };
-      })
-    );
-
-    return tasksWithTags;
+    return await hydrateTasksWithRelations(ctx, userId, tasks);
   },
 });

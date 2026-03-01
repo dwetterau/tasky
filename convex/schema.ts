@@ -23,6 +23,14 @@ export const taskPriority = v.union(
   v.literal("high")
 );
 
+export const apiKeyTypeValues = ["github", "cursor_agent_sdk"] as const;
+export type ApiKeyType = (typeof apiKeyTypeValues)[number];
+
+export const apiKeyType = v.union(
+  v.literal("github"),
+  v.literal("cursor_agent_sdk")
+);
+
 // Event action discriminated union -- keyed by `type`, entity type encoded in prefix
 export const eventAction = v.union(
   // Capture actions
@@ -43,6 +51,15 @@ export const eventAction = v.union(
   v.object({ type: v.literal("note.created") }),
   v.object({ type: v.literal("note.edited") }),
   v.object({ type: v.literal("note.deleted") }),
+  // Agent actions
+  v.object({ type: v.literal("agent.created") }),
+  v.object({ type: v.literal("agent.deleted") }),
+  // Pull request actions
+  v.object({ type: v.literal("pull_request.created") }),
+  v.object({ type: v.literal("pull_request.deleted") }),
+  // API key actions
+  v.object({ type: v.literal("api_key.created") }),
+  v.object({ type: v.literal("api_key.deleted") }),
 );
 
 export type EventAction = typeof eventAction.type;
@@ -89,6 +106,45 @@ export default defineSchema({
       searchField: "content",
       filterFields: ["userId"],
     }),
+
+  agents: defineTable({
+    userId: v.string(),
+    taskId: v.id("tasks"),
+    externalId: v.string(), // External system identifier (unique per user)
+    link: v.string(),
+    title: v.string(),
+    status: v.string(),
+    lastSyncedAt: v.optional(v.number()),
+    updatedAt: v.number(), // Unix timestamp (ms)
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_task", ["userId", "taskId"])
+    .index("by_user_external_id", ["userId", "externalId"]),
+
+  pullRequests: defineTable({
+    userId: v.string(),
+    taskId: v.id("tasks"),
+    url: v.string(),
+    githubState: v.optional(v.union(v.literal("OPEN"), v.literal("CLOSED"))),
+    isDraft: v.optional(v.boolean()),
+    isMerged: v.optional(v.boolean()),
+    lastSyncedAt: v.optional(v.number()),
+    updatedAt: v.number(), // Unix timestamp (ms)
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_task", ["userId", "taskId"]),
+
+  apiKeys: defineTable({
+    userId: v.string(),
+    name: v.string(),
+    type: apiKeyType,
+    encryptedValue: v.string(),
+    iv: v.string(), // Base64 IV used by AES-256-GCM
+    keyVersion: v.number(),
+    updatedAt: v.number(), // Unix timestamp (ms)
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_type", ["userId", "type"]),
 
   events: defineTable({
     userId: v.string(),

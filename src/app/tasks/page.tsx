@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { Id } from "../../../convex/_generated/dataModel";
@@ -32,6 +32,8 @@ import {
   type TaskStatus,
   type TaskPriority,
   type TaskForEdit,
+  type AgentAttachment,
+  type PullRequestAttachment,
   type KanbanMode,
   STATUS_CONFIG,
   STATUS_ORDER,
@@ -39,7 +41,15 @@ import {
   PRIORITY_ORDER,
   PRIORITY_WEIGHT,
   STATUS_WEIGHT,
+  CURSOR_ICON_VIEWBOX,
+  CURSOR_ICON_PATH,
+  PR_ICON_PATHS,
+  getAgentStatusInfo,
+  getPullRequestStatusInfo,
+  getPullRequestHref,
 } from "./constants";
+import { AttachAgentModal } from "./AttachAgentModal";
+import { AttachPrModal } from "./AttachPrModal";
 
 function formatDueDateForViewer(dueDate: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueDate);
@@ -68,25 +78,60 @@ function formatDueDateForViewer(dueDate: string): string {
   return localDate.toLocaleDateString();
 }
 
+type TaskView = {
+  _id: Id<"tasks">;
+  _creationTime: number;
+  content: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate?: string;
+  completedAt?: number;
+  tags: Tag[];
+  agents: AgentAttachment[];
+  pullRequests: PullRequestAttachment[];
+};
+
+function parseGitHubPrUrl(rawUrl: string): PullRequestAttachment["normalized"] {
+  try {
+    const parseInput = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawUrl.trim())
+      ? rawUrl.trim()
+      : `https://${rawUrl.trim()}`;
+    const parsed = new URL(parseInput);
+    const hostname = parsed.hostname.toLowerCase();
+    const domain = hostname === "www.github.com" ? "github.com" : hostname;
+    if (domain !== "github.com") return null;
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length < 4 || parts[2].toLowerCase() !== "pull") return null;
+    const number = Number(parts[3]);
+    if (!Number.isInteger(number) || number <= 0) return null;
+    return {
+      domain,
+      owner: parts[0].toLowerCase(),
+      repo: parts[1].toLowerCase(),
+      number,
+    };
+  } catch {
+    return null;
+  }
+}
+
+
 function TaskCard({
   task,
   kanbanMode,
   isDragging: isDraggingProp,
   isColumnDropTarget,
   onOpenEditModal,
+  onOpenAttachAgentModal,
+  onOpenAttachPrModal,
 }: {
-  task: {
-    _id: Id<"tasks">;
-    content: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueDate?: string;
-    tags: Tag[];
-  };
+  task: TaskView;
   kanbanMode: KanbanMode;
   isDragging?: boolean;
   isColumnDropTarget?: boolean;
   onOpenEditModal?: () => void;
+  onOpenAttachAgentModal?: () => void;
+  onOpenAttachPrModal?: () => void;
 }) {
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
@@ -166,23 +211,55 @@ function TaskCard({
       />
 
       <div className="flex-1 p-4 min-w-0">
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {task.tags.length === 0 ? (
-            <span className="text-xs text-(--muted)">No tags</span>
-          ) : (
-            task.tags.map((tag) => (
-              <span
-                key={tag._id}
-                className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
-                style={{
-                  backgroundColor: tag.color ? `${tag.color}20` : "var(--accent-muted)",
-                  color: tag.color || "var(--accent)",
-                }}
-              >
-                {tag.name}
-              </span>
-            ))
-          )}
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex flex-wrap gap-1.5">
+            {task.tags.length === 0 ? (
+              <span className="text-xs text-(--muted)">No tags</span>
+            ) : (
+              task.tags.map((tag) => (
+                <span
+                  key={tag._id}
+                  className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
+                  style={{
+                    backgroundColor: tag.color ? `${tag.color}20` : "var(--accent-muted)",
+                    color: tag.color || "var(--accent)",
+                  }}
+                >
+                  {tag.name}
+                </span>
+              ))
+            )}
+          </div>
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAttachAgentModal?.();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="p-1 rounded text-(--muted) opacity-40 hover:opacity-100 hover:text-foreground hover:bg-(--card-border) transition-all"
+              title="Attach agent"
+            >
+              <svg className="w-3.5 h-4 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor">
+                <path d={CURSOR_ICON_PATH} />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAttachPrModal?.();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="p-1 rounded text-(--muted) opacity-40 hover:opacity-100 hover:text-foreground hover:bg-(--card-border) transition-all"
+              title="Attach pull request"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor">
+                <path d={PR_ICON_PATHS.open} />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div className="relative">
@@ -249,6 +326,56 @@ function TaskCard({
             )}
           </div>
         )}
+
+        {(task.pullRequests.length > 0 || task.agents.length > 0) && (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {task.pullRequests.map((pullRequest) => {
+              const label = pullRequest.normalized
+                ? `${pullRequest.normalized.owner}/${pullRequest.normalized.repo}#${pullRequest.normalized.number}`
+                : pullRequest.url;
+              const status = getPullRequestStatusInfo(pullRequest);
+              return (
+                <a
+                  key={pullRequest._id}
+                  href={getPullRequestHref(pullRequest.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs text-(--muted) hover:text-foreground transition-colors"
+                  style={{ backgroundColor: `${status.color}18` }}
+                  title={`${label} · ${status.label}`}
+                >
+                  <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
+                    <path d={status.iconPath} />
+                  </svg>
+                  {label}
+                </a>
+              );
+            })}
+            {task.agents.map((agent) => {
+              const agentStatus = getAgentStatusInfo(agent.status);
+              return (
+                <a
+                  key={agent._id}
+                  href={agent.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs text-(--muted) hover:text-foreground transition-colors"
+                  style={{ backgroundColor: `${agentStatus.color}18` }}
+                  title={`${agent.externalId} · ${agentStatus.label}`}
+                >
+                  <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
+                    <path d={CURSOR_ICON_PATH} />
+                  </svg>
+                  {agent.title}
+                </a>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -261,20 +388,17 @@ function KanbanColumn({
   kanbanMode,
   isDropTarget,
   onOpenEditModal,
+  onOpenAttachAgentModal,
+  onOpenAttachPrModal,
 }: {
   columnId: string;
   columnValue: TaskStatus | TaskPriority;
-  tasks: Array<{
-    _id: Id<"tasks">;
-    content: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueDate?: string;
-    tags: Tag[];
-  }>;
+  tasks: TaskView[];
   kanbanMode: KanbanMode;
   isDropTarget?: boolean;
-  onOpenEditModal: (task: { _id: Id<"tasks">; content: string; status: TaskStatus; priority: TaskPriority; dueDate?: string; tags: Tag[] }) => void;
+  onOpenEditModal: (task: TaskForEdit) => void;
+  onOpenAttachAgentModal: (taskId: Id<"tasks">) => void;
+  onOpenAttachPrModal: (taskId: Id<"tasks">) => void;
 }) {
   const { setNodeRef } = useDroppable({ id: columnId });
   
@@ -311,6 +435,8 @@ function KanbanColumn({
             kanbanMode={kanbanMode} 
             isColumnDropTarget={isDropTarget}
             onOpenEditModal={() => onOpenEditModal(task)}
+            onOpenAttachAgentModal={() => onOpenAttachAgentModal(task._id)}
+            onOpenAttachPrModal={() => onOpenAttachPrModal(task._id)}
           />
         ))}
         {tasks.length === 0 && (
@@ -331,7 +457,10 @@ function TasksList() {
   const [hideClosed, setHideClosed] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<Id<"tasks"> | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
-  const [editingTask, setEditingTask] = useState<TaskForEdit | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<Id<"tasks"> | null>(null);
+  const [attachAgentTaskId, setAttachAgentTaskId] = useState<Id<"tasks"> | null>(null);
+  const [attachPrTaskId, setAttachPrTaskId] = useState<Id<"tasks"> | null>(null);
+  const [isRefreshingLinks, setIsRefreshingLinks] = useState(false);
 
   const { allTags, selectedTag, selectedTagId, selectedNoTag, handleTagChange } =
     usePageTagFilter({ allowNoTag: true });
@@ -354,7 +483,6 @@ function TasksList() {
   // Mutations for drag-and-drop
   // Note: The refs are accessed in optimistic update callbacks which run at mutation-invocation
   // time (during drag-and-drop), not during render. This is safe despite the lint warning.
-  /* eslint-disable */
   const updateStatus = useTrackedMutation(api.tasks.updateStatus).withOptimisticUpdate(
     (localStore, args) => {
       // Update the main list query
@@ -426,7 +554,141 @@ function TasksList() {
       }
     }
   );
-  /* eslint-enable */
+
+  const createAgent = useTrackedMutation(api.agents.createForTask).withOptimisticUpdate(
+    (localStore, args) => {
+      const now = Date.now();
+      const tempAgent = {
+        _id: crypto.randomUUID() as Id<"agents">,
+        _creationTime: Number.MAX_SAFE_INTEGER,
+        userId: "",
+        taskId: args.taskId,
+        externalId: args.externalId,
+        link: args.link,
+        title: args.title,
+        status: args.status,
+        lastSyncedAt: undefined,
+        updatedAt: now,
+      };
+
+      const applyToTask = <T extends { _id: Id<"tasks">; agents?: AgentAttachment[] }>(task: T): T =>
+        task._id === args.taskId
+          ? ({ ...task, agents: [tempAgent, ...(task.agents ?? [])] } as T)
+          : task;
+
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
+        localStore.setQuery(api.tasks.list, {}, listTasks.map((task) => applyToTask(task)));
+      }
+
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(
+            api.tasks.search,
+            searchArgs,
+            searchTasks.map((task) => applyToTask(task))
+          );
+        }
+      }
+    }
+  );
+
+  const createPullRequest = useTrackedMutation(api.pullRequests.createForTask).withOptimisticUpdate(
+    (localStore, args) => {
+      const now = Date.now();
+      const tempPullRequest = {
+        _id: crypto.randomUUID() as Id<"pullRequests">,
+        _creationTime: Number.MAX_SAFE_INTEGER,
+        userId: "",
+        taskId: args.taskId,
+        url: args.url,
+        githubState: undefined,
+        isDraft: undefined,
+        isMerged: undefined,
+        lastSyncedAt: undefined,
+        normalized: parseGitHubPrUrl(args.url),
+        updatedAt: now,
+      };
+
+      const applyToTask = <T extends { _id: Id<"tasks">; pullRequests?: PullRequestAttachment[] }>(
+        task: T
+      ): T =>
+        task._id === args.taskId
+          ? ({ ...task, pullRequests: [tempPullRequest, ...(task.pullRequests ?? [])] } as T)
+          : task;
+
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
+        localStore.setQuery(api.tasks.list, {}, listTasks.map((task) => applyToTask(task)));
+      }
+
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(
+            api.tasks.search,
+            searchArgs,
+            searchTasks.map((task) => applyToTask(task))
+          );
+        }
+      }
+    }
+  );
+  const removeAgent = useTrackedMutation(api.agents.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const removeFromTask = <T extends { _id: Id<"tasks">; agents?: AgentAttachment[] }>(t: T): T => ({
+        ...t,
+        agents: (t.agents ?? []).filter((a) => a._id !== args.id),
+      });
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
+        localStore.setQuery(api.tasks.list, {}, listTasks.map(removeFromTask));
+      }
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(api.tasks.search, searchArgs, searchTasks.map(removeFromTask));
+        }
+      }
+    }
+  );
+  const removePullRequest = useTrackedMutation(api.pullRequests.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const removeFromTask = <T extends { _id: Id<"tasks">; pullRequests?: PullRequestAttachment[] }>(t: T): T => ({
+        ...t,
+        pullRequests: (t.pullRequests ?? []).filter((pr) => pr._id !== args.id),
+      });
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
+        localStore.setQuery(api.tasks.list, {}, listTasks.map(removeFromTask));
+      }
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(api.tasks.search, searchArgs, searchTasks.map(removeFromTask));
+        }
+      }
+    }
+  );
+  const syncAgentStates = useAction(api.agents.syncAgentStates);
+  const syncPullRequestsBatch = useAction(api.pullRequests.syncPullRequestsBatch);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -473,9 +735,47 @@ function TasksList() {
 
   const tasks = isSearching ? searchResults : allTasks;
 
+  const editingTask = useMemo(() => {
+    if (!editingTaskId) return null;
+    return (allTasks ?? []).find((t) => t._id === editingTaskId) ?? null;
+  }, [editingTaskId, allTasks]);
+
   const clearSearch = () => {
     setSearchText("");
     handleTagChange(null);
+  };
+
+  const handleAttachAgent = async (args: {
+    taskId: Id<"tasks">;
+    externalId: string;
+  }) => {
+    const agentId = await createAgent({
+      taskId: args.taskId,
+      externalId: args.externalId,
+      link: `https://cursor.com/agents/${args.externalId}`,
+      title: args.externalId,
+      status: "",
+    });
+    await syncAgentStates({
+      items: [{ agentId, externalId: args.externalId }],
+    });
+  };
+
+  const handleAttachPr = async (args: { taskId: Id<"tasks">; url: string }) => {
+    const pullRequestId = await createPullRequest(args);
+    const normalized = parseGitHubPrUrl(args.url);
+    if (!normalized) return;
+    await syncPullRequestsBatch({
+      items: [
+        {
+          pullRequestId,
+          url: args.url,
+          owner: normalized.owner,
+          repo: normalized.repo,
+          number: normalized.number,
+        },
+      ],
+    });
   };
 
   // Helper to determine column from a target ID (could be column or task)
@@ -570,41 +870,60 @@ function TasksList() {
     : null;
 
   // Group tasks by status or priority based on mode
-  type TaskWithTags = {
-    _id: Id<"tasks">;
-    _creationTime: number;
-    content: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueDate?: string;
-    completedAt?: number;
-    tags: Tag[];
-  };
-
-  const tasksByStatus: Record<TaskStatus, TaskWithTags[]> = {
+  const tasksByStatus: Record<TaskStatus, TaskView[]> = {
     not_started: [],
     in_progress: [],
     blocked: [],
     closed: [],
   };
 
-  const tasksByPriority: Record<TaskPriority, TaskWithTags[]> = {
+  const tasksByPriority: Record<TaskPriority, TaskView[]> = {
     triage: [],
     low: [],
     medium: [],
     high: [],
   };
+  const visiblePullRequestsForSync: Array<{
+    pullRequestId: Id<"pullRequests">;
+    url: string;
+    owner: string;
+    repo: string;
+    number: number;
+  }> = [];
+  const visibleAgentsForSync: Array<{
+    agentId: Id<"agents">;
+    externalId: string;
+  }> = [];
 
   let displayedTaskCount = 0;
   for (const task of tasks ?? []) {
     if (hideClosed && task.status === "closed") continue;
     displayedTaskCount++;
-    const taskWithTags = {
+    const taskWithRelations: TaskView = {
       ...task,
       tags: task.tags as Tag[],
+      agents: (task.agents as AgentAttachment[] | undefined) ?? [],
+      pullRequests: (task.pullRequests as PullRequestAttachment[] | undefined) ?? [],
     };
-    tasksByStatus[task.status].push(taskWithTags);
-    tasksByPriority[task.priority].push(taskWithTags);
+    for (const pullRequest of taskWithRelations.pullRequests) {
+      const normalized = pullRequest.normalized ?? parseGitHubPrUrl(pullRequest.url);
+      if (!normalized) continue;
+      visiblePullRequestsForSync.push({
+        pullRequestId: pullRequest._id,
+        url: pullRequest.url,
+        owner: normalized.owner,
+        repo: normalized.repo,
+        number: normalized.number,
+      });
+    }
+    for (const agent of taskWithRelations.agents) {
+      visibleAgentsForSync.push({
+        agentId: agent._id,
+        externalId: agent.externalId,
+      });
+    }
+    tasksByStatus[task.status].push(taskWithRelations);
+    tasksByPriority[task.priority].push(taskWithRelations);
   }
 
   // Sort tasks within each status column: by priority (high first), then by creation time descending
@@ -630,6 +949,42 @@ function TasksList() {
       return b._creationTime - a._creationTime;
     });
   }
+
+  const visibleLinksCount = visiblePullRequestsForSync.length + visibleAgentsForSync.length;
+
+  const handleRefreshVisibleLinks = async () => {
+    if (visibleLinksCount === 0 || isRefreshingLinks) return;
+    setIsRefreshingLinks(true);
+    try {
+      const syncPromises: Array<Promise<unknown>> = [];
+      if (visiblePullRequestsForSync.length > 0) {
+        syncPromises.push(
+          syncPullRequestsBatch({
+            items: visiblePullRequestsForSync.map((item) => ({
+              pullRequestId: item.pullRequestId,
+              url: item.url,
+              owner: item.owner,
+              repo: item.repo,
+              number: item.number,
+            })),
+          })
+        );
+      }
+      if (visibleAgentsForSync.length > 0) {
+        syncPromises.push(
+          syncAgentStates({
+            items: visibleAgentsForSync.map((item) => ({
+              agentId: item.agentId,
+              externalId: item.externalId,
+            })),
+          })
+        );
+      }
+      await Promise.all(syncPromises);
+    } finally {
+      setIsRefreshingLinks(false);
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
@@ -726,6 +1081,15 @@ function TasksList() {
                   : `${displayedTaskCount} task${displayedTaskCount === 1 ? "" : "s"}${hideClosed && tasks.length !== displayedTaskCount ? ` (${tasks.length - displayedTaskCount} closed hidden)` : ""}`}
               </p>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={handleRefreshVisibleLinks}
+                  disabled={isRefreshingLinks || visibleLinksCount === 0}
+                  className="text-sm text-accent hover:underline disabled:text-(--muted) disabled:no-underline disabled:cursor-not-allowed"
+                >
+                  {isRefreshingLinks
+                    ? "Refreshing links..."
+                    : `Refresh all links${visibleLinksCount > 0 ? ` (${visibleLinksCount})` : ""}`}
+                </button>
                 {isSearching && (
                   <button
                     onClick={clearSearch}
@@ -783,7 +1147,9 @@ function TasksList() {
                       tasks={tasksByStatus[status]}
                       kanbanMode={kanbanMode}
                       isDropTarget={overColumnId === status}
-                      onOpenEditModal={setEditingTask}
+                      onOpenEditModal={(t) => setEditingTaskId(t._id)}
+                      onOpenAttachAgentModal={setAttachAgentTaskId}
+                      onOpenAttachPrModal={setAttachPrTaskId}
                     />
                   ))
                 ) : (
@@ -795,7 +1161,9 @@ function TasksList() {
                       tasks={tasksByPriority[priority]}
                       kanbanMode={kanbanMode}
                       isDropTarget={overColumnId === priority}
-                      onOpenEditModal={setEditingTask}
+                      onOpenEditModal={(t) => setEditingTaskId(t._id)}
+                      onOpenAttachAgentModal={setAttachAgentTaskId}
+                      onOpenAttachPrModal={setAttachPrTaskId}
                     />
                   ))
                 )}
@@ -809,6 +1177,9 @@ function TasksList() {
                       task={{
                         ...activeTask,
                         tags: activeTask.tags as Tag[],
+                        agents: (activeTask.agents as AgentAttachment[] | undefined) ?? [],
+                        pullRequests:
+                          (activeTask.pullRequests as PullRequestAttachment[] | undefined) ?? [],
                       }}
                       kanbanMode={kanbanMode}
                     />
@@ -833,12 +1204,30 @@ function TasksList() {
       {editingTask && (
         <TaskModal
           isOpen={true}
-          onClose={() => setEditingTask(null)}
+          onClose={() => setEditingTaskId(null)}
           task={editingTask}
           allTags={allTags}
           activeSearchArgs={activeSearchArgs}
+          onAttachAgent={handleAttachAgent}
+          onRemoveAgent={(id) => removeAgent({ id })}
+          onAttachPr={handleAttachPr}
+          onRemovePr={(id) => removePullRequest({ id })}
         />
       )}
+
+      <AttachAgentModal
+        isOpen={attachAgentTaskId !== null}
+        taskId={attachAgentTaskId}
+        onClose={() => setAttachAgentTaskId(null)}
+        onAttach={handleAttachAgent}
+      />
+
+      <AttachPrModal
+        isOpen={attachPrTaskId !== null}
+        taskId={attachPrTaskId}
+        onClose={() => setAttachPrTaskId(null)}
+        onAttach={handleAttachPr}
+      />
     </div>
   );
 }
