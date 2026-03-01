@@ -114,6 +114,7 @@ export default defineSchema({
     link: v.string(),
     title: v.string(),
     status: v.string(),
+    lastSyncedAt: v.optional(v.number()),
     createdAt: v.number(), // Unix timestamp (ms)
     updatedAt: v.number(), // Unix timestamp (ms)
   })

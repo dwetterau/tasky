@@ -109,27 +109,48 @@ function parseGitHubPrUrl(rawUrl: string): PullRequestAttachment["normalized"] {
   }
 }
 
+const CURSOR_ICON_VIEWBOX = "0 0 466.73 532.09";
+const CURSOR_ICON_PATH = "M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z";
+
+function getAgentStatusInfo(status: string): { label: string; color: string } {
+  const s = status.toLowerCase();
+  if (!s) return { label: "Syncing", color: "#94a3b8" };
+  if (s === "completed" || s === "done" || s === "finished") return { label: "Completed", color: "#34d399" };
+  if (s === "running" || s === "generating" || s === "in_progress" || s === "working") return { label: "Running", color: "#60a5fa" };
+  if (s === "failed" || s === "error") return { label: "Failed", color: "#f87171" };
+  if (s === "stopped" || s === "cancelled") return { label: "Stopped", color: "#a1a1aa" };
+  return { label: status || "Unknown", color: "#94a3b8" };
+}
+
 function getPullRequestHref(url: string): string {
   return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url) ? url : `https://${url}`;
 }
 
-function getPullRequestLifecycleBadge(pullRequest: PullRequestAttachment): {
+const PR_ICON_PATHS = {
+  open: "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z",
+  merged: "M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z",
+  closed: "M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z",
+  draft: "M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z",
+} as const;
+
+function getPullRequestStatusInfo(pullRequest: PullRequestAttachment): {
   label: string;
-  className: string;
+  color: string;
+  iconPath: string;
 } {
-  if (pullRequest.isDraft) {
-    return { label: "Draft", className: "bg-amber-500/20 text-amber-300" };
-  }
   if (pullRequest.isMerged) {
-    return { label: "Merged", className: "bg-purple-500/20 text-purple-300" };
+    return { label: "Merged", color: "#a78bfa", iconPath: PR_ICON_PATHS.merged };
+  }
+  if (pullRequest.isDraft) {
+    return { label: "Draft", color: "#fbbf24", iconPath: PR_ICON_PATHS.draft };
   }
   if (pullRequest.githubState === "OPEN") {
-    return { label: "Open", className: "bg-emerald-500/20 text-emerald-300" };
+    return { label: "Open", color: "#34d399", iconPath: PR_ICON_PATHS.open };
   }
   if (pullRequest.githubState === "CLOSED") {
-    return { label: "Closed", className: "bg-zinc-500/20 text-zinc-300" };
+    return { label: "Closed", color: "#a1a1aa", iconPath: PR_ICON_PATHS.closed };
   }
-  return { label: "Unknown", className: "bg-slate-500/20 text-slate-300" };
+  return { label: "PR", color: "#94a3b8", iconPath: PR_ICON_PATHS.open };
 }
 
 function TaskCard({
@@ -274,25 +295,32 @@ function TaskCard({
 
         {(task.agents.length > 0 || task.pullRequests.length > 0) && (
           <div className="flex flex-wrap gap-1.5 mb-2">
-            {task.agents.map((agent) => (
-              <a
-                key={agent._id}
-                href={agent.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs bg-(--accent)/10 text-accent hover:underline"
-                title={`${agent.externalId} · ${agent.status}`}
-              >
-                Agent: {agent.title}
-              </a>
-            ))}
+            {task.agents.map((agent) => {
+              const agentStatus = getAgentStatusInfo(agent.status);
+              return (
+                <a
+                  key={agent._id}
+                  href={agent.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs text-(--muted) hover:text-foreground transition-colors"
+                  style={{ backgroundColor: `${agentStatus.color}18` }}
+                  title={`${agent.externalId} · ${agentStatus.label}`}
+                >
+                  <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
+                    <path d={CURSOR_ICON_PATH} />
+                  </svg>
+                  {agent.title}
+                </a>
+              );
+            })}
             {task.pullRequests.map((pullRequest) => {
               const label = pullRequest.normalized
                 ? `${pullRequest.normalized.owner}/${pullRequest.normalized.repo}#${pullRequest.normalized.number}`
                 : pullRequest.url;
-              const lifecycleBadge = getPullRequestLifecycleBadge(pullRequest);
+              const status = getPullRequestStatusInfo(pullRequest);
               return (
                 <a
                   key={pullRequest._id}
@@ -301,13 +329,14 @@ function TaskCard({
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs bg-sky-500/10 text-sky-400 hover:underline"
-                  title={pullRequest.url}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs text-(--muted) hover:text-foreground transition-colors"
+                  style={{ backgroundColor: `${status.color}18` }}
+                  title={`${label} · ${status.label}`}
                 >
-                  PR: {label}
-                  <span className={`rounded px-1 py-px text-[10px] font-medium ${lifecycleBadge.className}`}>
-                    {lifecycleBadge.label}
-                  </span>
+                  <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
+                    <path d={status.iconPath} />
+                  </svg>
+                  {label}
                 </a>
               );
             })}
@@ -462,7 +491,7 @@ function TasksList() {
   const [editingTask, setEditingTask] = useState<TaskForEdit | null>(null);
   const [attachAgentTaskId, setAttachAgentTaskId] = useState<Id<"tasks"> | null>(null);
   const [attachPrTaskId, setAttachPrTaskId] = useState<Id<"tasks"> | null>(null);
-  const [isRefreshingPullRequests, setIsRefreshingPullRequests] = useState(false);
+  const [isRefreshingLinks, setIsRefreshingLinks] = useState(false);
 
   const { allTags, selectedTag, selectedTagId, selectedNoTag, handleTagChange } =
     usePageTagFilter({ allowNoTag: true });
@@ -569,6 +598,7 @@ function TasksList() {
         link: args.link,
         title: args.title,
         status: args.status,
+        lastSyncedAt: undefined,
         createdAt: now,
         updatedAt: now,
       };
@@ -646,6 +676,7 @@ function TasksList() {
       }
     }
   );
+  const syncAgentStates = useAction(api.agents.syncAgentStates);
   const syncPullRequestsBatch = useAction(api.pullRequests.syncPullRequestsBatch);
 
   useEffect(() => {
@@ -698,16 +729,19 @@ function TasksList() {
     handleTagChange(null);
   };
 
-  const handleAttachAgent = (args: {
+  const handleAttachAgent = async (args: {
     taskId: Id<"tasks">;
     externalId: string;
   }) => {
-    createAgent({
+    const agentId = await createAgent({
       taskId: args.taskId,
       externalId: args.externalId,
       link: `https://cursor.com/agents/${args.externalId}`,
       title: args.externalId,
       status: "",
+    });
+    await syncAgentStates({
+      items: [{ agentId, externalId: args.externalId }],
     });
   };
 
@@ -840,6 +874,10 @@ function TasksList() {
     repo: string;
     number: number;
   }> = [];
+  const visibleAgentsForSync: Array<{
+    agentId: Id<"agents">;
+    externalId: string;
+  }> = [];
 
   let displayedTaskCount = 0;
   for (const task of tasks ?? []) {
@@ -860,6 +898,12 @@ function TasksList() {
         owner: normalized.owner,
         repo: normalized.repo,
         number: normalized.number,
+      });
+    }
+    for (const agent of taskWithRelations.agents) {
+      visibleAgentsForSync.push({
+        agentId: agent._id,
+        externalId: agent.externalId,
       });
     }
     tasksByStatus[task.status].push(taskWithRelations);
@@ -890,21 +934,39 @@ function TasksList() {
     });
   }
 
-  const handleRefreshVisiblePullRequests = async () => {
-    if (visiblePullRequestsForSync.length === 0 || isRefreshingPullRequests) return;
-    setIsRefreshingPullRequests(true);
+  const visibleLinksCount = visiblePullRequestsForSync.length + visibleAgentsForSync.length;
+
+  const handleRefreshVisibleLinks = async () => {
+    if (visibleLinksCount === 0 || isRefreshingLinks) return;
+    setIsRefreshingLinks(true);
     try {
-      await syncPullRequestsBatch({
-        items: visiblePullRequestsForSync.map((item) => ({
-          pullRequestId: item.pullRequestId,
-          url: item.url,
-          owner: item.owner,
-          repo: item.repo,
-          number: item.number,
-        })),
-      });
+      const syncPromises: Array<Promise<unknown>> = [];
+      if (visiblePullRequestsForSync.length > 0) {
+        syncPromises.push(
+          syncPullRequestsBatch({
+            items: visiblePullRequestsForSync.map((item) => ({
+              pullRequestId: item.pullRequestId,
+              url: item.url,
+              owner: item.owner,
+              repo: item.repo,
+              number: item.number,
+            })),
+          })
+        );
+      }
+      if (visibleAgentsForSync.length > 0) {
+        syncPromises.push(
+          syncAgentStates({
+            items: visibleAgentsForSync.map((item) => ({
+              agentId: item.agentId,
+              externalId: item.externalId,
+            })),
+          })
+        );
+      }
+      await Promise.all(syncPromises);
     } finally {
-      setIsRefreshingPullRequests(false);
+      setIsRefreshingLinks(false);
     }
   };
 
@@ -1004,13 +1066,13 @@ function TasksList() {
               </p>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={handleRefreshVisiblePullRequests}
-                  disabled={isRefreshingPullRequests || visiblePullRequestsForSync.length === 0}
+                  onClick={handleRefreshVisibleLinks}
+                  disabled={isRefreshingLinks || visibleLinksCount === 0}
                   className="text-sm text-accent hover:underline disabled:text-(--muted) disabled:no-underline disabled:cursor-not-allowed"
                 >
-                  {isRefreshingPullRequests
-                    ? "Refreshing PRs..."
-                    : `Refresh all PRs${visiblePullRequestsForSync.length > 0 ? ` (${visiblePullRequestsForSync.length})` : ""}`}
+                  {isRefreshingLinks
+                    ? "Refreshing links..."
+                    : `Refresh all links${visibleLinksCount > 0 ? ` (${visibleLinksCount})` : ""}`}
                 </button>
                 {isSearching && (
                   <button

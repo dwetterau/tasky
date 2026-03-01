@@ -48,6 +48,7 @@ export type AgentAttachment = {
   link: string;
   title: string;
   status: string;
+  lastSyncedAt?: number;
 };
 
 export type PullRequestAttachment = {
