@@ -41,6 +41,27 @@ export const STATUS_WEIGHT: Record<TaskStatus, number> = {
 
 export type KanbanMode = "status" | "priority";
 
+export type AgentAttachment = {
+  _id: Id<"agents">;
+  taskId: Id<"tasks">;
+  externalId: string;
+  link: string;
+  title: string;
+  status: string;
+};
+
+export type PullRequestAttachment = {
+  _id: Id<"pullRequests">;
+  taskId: Id<"tasks">;
+  url: string;
+  normalized?: {
+    domain: string;
+    owner: string;
+    repo: string;
+    number: number;
+  } | null;
+};
+
 export type TaskForEdit = {
   _id: Id<"tasks">;
   content: string;
@@ -48,4 +69,6 @@ export type TaskForEdit = {
   priority: TaskPriority;
   dueDate?: string;
   tags: Tag[];
+  agents: AgentAttachment[];
+  pullRequests: PullRequestAttachment[];
 };

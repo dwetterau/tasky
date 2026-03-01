@@ -32,6 +32,8 @@ import {
   type TaskStatus,
   type TaskPriority,
   type TaskForEdit,
+  type AgentAttachment,
+  type PullRequestAttachment,
   type KanbanMode,
   STATUS_CONFIG,
   STATUS_ORDER,
@@ -40,6 +42,8 @@ import {
   PRIORITY_WEIGHT,
   STATUS_WEIGHT,
 } from "./constants";
+import { AttachAgentModal } from "./AttachAgentModal";
+import { AttachPrModal } from "./AttachPrModal";
 
 function formatDueDateForViewer(dueDate: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueDate);
@@ -68,25 +72,54 @@ function formatDueDateForViewer(dueDate: string): string {
   return localDate.toLocaleDateString();
 }
 
+type TaskView = {
+  _id: Id<"tasks">;
+  _creationTime: number;
+  content: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate?: string;
+  completedAt?: number;
+  tags: Tag[];
+  agents: AgentAttachment[];
+  pullRequests: PullRequestAttachment[];
+};
+
+function parseGitHubPrUrl(rawUrl: string): PullRequestAttachment["normalized"] {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.hostname.toLowerCase() !== "github.com") return null;
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length < 4 || parts[2] !== "pull") return null;
+    const number = Number(parts[3]);
+    if (!Number.isInteger(number) || number <= 0) return null;
+    return {
+      domain: parsed.hostname.toLowerCase(),
+      owner: parts[0],
+      repo: parts[1],
+      number,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function TaskCard({
   task,
   kanbanMode,
   isDragging: isDraggingProp,
   isColumnDropTarget,
   onOpenEditModal,
+  onOpenAttachAgentModal,
+  onOpenAttachPrModal,
 }: {
-  task: {
-    _id: Id<"tasks">;
-    content: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueDate?: string;
-    tags: Tag[];
-  };
+  task: TaskView;
   kanbanMode: KanbanMode;
   isDragging?: boolean;
   isColumnDropTarget?: boolean;
   onOpenEditModal?: () => void;
+  onOpenAttachAgentModal?: () => void;
+  onOpenAttachPrModal?: () => void;
 }) {
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
@@ -166,24 +199,88 @@ function TaskCard({
       />
 
       <div className="flex-1 p-4 min-w-0">
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {task.tags.length === 0 ? (
-            <span className="text-xs text-(--muted)">No tags</span>
-          ) : (
-            task.tags.map((tag) => (
-              <span
-                key={tag._id}
-                className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
-                style={{
-                  backgroundColor: tag.color ? `${tag.color}20` : "var(--accent-muted)",
-                  color: tag.color || "var(--accent)",
-                }}
-              >
-                {tag.name}
-              </span>
-            ))
-          )}
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex flex-wrap gap-1.5">
+            {task.tags.length === 0 ? (
+              <span className="text-xs text-(--muted)">No tags</span>
+            ) : (
+              task.tags.map((tag) => (
+                <span
+                  key={tag._id}
+                  className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
+                  style={{
+                    backgroundColor: tag.color ? `${tag.color}20` : "var(--accent-muted)",
+                    color: tag.color || "var(--accent)",
+                  }}
+                >
+                  {tag.name}
+                </span>
+              ))
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAttachAgentModal?.();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="px-2 py-0.5 rounded text-[11px] border border-(--card-border) text-(--muted) hover:text-foreground hover:border-(--accent)/40 transition-colors"
+            >
+              + Agent
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAttachPrModal?.();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="px-2 py-0.5 rounded text-[11px] border border-(--card-border) text-(--muted) hover:text-foreground hover:border-(--accent)/40 transition-colors"
+            >
+              + PR
+            </button>
+          </div>
         </div>
+
+        {(task.agents.length > 0 || task.pullRequests.length > 0) && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {task.agents.map((agent) => (
+              <a
+                key={agent._id}
+                href={agent.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs bg-(--accent)/10 text-accent hover:underline"
+                title={`${agent.externalId} · ${agent.status}`}
+              >
+                Agent: {agent.title}
+              </a>
+            ))}
+            {task.pullRequests.map((pullRequest) => {
+              const label = pullRequest.normalized
+                ? `${pullRequest.normalized.owner}/${pullRequest.normalized.repo}#${pullRequest.normalized.number}`
+                : pullRequest.url;
+              return (
+                <a
+                  key={pullRequest._id}
+                  href={pullRequest.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs bg-sky-500/10 text-sky-400 hover:underline"
+                  title={pullRequest.url}
+                >
+                  PR: {label}
+                </a>
+              );
+            })}
+          </div>
+        )}
 
         <div className="relative">
           <div
@@ -261,20 +358,17 @@ function KanbanColumn({
   kanbanMode,
   isDropTarget,
   onOpenEditModal,
+  onOpenAttachAgentModal,
+  onOpenAttachPrModal,
 }: {
   columnId: string;
   columnValue: TaskStatus | TaskPriority;
-  tasks: Array<{
-    _id: Id<"tasks">;
-    content: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueDate?: string;
-    tags: Tag[];
-  }>;
+  tasks: TaskView[];
   kanbanMode: KanbanMode;
   isDropTarget?: boolean;
-  onOpenEditModal: (task: { _id: Id<"tasks">; content: string; status: TaskStatus; priority: TaskPriority; dueDate?: string; tags: Tag[] }) => void;
+  onOpenEditModal: (task: TaskForEdit) => void;
+  onOpenAttachAgentModal: (taskId: Id<"tasks">) => void;
+  onOpenAttachPrModal: (taskId: Id<"tasks">) => void;
 }) {
   const { setNodeRef } = useDroppable({ id: columnId });
   
@@ -311,6 +405,8 @@ function KanbanColumn({
             kanbanMode={kanbanMode} 
             isColumnDropTarget={isDropTarget}
             onOpenEditModal={() => onOpenEditModal(task)}
+            onOpenAttachAgentModal={() => onOpenAttachAgentModal(task._id)}
+            onOpenAttachPrModal={() => onOpenAttachPrModal(task._id)}
           />
         ))}
         {tasks.length === 0 && (
@@ -332,6 +428,8 @@ function TasksList() {
   const [activeTaskId, setActiveTaskId] = useState<Id<"tasks"> | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<TaskForEdit | null>(null);
+  const [attachAgentTaskId, setAttachAgentTaskId] = useState<Id<"tasks"> | null>(null);
+  const [attachPrTaskId, setAttachPrTaskId] = useState<Id<"tasks"> | null>(null);
 
   const { allTags, selectedTag, selectedTagId, selectedNoTag, handleTagChange } =
     usePageTagFilter({ allowNoTag: true });
@@ -426,6 +524,92 @@ function TasksList() {
       }
     }
   );
+
+  const createAgent = useTrackedMutation(api.agents.createForTask).withOptimisticUpdate(
+    (localStore, args) => {
+      const now = Date.now();
+      const tempAgent = {
+        _id: crypto.randomUUID() as Id<"agents">,
+        _creationTime: Number.MAX_SAFE_INTEGER,
+        userId: "",
+        taskId: args.taskId,
+        externalId: args.externalId,
+        link: args.link,
+        title: args.title,
+        status: args.status,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const applyToTask = <T extends { _id: Id<"tasks">; agents?: AgentAttachment[] }>(task: T): T =>
+        task._id === args.taskId
+          ? ({ ...task, agents: [tempAgent, ...(task.agents ?? [])] } as T)
+          : task;
+
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
+        localStore.setQuery(api.tasks.list, {}, listTasks.map((task) => applyToTask(task)));
+      }
+
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(
+            api.tasks.search,
+            searchArgs,
+            searchTasks.map((task) => applyToTask(task))
+          );
+        }
+      }
+    }
+  );
+
+  const createPullRequest = useTrackedMutation(api.pullRequests.createForTask).withOptimisticUpdate(
+    (localStore, args) => {
+      const now = Date.now();
+      const tempPullRequest = {
+        _id: crypto.randomUUID() as Id<"pullRequests">,
+        _creationTime: Number.MAX_SAFE_INTEGER,
+        userId: "",
+        taskId: args.taskId,
+        url: args.url,
+        normalized: parseGitHubPrUrl(args.url),
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const applyToTask = <T extends { _id: Id<"tasks">; pullRequests?: PullRequestAttachment[] }>(
+        task: T
+      ): T =>
+        task._id === args.taskId
+          ? ({ ...task, pullRequests: [tempPullRequest, ...(task.pullRequests ?? [])] } as T)
+          : task;
+
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
+        localStore.setQuery(api.tasks.list, {}, listTasks.map((task) => applyToTask(task)));
+      }
+
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(
+            api.tasks.search,
+            searchArgs,
+            searchTasks.map((task) => applyToTask(task))
+          );
+        }
+      }
+    }
+  );
   /* eslint-enable */
 
   useEffect(() => {
@@ -476,6 +660,23 @@ function TasksList() {
   const clearSearch = () => {
     setSearchText("");
     handleTagChange(null);
+  };
+
+  const handleAttachAgent = (args: {
+    taskId: Id<"tasks">;
+    externalId: string;
+  }) => {
+    createAgent({
+      taskId: args.taskId,
+      externalId: args.externalId,
+      link: `https://cursor.com/agents/${args.externalId}`,
+      title: args.externalId,
+      status: "",
+    });
+  };
+
+  const handleAttachPr = (args: { taskId: Id<"tasks">; url: string }) => {
+    createPullRequest(args);
   };
 
   // Helper to determine column from a target ID (could be column or task)
@@ -570,25 +771,14 @@ function TasksList() {
     : null;
 
   // Group tasks by status or priority based on mode
-  type TaskWithTags = {
-    _id: Id<"tasks">;
-    _creationTime: number;
-    content: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueDate?: string;
-    completedAt?: number;
-    tags: Tag[];
-  };
-
-  const tasksByStatus: Record<TaskStatus, TaskWithTags[]> = {
+  const tasksByStatus: Record<TaskStatus, TaskView[]> = {
     not_started: [],
     in_progress: [],
     blocked: [],
     closed: [],
   };
 
-  const tasksByPriority: Record<TaskPriority, TaskWithTags[]> = {
+  const tasksByPriority: Record<TaskPriority, TaskView[]> = {
     triage: [],
     low: [],
     medium: [],
@@ -599,12 +789,14 @@ function TasksList() {
   for (const task of tasks ?? []) {
     if (hideClosed && task.status === "closed") continue;
     displayedTaskCount++;
-    const taskWithTags = {
+    const taskWithRelations: TaskView = {
       ...task,
       tags: task.tags as Tag[],
+      agents: (task.agents as AgentAttachment[] | undefined) ?? [],
+      pullRequests: (task.pullRequests as PullRequestAttachment[] | undefined) ?? [],
     };
-    tasksByStatus[task.status].push(taskWithTags);
-    tasksByPriority[task.priority].push(taskWithTags);
+    tasksByStatus[task.status].push(taskWithRelations);
+    tasksByPriority[task.priority].push(taskWithRelations);
   }
 
   // Sort tasks within each status column: by priority (high first), then by creation time descending
@@ -784,6 +976,8 @@ function TasksList() {
                       kanbanMode={kanbanMode}
                       isDropTarget={overColumnId === status}
                       onOpenEditModal={setEditingTask}
+                      onOpenAttachAgentModal={setAttachAgentTaskId}
+                      onOpenAttachPrModal={setAttachPrTaskId}
                     />
                   ))
                 ) : (
@@ -796,6 +990,8 @@ function TasksList() {
                       kanbanMode={kanbanMode}
                       isDropTarget={overColumnId === priority}
                       onOpenEditModal={setEditingTask}
+                      onOpenAttachAgentModal={setAttachAgentTaskId}
+                      onOpenAttachPrModal={setAttachPrTaskId}
                     />
                   ))
                 )}
@@ -809,6 +1005,9 @@ function TasksList() {
                       task={{
                         ...activeTask,
                         tags: activeTask.tags as Tag[],
+                        agents: (activeTask.agents as AgentAttachment[] | undefined) ?? [],
+                        pullRequests:
+                          (activeTask.pullRequests as PullRequestAttachment[] | undefined) ?? [],
                       }}
                       kanbanMode={kanbanMode}
                     />
@@ -839,6 +1038,20 @@ function TasksList() {
           activeSearchArgs={activeSearchArgs}
         />
       )}
+
+      <AttachAgentModal
+        isOpen={attachAgentTaskId !== null}
+        taskId={attachAgentTaskId}
+        onClose={() => setAttachAgentTaskId(null)}
+        onAttach={handleAttachAgent}
+      />
+
+      <AttachPrModal
+        isOpen={attachPrTaskId !== null}
+        taskId={attachPrTaskId}
+        onClose={() => setAttachPrTaskId(null)}
+        onAttach={handleAttachPr}
+      />
     </div>
   );
 }

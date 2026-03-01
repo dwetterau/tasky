@@ -1,0 +1,93 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Id } from "../../../convex/_generated/dataModel";
+
+export function AttachPrModal({
+  isOpen,
+  taskId,
+  onClose,
+  onAttach,
+}: {
+  isOpen: boolean;
+  taskId: Id<"tasks"> | null;
+  onClose: () => void;
+  onAttach: (args: { taskId: Id<"tasks">; url: string }) => void;
+}) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && isOpen) {
+        setUrl("");
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !taskId) return null;
+
+  const handleClose = () => {
+    setUrl("");
+    onClose();
+  };
+
+  const canSubmit = Boolean(url.trim());
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    onAttach({
+      taskId,
+      url: url.trim(),
+    });
+    handleClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={handleClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
+            <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0v-8m0 8L10 6m3 11H5a2 2 0 01-2-2V7a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold">Attach Pull Request</h3>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-(--muted) mb-1">GitHub PR URL</label>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://github.com/owner/repo/pull/123"
+            className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-5">
+          <button
+            onClick={handleClose}
+            className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Attach PR
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
