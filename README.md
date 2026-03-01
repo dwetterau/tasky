@@ -59,6 +59,12 @@ npx convex env set JWT_PRIVATE_KEY -- "<private-key>"
 npx convex env set JWKS '<jwks-json>'
 ```
 
+Generate and set an encryption secret for API keys:
+
+```bash
+npx convex env set API_KEYS_ENCRYPTION_SECRET "$(openssl rand -base64 32 | tr -d '\n')"
+```
+
 ### 5. Run the app
 
 ```bash
