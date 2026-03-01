@@ -138,7 +138,8 @@ const TAG_FALLBACK_COLORS = [
 ];
 
 const CAPTURE_AGE_BUCKETS: { key: string; label: string; minDays: number; maxDays?: number }[] = [
-  { key: "today", label: "0-1d", minDays: 0, maxDays: 1 },
+  { key: "today", label: "0-1d", minDays: 0, maxDays: 0 }, // 0-24h only
+  { key: "yesterday", label: "1-2d", minDays: 1, maxDays: 1 },
   { key: "recent", label: "2-3d", minDays: 2, maxDays: 3 },
   { key: "week", label: "4-7d", minDays: 4, maxDays: 7 },
   { key: "fortnight", label: "8-14d", minDays: 8, maxDays: 14 },
