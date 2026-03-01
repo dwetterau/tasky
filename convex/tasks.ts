@@ -125,6 +125,7 @@ export const listForMcp = internalQuery({
     statuses: v.optional(v.array(taskStatus)),
     includeClosed: v.optional(v.boolean()),
     tagRootId: v.optional(v.id("tags")),
+    searchQuery: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const statuses =
@@ -134,16 +135,28 @@ export const listForMcp = internalQuery({
           ? allTaskStatuses
           : openTaskStatuses;
 
-    const taskGroups = await Promise.all(
-      statuses.map((status) =>
-        ctx.db
-          .query("tasks")
-          .withIndex("by_user_status", (q) => q.eq("userId", args.userId).eq("status", status))
-          .collect()
-      )
-    );
-
-    let tasks = taskGroups.flat();
+    const normalizedSearchQuery = args.searchQuery?.trim();
+    let tasks;
+    if (normalizedSearchQuery) {
+      tasks = await ctx.db
+        .query("tasks")
+        .withSearchIndex("search_content", (q) =>
+          q.search("content", normalizedSearchQuery).eq("userId", args.userId)
+        )
+        .collect();
+      const statusSet = new Set(statuses);
+      tasks = tasks.filter((task) => statusSet.has(task.status));
+    } else {
+      const taskGroups = await Promise.all(
+        statuses.map((status) =>
+          ctx.db
+            .query("tasks")
+            .withIndex("by_user_status", (q) => q.eq("userId", args.userId).eq("status", status))
+            .collect()
+        )
+      );
+      tasks = taskGroups.flat();
+    }
 
     if (args.tagRootId) {
       const rootTag = await ctx.db.get(args.tagRootId);
