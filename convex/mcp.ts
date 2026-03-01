@@ -2,7 +2,13 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { createAuth, oauthScopes } from "./auth";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata, withMcpAuth } from "better-auth/plugins";
-import { hasRequiredScope, splitScopeString, TAG_ROOT_PREFIX, TASKS_READ_SCOPE } from "./mcpScopes";
+import {
+  hasRequiredScope,
+  splitScopeString,
+  TAG_ROOT_PREFIX,
+  TASKS_READ_SCOPE,
+  TASKS_WRITE_SCOPE,
+} from "./mcpScopes";
 import type { Id } from "./_generated/dataModel";
 
 const jsonHeaders = {
@@ -19,6 +25,260 @@ function mcpError(id: unknown, code: number, message: string): Response {
     id,
     error: { code, message },
   });
+}
+
+type ParsedScopes = {
+  scopes: Set<string>;
+  tagRootId?: Id<"tags">;
+};
+
+function mcpToolResult(id: unknown, payload: unknown): Response {
+  return jsonResponse({
+    jsonrpc: "2.0",
+    id,
+    result: {
+      content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+    },
+  });
+}
+
+function parseScopes(scopeString: string): ParsedScopes {
+  const scopeValues = new Set<string>();
+  for (const scope of splitScopeString(scopeString)) {
+    scopeValues.add(scope);
+  }
+  let tagRootId: Id<"tags"> | undefined;
+  for (const scope of scopeValues) {
+    if (scope.startsWith(TAG_ROOT_PREFIX)) {
+      const parsed = scope.slice(TAG_ROOT_PREFIX.length).trim();
+      if (parsed) {
+        tagRootId = parsed as Id<"tags">;
+        break;
+      }
+    }
+  }
+  return { scopes: scopeValues, tagRootId };
+}
+
+function parseTaskStatuses(input: unknown):
+  | Array<"not_started" | "in_progress" | "blocked" | "closed">
+  | undefined {
+  if (!Array.isArray(input)) return undefined;
+  return input.filter(
+    (status): status is "not_started" | "in_progress" | "blocked" | "closed" =>
+      status === "not_started" ||
+      status === "in_progress" ||
+      status === "blocked" ||
+      status === "closed"
+  );
+}
+
+function isValidIsoLocalDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, monthIndex, day);
+  return (
+    !Number.isNaN(date.getTime()) &&
+    date.getFullYear() === year &&
+    date.getMonth() === monthIndex &&
+    date.getDate() === day
+  );
+}
+
+async function handleReadTasksTool(
+  executeListForMcp: (args: {
+    userId: string;
+    includeClosed: boolean;
+    statuses?: Array<"not_started" | "in_progress" | "blocked" | "closed">;
+    tagRootId?: Id<"tags">;
+  }) => Promise<unknown>,
+  rpcId: unknown,
+  sessionUserId: string,
+  parsedScopes: ParsedScopes,
+  rawArgs: unknown
+): Promise<Response> {
+  if (!hasRequiredScope(parsedScopes, TASKS_READ_SCOPE)) {
+    return mcpError(rpcId, -32001, "Missing required scope: tasks:read");
+  }
+
+  if (rawArgs !== undefined && (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs))) {
+    return mcpError(rpcId, -32602, "Invalid arguments");
+  }
+
+  const args = (rawArgs ?? {}) as {
+    includeClosed?: unknown;
+    statuses?: unknown;
+  };
+
+  const includeClosed = args.includeClosed === true;
+  const statuses = parseTaskStatuses(args.statuses);
+
+  try {
+    const tasks = await executeListForMcp({
+      userId: sessionUserId,
+      includeClosed,
+      statuses,
+      tagRootId: parsedScopes.tagRootId,
+    });
+    return mcpToolResult(rpcId, tasks);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Tool execution failed";
+    return mcpError(rpcId, -32000, message);
+  }
+}
+
+async function handleUpdateTaskTool(
+  executeUpdateFromMcp: (args: {
+    userId: string;
+    id: Id<"tasks">;
+    tagRootId?: Id<"tags">;
+    content?: string;
+    status?: "not_started" | "in_progress" | "blocked" | "closed";
+    priority?: "triage" | "low" | "medium" | "high";
+    dueDate?: string | null;
+    addAgent?: string;
+    removeAgentById?: Id<"agents">;
+    addPullRequestByUrl?: string;
+    removePullRequestByUrl?: string;
+  }) => Promise<unknown>,
+  rpcId: unknown,
+  sessionUserId: string,
+  parsedScopes: ParsedScopes,
+  rawArgs: unknown
+): Promise<Response> {
+  if (!hasRequiredScope(parsedScopes, TASKS_WRITE_SCOPE)) {
+    return mcpError(rpcId, -32001, "Missing required scope: tasks:write");
+  }
+  if (rawArgs !== undefined && (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs))) {
+    return mcpError(rpcId, -32602, "Invalid arguments");
+  }
+
+  const allowedKeys = new Set([
+    "taskId",
+    "content",
+    "status",
+    "priority",
+    "dueDate",
+    "addAgent",
+    "removeAgentById",
+    "addPullRequestByUrl",
+    "removePullRequestByUrl",
+  ]);
+  for (const key of Object.keys((rawArgs ?? {}) as Record<string, unknown>)) {
+    if (!allowedKeys.has(key)) {
+      return mcpError(rpcId, -32602, `Unexpected argument: ${key}`);
+    }
+  }
+
+  const args = (rawArgs ?? {}) as {
+    taskId?: unknown;
+    content?: unknown;
+    status?: unknown;
+    priority?: unknown;
+    dueDate?: unknown;
+    addAgent?: unknown;
+    removeAgentById?: unknown;
+    addPullRequestByUrl?: unknown;
+    removePullRequestByUrl?: unknown;
+  };
+
+  const taskId = typeof args.taskId === "string" ? (args.taskId as Id<"tasks">) : undefined;
+  if (!taskId) {
+    return mcpError(rpcId, -32602, "taskId is required");
+  }
+
+  const status =
+    args.status === "not_started" ||
+    args.status === "in_progress" ||
+    args.status === "blocked" ||
+    args.status === "closed"
+      ? args.status
+      : undefined;
+  if (args.status !== undefined && status === undefined) {
+    return mcpError(rpcId, -32602, "Invalid status");
+  }
+
+  const priority =
+    args.priority === "triage" ||
+    args.priority === "low" ||
+    args.priority === "medium" ||
+    args.priority === "high"
+      ? args.priority
+      : undefined;
+  if (args.priority !== undefined && priority === undefined) {
+    return mcpError(rpcId, -32602, "Invalid priority");
+  }
+
+  let dueDate: string | null | undefined;
+  if (args.dueDate !== undefined) {
+    if (args.dueDate === null) {
+      dueDate = null;
+    } else if (typeof args.dueDate === "string" && isValidIsoLocalDate(args.dueDate)) {
+      dueDate = args.dueDate;
+    } else {
+      return mcpError(
+        rpcId,
+        -32602,
+        "dueDate must be null or a valid ISO date string in YYYY-MM-DD format"
+      );
+    }
+  }
+
+  if (args.content !== undefined && typeof args.content !== "string") {
+    return mcpError(rpcId, -32602, "content must be a string");
+  }
+  if (args.addAgent !== undefined && typeof args.addAgent !== "string") {
+    return mcpError(rpcId, -32602, "addAgent must be a string");
+  }
+  if (args.removeAgentById !== undefined && typeof args.removeAgentById !== "string") {
+    return mcpError(rpcId, -32602, "removeAgentById must be a string");
+  }
+  if (args.addPullRequestByUrl !== undefined && typeof args.addPullRequestByUrl !== "string") {
+    return mcpError(rpcId, -32602, "addPullRequestByUrl must be a string");
+  }
+  if (args.removePullRequestByUrl !== undefined && typeof args.removePullRequestByUrl !== "string") {
+    return mcpError(rpcId, -32602, "removePullRequestByUrl must be a string");
+  }
+
+  const hasAnyUpdate =
+    args.content !== undefined ||
+    status !== undefined ||
+    priority !== undefined ||
+    dueDate !== undefined ||
+    args.addAgent !== undefined ||
+    args.removeAgentById !== undefined ||
+    args.addPullRequestByUrl !== undefined ||
+    args.removePullRequestByUrl !== undefined;
+  if (!hasAnyUpdate) {
+    return mcpError(
+      rpcId,
+      -32602,
+      "No updates provided. Set at least one of content/status/priority/dueDate/add*/remove*."
+    );
+  }
+
+  try {
+    const result = await executeUpdateFromMcp({
+      userId: sessionUserId,
+      id: taskId,
+      tagRootId: parsedScopes.tagRootId,
+      content: args.content as string | undefined,
+      status,
+      priority,
+      dueDate,
+      addAgent: args.addAgent as string | undefined,
+      removeAgentById: args.removeAgentById as Id<"agents"> | undefined,
+      addPullRequestByUrl: args.addPullRequestByUrl as string | undefined,
+      removePullRequestByUrl: args.removePullRequestByUrl as string | undefined,
+    });
+    return mcpToolResult(rpcId, result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Tool execution failed";
+    return mcpError(rpcId, -32000, message);
+  }
 }
 
 function getToolsList() {
@@ -39,6 +299,37 @@ function getToolsList() {
               enum: ["not_started", "in_progress", "blocked", "closed"],
             },
           },
+        },
+      },
+    },
+    {
+      name: "updateTask",
+      description:
+        "Partially update a task. Supports content/status/priority and additive agent/PR attachment changes.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["taskId"],
+        properties: {
+          taskId: { type: "string" },
+          content: { type: "string" },
+          status: {
+            type: "string",
+            enum: ["not_started", "in_progress", "blocked", "closed"],
+          },
+          priority: {
+            type: "string",
+            enum: ["triage", "low", "medium", "high"],
+          },
+          dueDate: {
+            description:
+              "Due date in local ISO format YYYY-MM-DD. Pass null to clear an existing due date.",
+            oneOf: [{ type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, { type: "null" }],
+          },
+          addAgent: { type: "string" },
+          removeAgentById: { type: "string" },
+          addPullRequestByUrl: { type: "string" },
+          removePullRequestByUrl: { type: "string" },
         },
       },
     },
@@ -91,21 +382,7 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
         return new Response(null, { status: 202 });
       }
 
-      const scopeValues = new Set<string>();
-      for (const scope of splitScopeString(session.scopes)) {
-        scopeValues.add(scope);
-      }
-      let tagRootId: Id<"tags"> | undefined;
-      for (const scope of scopeValues) {
-        if (scope.startsWith(TAG_ROOT_PREFIX)) {
-          const parsed = scope.slice(TAG_ROOT_PREFIX.length).trim();
-          if (parsed) {
-            tagRootId = parsed as Id<"tags">;
-            break;
-          }
-        }
-      }
-      const parsedScopes = { scopes: scopeValues, tagRootId };
+      const parsedScopes = parseScopes(session.scopes);
       const rpcId = rpc.id ?? null;
 
       if (rpc.method === "tools/list") {
@@ -124,49 +401,26 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           arguments?: unknown;
         };
         const toolName = typeof params.name === "string" ? params.name : undefined;
-        if (toolName !== "readTasks") {
+        if (toolName !== "readTasks" && toolName !== "updateTask") {
           return mcpError(rpcId, -32601, "Tool not found");
         }
 
-        if (!hasRequiredScope(parsedScopes, TASKS_READ_SCOPE)) {
-          return mcpError(rpcId, -32001, "Missing required scope: tasks:read");
+        if (toolName === "readTasks") {
+          return handleReadTasksTool(
+            (args) => ctx.runQuery(internal.tasks.listForMcp, args),
+            rpcId,
+            sessionUserId,
+            parsedScopes,
+            params.arguments
+          );
         }
-
-        const args = (params.arguments ?? {}) as {
-          includeClosed?: unknown;
-          statuses?: unknown;
-        };
-
-        const includeClosed = args.includeClosed === true;
-        const statuses = Array.isArray(args.statuses)
-          ? args.statuses.filter(
-              (status): status is "not_started" | "in_progress" | "blocked" | "closed" =>
-                status === "not_started" ||
-                status === "in_progress" ||
-                status === "blocked" ||
-                status === "closed"
-            )
-          : undefined;
-
-        try {
-          const tasks = await ctx.runQuery(internal.tasks.listForMcp, {
-            userId: sessionUserId,
-            includeClosed,
-            statuses,
-            tagRootId: parsedScopes.tagRootId,
-          });
-
-          return jsonResponse({
-            jsonrpc: "2.0",
-            id: rpcId,
-            result: {
-              content: [{ type: "text", text: JSON.stringify(tasks, null, 2) }],
-            },
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Tool execution failed";
-          return mcpError(rpcId, -32000, message);
-        }
+        return handleUpdateTaskTool(
+          (args) => ctx.runMutation(internal.tasks.updateFromMcp, args),
+          rpcId,
+          sessionUserId,
+          parsedScopes,
+          params.arguments
+        );
       }
 
       return mcpError(rpcId, -32601, "Method not found");
