@@ -15,6 +15,11 @@ import {
   STATUS_ORDER,
   PRIORITY_CONFIG,
   PRIORITY_ORDER,
+  CURSOR_ICON_VIEWBOX,
+  CURSOR_ICON_PATH,
+  getAgentStatusInfo,
+  getPullRequestStatusInfo,
+  getPullRequestHref,
 } from "./constants";
 import { ConfirmModal } from "../../components/ConfirmModal";
 
@@ -96,6 +101,25 @@ export type TaskSearchArgs = {
 
 const LAST_SELECTED_TAG_KEY = "tasky-last-selected-tag";
 
+function extractExternalId(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (/^bc-[A-Za-z0-9.-]+$/.test(trimmed)) return trimmed;
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const url = new URL(candidate);
+    const hostname = url.hostname.toLowerCase();
+    if (hostname !== "cursor.com" && hostname !== "www.cursor.com") return null;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length >= 2 && parts[0] === "agents" && /^bc-[A-Za-z0-9.-]+$/.test(parts[1])) {
+      return parts[1];
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export function TaskModal({
   isOpen,
   onClose,
@@ -105,18 +129,23 @@ export function TaskModal({
   initialContent,
   createdFromCaptureId,
   activeSearchArgs,
+  onAttachAgent,
+  onRemoveAgent,
+  onAttachPr,
+  onRemovePr,
 }: {
   isOpen: boolean;
   onClose: () => void;
   task?: TaskForEdit | null;
   allTags: Tag[];
   initialTagId?: Id<"tags"> | null;
-  /** Pre-fill content when creating a new task (e.g. from a capture) */
   initialContent?: string;
-  /** When set, the source capture will be deleted after task creation */
   createdFromCaptureId?: Id<"captures">;
-  /** Current search/filter args on the tasks page, so optimistic updates also patch the search query */
   activeSearchArgs?: TaskSearchArgs;
+  onAttachAgent?: (args: { taskId: Id<"tasks">; externalId: string }) => void;
+  onRemoveAgent?: (id: Id<"agents">) => void;
+  onAttachPr?: (args: { taskId: Id<"tasks">; url: string }) => void;
+  onRemovePr?: (id: Id<"pullRequests">) => void;
 }) {
   const isEditing = !!task;
 
@@ -127,6 +156,8 @@ export function TaskModal({
   const [dueDate, setDueDate] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
+  const [prInput, setPrInput] = useState("");
+  const [agentInput, setAgentInput] = useState("");
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   const create = useTrackedMutation(api.tasks.create).withOptimisticUpdate(
@@ -146,6 +177,8 @@ export function TaskModal({
         priority: args.priority ?? ("triage" as const),
         dueDate: args.dueDate,
         tags: selectedTagsFull,
+        agents: [],
+        pullRequests: [],
       };
 
       const tasks = localStore.getQuery(api.tasks.list, {});
@@ -251,7 +284,9 @@ export function TaskModal({
 
   // Reset form when modal opens
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+
+    const timeoutId = window.setTimeout(() => {
       if (task) {
         setContent(task.content);
         setTagIds(task.tags.map((t) => t._id));
@@ -267,7 +302,11 @@ export function TaskModal({
       }
       setShowDeleteConfirm(false);
       setShowUnsavedChanges(false);
-    }
+      setPrInput("");
+      setAgentInput("");
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [isOpen, task, initialTagId, initialContent]);
 
   // Check if there are unsaved changes (edit mode only)
@@ -481,6 +520,152 @@ export function TaskModal({
                 allTags={allTags}
               />
             </div>
+
+            {isEditing && (
+              <div className="grid grid-cols-2 gap-3">
+                {/* Agents section */}
+                <div>
+                  <label className="block text-xs font-medium text-(--muted) mb-1.5">Agents</label>
+                  <div className="space-y-1.5">
+                    {task!.agents.map((agent) => {
+                      const agentStatus = getAgentStatusInfo(agent.status);
+                      return (
+                        <div key={agent._id} className="flex items-center gap-1.5 group">
+                          <a
+                            href={agent.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
+                            style={{ backgroundColor: `${agentStatus.color}18` }}
+                            title={`${agent.externalId} · ${agentStatus.label}`}
+                          >
+                            <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
+                              <path d={CURSOR_ICON_PATH} />
+                            </svg>
+                            <span className="truncate">{agent.title}</span>
+                          </a>
+                          {onRemoveAgent && (
+                            <button
+                              type="button"
+                              onClick={() => onRemoveAgent(agent._id)}
+                              className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
+                              title="Remove agent"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {onAttachAgent && task && (
+                      <form
+                        className="flex items-center gap-1.5"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const externalId = extractExternalId(agentInput);
+                          if (externalId) {
+                            onAttachAgent({ taskId: task._id, externalId });
+                            setAgentInput("");
+                          }
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={agentInput}
+                          onChange={(e) => setAgentInput(e.target.value)}
+                          placeholder="bc-... or agent URL"
+                          className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!extractExternalId(agentInput)}
+                          className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                          title="Add agent"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pull Requests section */}
+                <div>
+                  <label className="block text-xs font-medium text-(--muted) mb-1.5">Pull Requests</label>
+                  <div className="space-y-1.5">
+                    {task!.pullRequests.map((pr) => {
+                      const label = pr.normalized
+                        ? `${pr.normalized.owner}/${pr.normalized.repo}#${pr.normalized.number}`
+                        : pr.url;
+                      const status = getPullRequestStatusInfo(pr);
+                      return (
+                        <div key={pr._id} className="flex items-center gap-1.5 group">
+                          <a
+                            href={getPullRequestHref(pr.url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
+                            style={{ backgroundColor: `${status.color}18` }}
+                            title={`${label} · ${status.label}`}
+                          >
+                            <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
+                              <path d={status.iconPath} />
+                            </svg>
+                            <span className="truncate">{label}</span>
+                          </a>
+                          {onRemovePr && (
+                            <button
+                              type="button"
+                              onClick={() => onRemovePr(pr._id)}
+                              className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
+                              title="Remove pull request"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {onAttachPr && task && (
+                      <form
+                        className="flex items-center gap-1.5"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (prInput.trim()) {
+                            onAttachPr({ taskId: task._id, url: prInput.trim() });
+                            setPrInput("");
+                          }
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={prInput}
+                          onChange={(e) => setPrInput(e.target.value)}
+                          placeholder="github.com/owner/repo/pull/123"
+                          className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!prInput.trim()}
+                          className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                          title="Add pull request"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
