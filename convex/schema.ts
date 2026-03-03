@@ -121,7 +121,8 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_task", ["userId", "taskId"])
-    .index("by_user_external_id", ["userId", "externalId"]),
+    .index("by_user_external_id", ["userId", "externalId"])
+    .index("by_user_task_external_id", ["userId", "taskId", "externalId"]),
 
   pullRequests: defineTable({
     userId: v.string(),
@@ -134,7 +135,8 @@ export default defineSchema({
     updatedAt: v.number(), // Unix timestamp (ms)
   })
     .index("by_user", ["userId"])
-    .index("by_user_task", ["userId", "taskId"]),
+    .index("by_user_task", ["userId", "taskId"])
+    .index("by_user_task_url", ["userId", "taskId", "url"]),
 
   apiKeys: defineTable({
     userId: v.string(),
