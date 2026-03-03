@@ -6,6 +6,19 @@ import { taskStatus, taskPriority, EventSource } from "./schema";
 import { insertEvent } from "./events";
 import { parseGitHubPullRequestUrl } from "./pullRequests";
 
+const CLOSED_TASK_RETENTION_MS = 32 * 24 * 60 * 60 * 1000;
+
+function filterStaleClosedTasks<T extends { status: Doc<"tasks">["status"]; completedAt?: number; statusUpdatedAt: number }>(
+  tasks: T[],
+  now = Date.now()
+): T[] {
+  return tasks.filter((task) => {
+    if (task.status !== "closed") return true;
+    const closedAt = task.completedAt ?? task.statusUpdatedAt;
+    return now - closedAt <= CLOSED_TASK_RETENTION_MS;
+  });
+}
+
 async function hydrateTasksWithRelations<T extends { _id: Id<"tasks">; tagIds: Id<"tags">[] }>(
   ctx: QueryCtx,
   userId: string,
@@ -93,7 +106,7 @@ export const list = query({
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
 
-    return await hydrateTasksWithRelations(ctx, userId, tasks);
+    return await hydrateTasksWithRelations(ctx, userId, filterStaleClosedTasks(tasks));
   },
 });
 
@@ -305,6 +318,7 @@ export const listForMcp = internalQuery({
       );
       tasks = taskGroups.flat();
     }
+    tasks = filterStaleClosedTasks(tasks);
 
     const applyTagSubtreeFilter = async (rootTagId: Id<"tags">, invalidErrorMessage: string) => {
       const rootTag = await ctx.db.get(rootTagId);
@@ -1006,6 +1020,7 @@ export const search = query({
         .withIndex("by_user", (q) => q.eq("userId", userId))
         .collect();
     }
+    tasks = filterStaleClosedTasks(tasks);
 
     // If filtering by "no tag", filter for tasks with empty tagIds
     if (args.noTag) {
