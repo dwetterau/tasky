@@ -17,6 +17,7 @@ import {
   PRIORITY_ORDER,
   CURSOR_ICON_VIEWBOX,
   CURSOR_ICON_PATH,
+  PR_ICON_PATHS,
   getAgentStatusInfo,
   getPullRequestStatusInfo,
   getPullRequestHref,
@@ -158,6 +159,8 @@ export function TaskModal({
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
   const [prInput, setPrInput] = useState("");
   const [agentInput, setAgentInput] = useState("");
+  const [draftAgentExternalIds, setDraftAgentExternalIds] = useState<string[]>([]);
+  const [draftPullRequestUrls, setDraftPullRequestUrls] = useState<string[]>([]);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   const create = useTrackedMutation(api.tasks.create).withOptimisticUpdate(
@@ -304,6 +307,8 @@ export function TaskModal({
       setShowUnsavedChanges(false);
       setPrInput("");
       setAgentInput("");
+      setDraftAgentExternalIds([]);
+      setDraftPullRequestUrls([]);
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
@@ -360,10 +365,10 @@ export function TaskModal({
     }
   }, []);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!content.trim()) return;
     if (task) {
-      update({
+      await update({
         id: task._id,
         content: content.trim(),
         tagIds,
@@ -375,7 +380,7 @@ export function TaskModal({
       if (createdFromCaptureId) {
         persistLastCaptureTag(tagIds);
       }
-      create({
+      const taskId = await create({
         content: content.trim(),
         tagIds: tagIds.length > 0 ? tagIds : undefined,
         status,
@@ -383,6 +388,16 @@ export function TaskModal({
         dueDate: dueDate || undefined,
         createdFromCaptureId,
       });
+      if (onAttachAgent) {
+        for (const externalId of draftAgentExternalIds) {
+          await onAttachAgent({ taskId, externalId });
+        }
+      }
+      if (onAttachPr) {
+        for (const url of draftPullRequestUrls) {
+          await onAttachPr({ taskId, url });
+        }
+      }
     }
     onClose();
   };
@@ -460,7 +475,9 @@ export function TaskModal({
               <MarkdownEditor
                 value={content}
                 onChange={setContent}
-                onSubmit={handleSubmit}
+                onSubmit={() => {
+                  void handleSubmit();
+                }}
                 placeholder="What needs to be done?"
                 minHeight="200px"
                 autoFocus
@@ -521,33 +538,58 @@ export function TaskModal({
               />
             </div>
 
-            {isEditing && (
+            {(onAttachAgent || onAttachPr) && (
               <div className="grid grid-cols-2 gap-3">
                 {/* Agents section */}
                 <div>
                   <label className="block text-xs font-medium text-(--muted) mb-1.5">Agents</label>
                   <div className="space-y-1.5">
-                    {task!.agents.map((agent) => {
-                      const agentStatus = getAgentStatusInfo(agent.status);
-                      return (
-                        <div key={agent._id} className="flex items-center gap-1.5 group">
-                          <a
-                            href={agent.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
-                            style={{ backgroundColor: `${agentStatus.color}18` }}
-                            title={`${agent.externalId} · ${agentStatus.label}`}
-                          >
-                            <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
-                              <path d={CURSOR_ICON_PATH} />
-                            </svg>
-                            <span className="truncate">{agent.title}</span>
-                          </a>
-                          {onRemoveAgent && (
+                    {task
+                      ? task.agents.map((agent) => {
+                          const agentStatus = getAgentStatusInfo(agent.status);
+                          return (
+                            <div key={agent._id} className="flex items-center gap-1.5 group">
+                              <a
+                                href={agent.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
+                                style={{ backgroundColor: `${agentStatus.color}18` }}
+                                title={`${agent.externalId} · ${agentStatus.label}`}
+                              >
+                                <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
+                                  <path d={CURSOR_ICON_PATH} />
+                                </svg>
+                                <span className="truncate">{agent.title}</span>
+                              </a>
+                              {onRemoveAgent && (
+                                <button
+                                  type="button"
+                                  onClick={() => onRemoveAgent(agent._id)}
+                                  className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
+                                  title="Remove agent"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })
+                      : draftAgentExternalIds.map((externalId) => (
+                          <div key={externalId} className="flex items-center gap-1.5 group">
+                            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0 bg-(--card-border)">
+                              <svg className="w-3 h-3.5 shrink-0 text-(--muted)" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor">
+                                <path d={CURSOR_ICON_PATH} />
+                              </svg>
+                              <span className="truncate">{externalId}</span>
+                            </div>
                             <button
                               type="button"
-                              onClick={() => onRemoveAgent(agent._id)}
+                              onClick={() =>
+                                setDraftAgentExternalIds((prev) => prev.filter((item) => item !== externalId))
+                              }
                               className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
                               title="Remove agent"
                             >
@@ -555,18 +597,22 @@ export function TaskModal({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                               </svg>
                             </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {onAttachAgent && task && (
+                          </div>
+                        ))}
+                    {onAttachAgent && (
                       <form
                         className="flex items-center gap-1.5"
                         onSubmit={(e) => {
                           e.preventDefault();
                           const externalId = extractExternalId(agentInput);
                           if (externalId) {
-                            onAttachAgent({ taskId: task._id, externalId });
+                            if (task) {
+                              onAttachAgent({ taskId: task._id, externalId });
+                            } else {
+                              setDraftAgentExternalIds((prev) =>
+                                prev.includes(externalId) ? prev : [...prev, externalId]
+                              );
+                            }
                             setAgentInput("");
                           }
                         }}
@@ -597,30 +643,55 @@ export function TaskModal({
                 <div>
                   <label className="block text-xs font-medium text-(--muted) mb-1.5">Pull Requests</label>
                   <div className="space-y-1.5">
-                    {task!.pullRequests.map((pr) => {
-                      const label = pr.normalized
-                        ? `${pr.normalized.owner}/${pr.normalized.repo}#${pr.normalized.number}`
-                        : pr.url;
-                      const status = getPullRequestStatusInfo(pr);
-                      return (
-                        <div key={pr._id} className="flex items-center gap-1.5 group">
-                          <a
-                            href={getPullRequestHref(pr.url)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
-                            style={{ backgroundColor: `${status.color}18` }}
-                            title={`${label} · ${status.label}`}
-                          >
-                            <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
-                              <path d={status.iconPath} />
-                            </svg>
-                            <span className="truncate">{label}</span>
-                          </a>
-                          {onRemovePr && (
+                    {task
+                      ? task.pullRequests.map((pr) => {
+                          const label = pr.normalized
+                            ? `${pr.normalized.owner}/${pr.normalized.repo}#${pr.normalized.number}`
+                            : pr.url;
+                          const status = getPullRequestStatusInfo(pr);
+                          return (
+                            <div key={pr._id} className="flex items-center gap-1.5 group">
+                              <a
+                                href={getPullRequestHref(pr.url)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
+                                style={{ backgroundColor: `${status.color}18` }}
+                                title={`${label} · ${status.label}`}
+                              >
+                                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
+                                  <path d={status.iconPath} />
+                                </svg>
+                                <span className="truncate">{label}</span>
+                              </a>
+                              {onRemovePr && (
+                                <button
+                                  type="button"
+                                  onClick={() => onRemovePr(pr._id)}
+                                  className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
+                                  title="Remove pull request"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })
+                      : draftPullRequestUrls.map((url) => (
+                          <div key={url} className="flex items-center gap-1.5 group">
+                            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0 bg-(--card-border)">
+                              <svg className="w-3.5 h-3.5 shrink-0 text-(--muted)" viewBox="0 0 16 16" fill="currentColor">
+                                <path d={PR_ICON_PATHS.open} />
+                              </svg>
+                              <span className="truncate">{url}</span>
+                            </div>
                             <button
                               type="button"
-                              onClick={() => onRemovePr(pr._id)}
+                              onClick={() =>
+                                setDraftPullRequestUrls((prev) => prev.filter((item) => item !== url))
+                              }
                               className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
                               title="Remove pull request"
                             >
@@ -628,17 +699,22 @@ export function TaskModal({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                               </svg>
                             </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {onAttachPr && task && (
+                          </div>
+                        ))}
+                    {onAttachPr && (
                       <form
                         className="flex items-center gap-1.5"
                         onSubmit={(e) => {
                           e.preventDefault();
                           if (prInput.trim()) {
-                            onAttachPr({ taskId: task._id, url: prInput.trim() });
+                            if (task) {
+                              onAttachPr({ taskId: task._id, url: prInput.trim() });
+                            } else {
+                              const trimmed = prInput.trim();
+                              setDraftPullRequestUrls((prev) =>
+                                prev.includes(trimmed) ? prev : [...prev, trimmed]
+                              );
+                            }
                             setPrInput("");
                           }
                         }}
@@ -678,7 +754,9 @@ export function TaskModal({
             Cancel
           </button>
           <button
-            onClick={handleSubmit}
+            onClick={() => {
+              void handleSubmit();
+            }}
             disabled={!content.trim()}
             className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >

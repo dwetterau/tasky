@@ -1199,6 +1199,8 @@ function TasksList() {
         allTags={allTags}
         initialTagId={selectedTagId}
         activeSearchArgs={activeSearchArgs}
+        onAttachAgent={handleAttachAgent}
+        onAttachPr={handleAttachPr}
       />
 
       {editingTask && (
