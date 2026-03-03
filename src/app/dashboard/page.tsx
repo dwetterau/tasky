@@ -709,9 +709,11 @@ function DashboardContent() {
                   <PieChart>
                     <Tooltip
                       contentStyle={TOOLTIP_STYLE}
-                      formatter={(value: number, _name, item) => {
-                        const payload = item.payload as { percent: number };
-                        return [`${value} (${payload.percent.toFixed(1)}%)`, "Events"];
+                      formatter={(value, _name, item) => {
+                        const numericValue = typeof value === "number" ? value : Number(value ?? 0);
+                        const payload = item.payload as { percent?: number };
+                        const percent = payload.percent ?? 0;
+                        return [`${numericValue} (${percent.toFixed(1)}%)`, "Events"];
                       }}
                     />
                     <Legend />
@@ -722,7 +724,7 @@ function DashboardContent() {
                       cx="50%"
                       cy="50%"
                       outerRadius={85}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                     >
                       {sourceData.map((entry) => (
                         <Cell key={entry.name} fill={entry.fill} />
