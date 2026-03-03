@@ -235,15 +235,29 @@ export function TaskModal({
   const update = useTrackedMutation(api.tasks.update).withOptimisticUpdate(
     (localStore, args) => {
       const allTagsFull = localStore.getQuery(api.tags.list, {});
+      const now = Date.now();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const applyUpdate = (t: any) => {
         if (t._id !== args.id) return t;
+        const nextStatus = args.status ?? t.status;
+        const nextCompletedAt =
+          args.status === undefined
+            ? t.completedAt
+            : nextStatus === "closed" && t.status !== "closed"
+              ? now
+              : nextStatus !== "closed" && t.status === "closed"
+                ? undefined
+                : t.completedAt;
+        const nextStatusUpdatedAt =
+          args.status !== undefined && nextStatus !== t.status ? now : t.statusUpdatedAt;
         return {
           ...t,
           content: args.content ?? t.content,
           tagIds: args.tagIds ?? t.tagIds,
-          status: args.status ?? t.status,
+          status: nextStatus,
           priority: args.priority ?? t.priority,
+          completedAt: nextCompletedAt,
+          statusUpdatedAt: nextStatusUpdatedAt,
           dueDate: args.dueDate !== undefined
             ? (args.dueDate ?? undefined)
             : t.dueDate,
