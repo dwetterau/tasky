@@ -65,6 +65,7 @@ export function TagSelector({
 
   const addTag = (tag: Tag) => {
     onTagsChange([...selectedTags.map((t) => t._id), tag._id]);
+    setIsOpen(false);
     setSearch("");
     setHighlightedIndex(0);
     inputRef.current?.focus();
