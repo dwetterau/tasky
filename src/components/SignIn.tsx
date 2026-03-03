@@ -31,8 +31,10 @@ export function SignIn() {
     setIsLoading(true);
     // Set a flag so we know to show loading after redirect
     sessionStorage.setItem(AUTH_PENDING_KEY, "true");
+    const callbackURL = window.location.href;
     await authClient.signIn.social({
       provider: "github",
+      callbackURL,
     });
   };
 
