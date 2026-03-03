@@ -8,13 +8,20 @@ import { parseGitHubPullRequestUrl } from "./pullRequests";
 
 const CLOSED_TASK_RETENTION_MS = 32 * 24 * 60 * 60 * 1000;
 
-function filterStaleClosedTasks<T extends { status: Doc<"tasks">["status"]; completedAt?: number; statusUpdatedAt: number }>(
+function filterStaleClosedTasks<
+  T extends {
+    status: Doc<"tasks">["status"];
+    completedAt?: number;
+    statusUpdatedAt?: number;
+    _creationTime: number;
+  },
+>(
   tasks: T[],
   now = Date.now()
 ): T[] {
   return tasks.filter((task) => {
     if (task.status !== "closed") return true;
-    const closedAt = task.completedAt ?? task.statusUpdatedAt;
+    const closedAt = task.completedAt ?? task.statusUpdatedAt ?? task._creationTime;
     return now - closedAt <= CLOSED_TASK_RETENTION_MS;
   });
 }
