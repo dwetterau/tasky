@@ -16,6 +16,8 @@ import {
   Legend,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -114,6 +116,8 @@ const CHART_COLORS = {
   capture: "#f59e0b",
   task: "#6366f1",
   note: "#10b981",
+  sourceWeb: "#6366f1",
+  sourceMcp: "#10b981",
   // Capture lifecycle
   "capture.created": "#f59e0b",
   "capture.completed": "#10b981",
@@ -233,7 +237,7 @@ function DashboardContent() {
     timeRange === "90d" || timeRange === "all" ? "week" : "day";
 
   // Pre-compute aggregated data
-  const { summaryStats, openCaptureStats, taskFlowData, taskByTagData, captureAgeData, taskTagSeries, noteByTagData } =
+  const { summaryStats, openCaptureStats, taskFlowData, taskByTagData, captureAgeData, taskTagSeries, sourceData } =
     useMemo(() => {
       const getKey = granularity === "day" ? getDayKey : getWeekKey;
       if (!events) {
@@ -255,7 +259,7 @@ function DashboardContent() {
             count: 0,
           })),
           taskTagSeries: [] as { key: string; name: string; color: string }[],
-          noteByTagData: [] as { name: string; count: number; fill: string }[],
+          sourceData: [] as { name: string; count: number; percent: number; fill: string }[],
         };
       }
 
@@ -424,22 +428,23 @@ function DashboardContent() {
         }
       }
 
-      // Chart 4: Notes by tag (horizontal bars, sorted desc)
-      const noteTagCounter = new Map<string, number>();
+      // Chart 4: Events by source
+      const sourceCounter = new Map<"MCP" | "Web", number>([
+        ["MCP", 0],
+        ["Web", 0],
+      ]);
       for (const e of events) {
-        if (getEntityType(e.action.type) !== "note") continue;
-        const primaryTag = e.tagIds?.[0] ?? "__untagged__";
-        noteTagCounter.set(primaryTag, (noteTagCounter.get(primaryTag) ?? 0) + 1);
+        const sourceLabel = e.source === "MCP" ? "MCP" : "Web";
+        sourceCounter.set(sourceLabel, (sourceCounter.get(sourceLabel) ?? 0) + 1);
       }
-      const noteTagKeys = Array.from(noteTagCounter.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([tagId]) => tagId);
-      const noteByTagData = noteTagKeys.map((tagKey) => {
-        const count = noteTagCounter.get(tagKey)!;
-        const name = tagKey === "__untagged__" ? "Untagged" : (allTags.find((t) => t._id === tagKey)?.name ?? "Unknown");
-        const fill = tagKey === "__untagged__" ? "#94a3b8" : (allTags.find((t) => t._id === tagKey)?.color ?? fallbackColorFromId(tagKey));
-        return { name, count, fill };
-      });
+      const sourceData = Array.from(sourceCounter.entries())
+        .map(([name, count]) => ({
+          name,
+          count,
+          percent: events.length > 0 ? (count / events.length) * 100 : 0,
+          fill: name === "MCP" ? CHART_COLORS.sourceMcp : CHART_COLORS.sourceWeb,
+        }))
+        .filter((entry) => entry.count > 0);
 
       // Open capture stats (for first card)
       const openCount = openCaptures?.length ?? 0;
@@ -458,7 +463,7 @@ function DashboardContent() {
         taskByTagData,
         captureAgeData,
         taskTagSeries,
-        noteByTagData,
+        sourceData,
       };
     }, [events, timeRange, startTime, endTime, granularity, allTags, openCaptures]);
 
@@ -698,40 +703,32 @@ function DashboardContent() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              {/* Chart 4: Notes by Tag */}
-              <ChartCard title="Notes by Tag">
+              {/* Chart 4: Events by Source */}
+              <ChartCard title="Events by Source">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={noteByTagData} layout="vertical">
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="var(--card-border)"
+                  <PieChart>
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      formatter={(value: number, _name, item) => {
+                        const payload = item.payload as { percent: number };
+                        return [`${value} (${payload.percent.toFixed(1)}%)`, "Events"];
+                      }}
                     />
-                    <XAxis
-                      type="number"
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={{ stroke: "var(--card-border)" }}
-                      allowDecimals={false}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={{ stroke: "var(--card-border)" }}
-                      width={70}
-                    />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
-                    <Bar
+                    <Legend />
+                    <Pie
+                      data={sourceData}
                       dataKey="count"
-                      name="Notes"
-                      radius={[0, 4, 4, 0]}
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={85}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                     >
-                      {noteByTagData.map((entry) => (
+                      {sourceData.map((entry) => (
                         <Cell key={entry.name} fill={entry.fill} />
                       ))}
-                    </Bar>
-                  </BarChart>
+                    </Pie>
+                  </PieChart>
                 </ResponsiveContainer>
               </ChartCard>
             </div>

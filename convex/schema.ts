@@ -63,6 +63,8 @@ export const eventAction = v.union(
 );
 
 export type EventAction = typeof eventAction.type;
+export const eventSource = v.union(v.literal("APP"), v.literal("MCP"));
+export type EventSource = "APP" | "MCP";
 
 // Note: better-auth manages its own tables (users, sessions, accounts, verifications)
 // through the component. Our app tables use string userId to reference better-auth users.
@@ -151,6 +153,7 @@ export default defineSchema({
     timestamp: v.number(), // Unix ms
     entityId: v.string(), // Doc ID as string (entity may be deleted later)
     action: eventAction,
+    source: v.optional(eventSource),
     tagIds: v.optional(v.array(v.id("tags"))), // snapshot of entity tags at event time
   })
     .index("by_user_timestamp", ["userId", "timestamp"]),

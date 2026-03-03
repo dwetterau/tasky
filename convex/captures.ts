@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { getAuthUserId } from "./auth";
 import { insertEvent } from "./events";
 
@@ -52,6 +52,95 @@ export const listOpenForDashboard = query({
         q.eq("userId", userId).eq("completed", false)
       )
       .collect();
+  },
+});
+
+export const listForMcp = internalQuery({
+  args: {
+    userId: v.string(),
+    includeCompleted: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const includeCompleted = args.includeCompleted ?? false;
+    const captures = includeCompleted
+      ? await ctx.db
+          .query("captures")
+          .withIndex("by_user", (q) => q.eq("userId", args.userId))
+          .order("desc")
+          .collect()
+      : await ctx.db
+          .query("captures")
+          .withIndex("by_user_completed", (q) =>
+            q.eq("userId", args.userId).eq("completed", false)
+          )
+          .order("desc")
+          .collect();
+
+    return captures.map((capture) => ({
+      _id: capture._id,
+      _creationTime: capture._creationTime,
+      text: capture.text,
+    }));
+  },
+});
+
+export const updateBatchFromMcp = internalMutation({
+  args: {
+    userId: v.string(),
+    ids: v.array(v.id("captures")),
+    status: v.union(v.literal("done"), v.literal("deleted")),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const results: Array<{
+      id: (typeof args.ids)[number];
+      result: "done" | "deleted" | "already_done" | "not_found";
+    }> = [];
+    let updatedCount = 0;
+
+    for (const id of args.ids) {
+      const capture = await ctx.db.get(id);
+      if (!capture || capture.userId !== args.userId) {
+        results.push({ id, result: "not_found" });
+        continue;
+      }
+
+      if (args.status === "done") {
+        if (capture.completed) {
+          results.push({ id, result: "already_done" });
+          continue;
+        }
+        await ctx.db.patch(id, {
+          completed: true,
+          statusUpdatedAt: now,
+        });
+        await insertEvent(ctx, {
+          userId: args.userId,
+          entityId: id,
+          action: { type: "capture.completed" },
+          source: "MCP",
+        });
+        updatedCount += 1;
+        results.push({ id, result: "done" });
+        continue;
+      }
+
+      await insertEvent(ctx, {
+        userId: args.userId,
+        entityId: id,
+        action: { type: "capture.deleted" },
+        source: "MCP",
+      });
+      await ctx.db.delete(id);
+      updatedCount += 1;
+      results.push({ id, result: "deleted" });
+    }
+
+    return {
+      status: args.status,
+      updatedCount,
+      results,
+    };
   },
 });
 
