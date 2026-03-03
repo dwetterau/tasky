@@ -485,16 +485,32 @@ function TasksList() {
   // time (during drag-and-drop), not during render. This is safe despite the lint warning.
   const updateStatus = useTrackedMutation(api.tasks.updateStatus).withOptimisticUpdate(
     (localStore, args) => {
+      const now = Date.now();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const applyStatusUpdate = (t: any) => {
+        if (t._id !== args.id) return t;
+        const nextCompletedAt =
+          args.status === "closed" && t.status !== "closed"
+            ? now
+            : args.status !== "closed" && t.status === "closed"
+              ? undefined
+              : t.completedAt;
+        const nextStatusUpdatedAt = args.status !== t.status ? now : t.statusUpdatedAt;
+        return {
+          ...t,
+          status: args.status,
+          completedAt: nextCompletedAt,
+          statusUpdatedAt: nextStatusUpdatedAt,
+        };
+      };
+
       // Update the main list query
       const listTasks = localStore.getQuery(api.tasks.list, {});
       if (listTasks !== undefined) {
         localStore.setQuery(
           api.tasks.list,
           {},
-          listTasks.map((t) => {
-            if (t._id !== args.id) return t;
-            return { ...t, status: args.status };
-          })
+          listTasks.map(applyStatusUpdate)
         );
       }
 
@@ -509,10 +525,7 @@ function TasksList() {
           localStore.setQuery(
             api.tasks.search,
             searchArgs,
-            searchTasks.map((t) => {
-              if (t._id !== args.id) return t;
-              return { ...t, status: args.status };
-            })
+            searchTasks.map(applyStatusUpdate)
           );
         }
       }
