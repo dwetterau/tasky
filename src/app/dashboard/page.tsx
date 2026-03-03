@@ -207,11 +207,15 @@ function ChartCard({
 }
 
 const TOOLTIP_STYLE = {
-  backgroundColor: "var(--card-bg)",
+  backgroundColor: "var(--background)",
   border: "1px solid var(--card-border)",
   borderRadius: "8px",
-  boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+  color: "var(--foreground)",
+  boxShadow: "0 10px 24px rgba(0, 0, 0, 0.35)",
   fontSize: "12px",
+};
+const TOOLTIP_TEXT_STYLE = {
+  color: "var(--foreground)",
 };
 
 function DashboardContent() {
@@ -259,7 +263,7 @@ function DashboardContent() {
             count: 0,
           })),
           taskTagSeries: [] as { key: string; name: string; color: string }[],
-          sourceData: [] as { name: string; count: number; percent: number; fill: string }[],
+          sourceData: [] as { name: string; count: number; share: number; fill: string }[],
         };
       }
 
@@ -441,7 +445,8 @@ function DashboardContent() {
         .map(([name, count]) => ({
           name,
           count,
-          percent: events.length > 0 ? (count / events.length) * 100 : 0,
+          // Avoid using `percent` key, which conflicts with Recharts' internal pie percentage.
+          share: events.length > 0 ? count / events.length : 0,
           fill: name === "MCP" ? CHART_COLORS.sourceMcp : CHART_COLORS.sourceWeb,
         }))
         .filter((entry) => entry.count > 0);
@@ -613,7 +618,11 @@ function DashboardContent() {
                       axisLine={{ stroke: "var(--card-border)" }}
                       allowDecimals={false}
                     />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      labelStyle={TOOLTIP_TEXT_STYLE}
+                      itemStyle={TOOLTIP_TEXT_STYLE}
+                    />
                     <Legend />
                     <Line
                       type="monotone"
@@ -657,7 +666,11 @@ function DashboardContent() {
                       axisLine={{ stroke: "var(--card-border)" }}
                       allowDecimals={false}
                     />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      labelStyle={TOOLTIP_TEXT_STYLE}
+                      itemStyle={TOOLTIP_TEXT_STYLE}
+                    />
                     <Legend />
                     {taskTagSeries.map((series) => (
                       <Bar
@@ -692,7 +705,11 @@ function DashboardContent() {
                       axisLine={{ stroke: "var(--card-border)" }}
                       allowDecimals={false}
                     />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      labelStyle={TOOLTIP_TEXT_STYLE}
+                      itemStyle={TOOLTIP_TEXT_STYLE}
+                    />
                     <Bar
                       dataKey="count"
                       name="Open captures"
@@ -709,11 +726,13 @@ function DashboardContent() {
                   <PieChart>
                     <Tooltip
                       contentStyle={TOOLTIP_STYLE}
+                      labelStyle={TOOLTIP_TEXT_STYLE}
+                      itemStyle={TOOLTIP_TEXT_STYLE}
                       formatter={(value, _name, item) => {
                         const numericValue = typeof value === "number" ? value : Number(value ?? 0);
-                        const payload = item.payload as { percent?: number };
-                        const percent = payload.percent ?? 0;
-                        return [`${numericValue} (${percent.toFixed(1)}%)`, "Events"];
+                        const payload = item.payload as { share?: number };
+                        const share = payload.share ?? 0;
+                        return [`${numericValue} (${(share * 100).toFixed(1)}%)`, "Events"];
                       }}
                     />
                     <Legend />
