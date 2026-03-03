@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, MutationCtx } from "./_generated/server";
 import { getAuthUserId } from "./auth";
 import { Id } from "./_generated/dataModel";
-import { EventAction } from "./schema";
+import { EventAction, EventSource } from "./schema";
 
 /**
  * Insert an event into the events table. Call from within other mutations.
@@ -13,6 +13,7 @@ export async function insertEvent(
     userId: string;
     entityId: string;
     action: EventAction;
+    source?: EventSource;
     tagIds?: Id<"tags">[];
   }
 ) {
@@ -21,6 +22,7 @@ export async function insertEvent(
     timestamp: Date.now(),
     entityId: args.entityId,
     action: args.action,
+    source: args.source ?? "APP",
     tagIds: args.tagIds,
   });
 }

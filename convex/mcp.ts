@@ -73,6 +73,40 @@ function parseTaskStatuses(input: unknown):
   );
 }
 
+type TaskStatus = "not_started" | "in_progress" | "blocked" | "closed";
+type TaskPriority = "triage" | "low" | "medium" | "high";
+
+type ParsedTaskMutationArgs = {
+  taskId?: Id<"tasks">;
+  content?: string;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  dueDate?: string | null;
+  addAgent?: string;
+  removeAgentById?: Id<"agents">;
+  addPullRequestByUrl?: string;
+  removePullRequestByUrl?: string;
+};
+
+function parseTaskStatus(input: unknown): TaskStatus | undefined {
+  if (
+    input === "not_started" ||
+    input === "in_progress" ||
+    input === "blocked" ||
+    input === "closed"
+  ) {
+    return input;
+  }
+  return undefined;
+}
+
+function parseTaskPriority(input: unknown): TaskPriority | undefined {
+  if (input === "triage" || input === "low" || input === "medium" || input === "high") {
+    return input;
+  }
+  return undefined;
+}
+
 function isValidIsoLocalDate(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return false;
@@ -86,6 +120,115 @@ function isValidIsoLocalDate(value: string): boolean {
     date.getMonth() === monthIndex &&
     date.getDate() === day
   );
+}
+
+function parseTaskMutationArgs(
+  rpcId: unknown,
+  rawArgs: unknown,
+  options: {
+    requireTaskId: boolean;
+    requireContent: boolean;
+    allowRemoveFields: boolean;
+  }
+): { parsed?: ParsedTaskMutationArgs; error?: Response } {
+  if (rawArgs !== undefined && (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs))) {
+    return { error: mcpError(rpcId, -32602, "Invalid arguments") };
+  }
+
+  const allowedKeys = new Set(["content", "status", "priority", "dueDate", "addAgent", "addPullRequestByUrl"]);
+  if (options.requireTaskId) {
+    allowedKeys.add("taskId");
+  }
+  if (options.allowRemoveFields) {
+    allowedKeys.add("removeAgentById");
+    allowedKeys.add("removePullRequestByUrl");
+  }
+  for (const key of Object.keys((rawArgs ?? {}) as Record<string, unknown>)) {
+    if (!allowedKeys.has(key)) {
+      return { error: mcpError(rpcId, -32602, `Unexpected argument: ${key}`) };
+    }
+  }
+
+  const args = (rawArgs ?? {}) as {
+    taskId?: unknown;
+    content?: unknown;
+    status?: unknown;
+    priority?: unknown;
+    dueDate?: unknown;
+    addAgent?: unknown;
+    removeAgentById?: unknown;
+    addPullRequestByUrl?: unknown;
+    removePullRequestByUrl?: unknown;
+  };
+
+  const taskId = typeof args.taskId === "string" ? (args.taskId as Id<"tasks">) : undefined;
+  if (options.requireTaskId && !taskId) {
+    return { error: mcpError(rpcId, -32602, "taskId is required") };
+  }
+
+  if (options.requireContent) {
+    if (typeof args.content !== "string" || !args.content.trim()) {
+      return { error: mcpError(rpcId, -32602, "content is required and must be a non-empty string") };
+    }
+  } else if (args.content !== undefined && typeof args.content !== "string") {
+    return { error: mcpError(rpcId, -32602, "content must be a string") };
+  }
+
+  const status = parseTaskStatus(args.status);
+  if (args.status !== undefined && status === undefined) {
+    return { error: mcpError(rpcId, -32602, "Invalid status") };
+  }
+
+  const priority = parseTaskPriority(args.priority);
+  if (args.priority !== undefined && priority === undefined) {
+    return { error: mcpError(rpcId, -32602, "Invalid priority") };
+  }
+
+  let dueDate: string | null | undefined;
+  if (args.dueDate !== undefined) {
+    if (args.dueDate === null) {
+      dueDate = null;
+    } else if (typeof args.dueDate === "string" && isValidIsoLocalDate(args.dueDate)) {
+      dueDate = args.dueDate;
+    } else {
+      return {
+        error: mcpError(
+          rpcId,
+          -32602,
+          "dueDate must be null or a valid ISO date string in YYYY-MM-DD format"
+        ),
+      };
+    }
+  }
+
+  if (args.addAgent !== undefined && typeof args.addAgent !== "string") {
+    return { error: mcpError(rpcId, -32602, "addAgent must be a string") };
+  }
+  if (args.addPullRequestByUrl !== undefined && typeof args.addPullRequestByUrl !== "string") {
+    return { error: mcpError(rpcId, -32602, "addPullRequestByUrl must be a string") };
+  }
+  if (options.allowRemoveFields) {
+    if (args.removeAgentById !== undefined && typeof args.removeAgentById !== "string") {
+      return { error: mcpError(rpcId, -32602, "removeAgentById must be a string") };
+    }
+    if (args.removePullRequestByUrl !== undefined && typeof args.removePullRequestByUrl !== "string") {
+      return { error: mcpError(rpcId, -32602, "removePullRequestByUrl must be a string") };
+    }
+  }
+
+  return {
+    parsed: {
+      taskId,
+      content: args.content as string | undefined,
+      status,
+      priority,
+      dueDate,
+      addAgent: args.addAgent as string | undefined,
+      removeAgentById: args.removeAgentById as Id<"agents"> | undefined,
+      addPullRequestByUrl: args.addPullRequestByUrl as string | undefined,
+      removePullRequestByUrl: args.removePullRequestByUrl as string | undefined,
+    },
+  };
 }
 
 async function handleReadTasksTool(
@@ -166,106 +309,25 @@ async function handleUpdateTaskTool(
   if (!hasRequiredScope(parsedScopes, TASKS_WRITE_SCOPE)) {
     return mcpError(rpcId, -32001, "Missing required scope: tasks:write");
   }
-  if (rawArgs !== undefined && (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs))) {
-    return mcpError(rpcId, -32602, "Invalid arguments");
-  }
 
-  const allowedKeys = new Set([
-    "taskId",
-    "content",
-    "status",
-    "priority",
-    "dueDate",
-    "addAgent",
-    "removeAgentById",
-    "addPullRequestByUrl",
-    "removePullRequestByUrl",
-  ]);
-  for (const key of Object.keys((rawArgs ?? {}) as Record<string, unknown>)) {
-    if (!allowedKeys.has(key)) {
-      return mcpError(rpcId, -32602, `Unexpected argument: ${key}`);
-    }
-  }
-
-  const args = (rawArgs ?? {}) as {
-    taskId?: unknown;
-    content?: unknown;
-    status?: unknown;
-    priority?: unknown;
-    dueDate?: unknown;
-    addAgent?: unknown;
-    removeAgentById?: unknown;
-    addPullRequestByUrl?: unknown;
-    removePullRequestByUrl?: unknown;
-  };
-
-  const taskId = typeof args.taskId === "string" ? (args.taskId as Id<"tasks">) : undefined;
-  if (!taskId) {
-    return mcpError(rpcId, -32602, "taskId is required");
-  }
-
-  const status =
-    args.status === "not_started" ||
-    args.status === "in_progress" ||
-    args.status === "blocked" ||
-    args.status === "closed"
-      ? args.status
-      : undefined;
-  if (args.status !== undefined && status === undefined) {
-    return mcpError(rpcId, -32602, "Invalid status");
-  }
-
-  const priority =
-    args.priority === "triage" ||
-    args.priority === "low" ||
-    args.priority === "medium" ||
-    args.priority === "high"
-      ? args.priority
-      : undefined;
-  if (args.priority !== undefined && priority === undefined) {
-    return mcpError(rpcId, -32602, "Invalid priority");
-  }
-
-  let dueDate: string | null | undefined;
-  if (args.dueDate !== undefined) {
-    if (args.dueDate === null) {
-      dueDate = null;
-    } else if (typeof args.dueDate === "string" && isValidIsoLocalDate(args.dueDate)) {
-      dueDate = args.dueDate;
-    } else {
-      return mcpError(
-        rpcId,
-        -32602,
-        "dueDate must be null or a valid ISO date string in YYYY-MM-DD format"
-      );
-    }
-  }
-
-  if (args.content !== undefined && typeof args.content !== "string") {
-    return mcpError(rpcId, -32602, "content must be a string");
-  }
-  if (args.addAgent !== undefined && typeof args.addAgent !== "string") {
-    return mcpError(rpcId, -32602, "addAgent must be a string");
-  }
-  if (args.removeAgentById !== undefined && typeof args.removeAgentById !== "string") {
-    return mcpError(rpcId, -32602, "removeAgentById must be a string");
-  }
-  if (args.addPullRequestByUrl !== undefined && typeof args.addPullRequestByUrl !== "string") {
-    return mcpError(rpcId, -32602, "addPullRequestByUrl must be a string");
-  }
-  if (args.removePullRequestByUrl !== undefined && typeof args.removePullRequestByUrl !== "string") {
-    return mcpError(rpcId, -32602, "removePullRequestByUrl must be a string");
+  const { parsed, error } = parseTaskMutationArgs(rpcId, rawArgs, {
+    requireTaskId: true,
+    requireContent: false,
+    allowRemoveFields: true,
+  });
+  if (error || !parsed || !parsed.taskId) {
+    return error ?? mcpError(rpcId, -32602, "Invalid arguments");
   }
 
   const hasAnyUpdate =
-    args.content !== undefined ||
-    status !== undefined ||
-    priority !== undefined ||
-    dueDate !== undefined ||
-    args.addAgent !== undefined ||
-    args.removeAgentById !== undefined ||
-    args.addPullRequestByUrl !== undefined ||
-    args.removePullRequestByUrl !== undefined;
+    parsed.content !== undefined ||
+    parsed.status !== undefined ||
+    parsed.priority !== undefined ||
+    parsed.dueDate !== undefined ||
+    parsed.addAgent !== undefined ||
+    parsed.removeAgentById !== undefined ||
+    parsed.addPullRequestByUrl !== undefined ||
+    parsed.removePullRequestByUrl !== undefined;
   if (!hasAnyUpdate) {
     return mcpError(
       rpcId,
@@ -277,16 +339,149 @@ async function handleUpdateTaskTool(
   try {
     const result = await executeUpdateFromMcp({
       userId: sessionUserId,
-      id: taskId,
+      id: parsed.taskId,
       tagRootId: parsedScopes.tagRootId,
-      content: args.content as string | undefined,
-      status,
-      priority,
-      dueDate,
-      addAgent: args.addAgent as string | undefined,
-      removeAgentById: args.removeAgentById as Id<"agents"> | undefined,
-      addPullRequestByUrl: args.addPullRequestByUrl as string | undefined,
-      removePullRequestByUrl: args.removePullRequestByUrl as string | undefined,
+      content: parsed.content,
+      status: parsed.status,
+      priority: parsed.priority,
+      dueDate: parsed.dueDate,
+      addAgent: parsed.addAgent,
+      removeAgentById: parsed.removeAgentById,
+      addPullRequestByUrl: parsed.addPullRequestByUrl,
+      removePullRequestByUrl: parsed.removePullRequestByUrl,
+    });
+    return mcpToolResult(rpcId, result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Tool execution failed";
+    return mcpError(rpcId, -32000, message);
+  }
+}
+
+async function handleCreateTaskTool(
+  executeCreateFromMcp: (args: {
+    userId: string;
+    tagRootId?: Id<"tags">;
+    content: string;
+    status?: "not_started" | "in_progress" | "blocked" | "closed";
+    priority?: "triage" | "low" | "medium" | "high";
+    dueDate?: string | null;
+    addAgent?: string;
+    addPullRequestByUrl?: string;
+  }) => Promise<unknown>,
+  rpcId: unknown,
+  sessionUserId: string,
+  parsedScopes: ParsedScopes,
+  rawArgs: unknown
+): Promise<Response> {
+  if (!hasRequiredScope(parsedScopes, TASKS_WRITE_SCOPE)) {
+    return mcpError(rpcId, -32001, "Missing required scope: tasks:write");
+  }
+  const { parsed, error } = parseTaskMutationArgs(rpcId, rawArgs, {
+    requireTaskId: false,
+    requireContent: true,
+    allowRemoveFields: false,
+  });
+  if (error || !parsed || parsed.content === undefined) {
+    return error ?? mcpError(rpcId, -32602, "Invalid arguments");
+  }
+
+  try {
+    const result = await executeCreateFromMcp({
+      userId: sessionUserId,
+      tagRootId: parsedScopes.tagRootId,
+      content: parsed.content,
+      status: parsed.status,
+      priority: parsed.priority,
+      dueDate: parsed.dueDate,
+      addAgent: parsed.addAgent,
+      addPullRequestByUrl: parsed.addPullRequestByUrl,
+    });
+    return mcpToolResult(rpcId, result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Tool execution failed";
+    return mcpError(rpcId, -32000, message);
+  }
+}
+
+async function handleListCapturesTool(
+  executeListCapturesForMcp: (args: {
+    userId: string;
+    includeCompleted?: boolean;
+  }) => Promise<unknown>,
+  rpcId: unknown,
+  sessionUserId: string,
+  parsedScopes: ParsedScopes,
+  rawArgs: unknown
+): Promise<Response> {
+  if (!hasRequiredScope(parsedScopes, TASKS_READ_SCOPE)) {
+    return mcpError(rpcId, -32001, "Missing required scope: tasks:read");
+  }
+  if (rawArgs !== undefined && (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs))) {
+    return mcpError(rpcId, -32602, "Invalid arguments");
+  }
+
+  const allowedKeys = new Set(["includeCompleted"]);
+  for (const key of Object.keys((rawArgs ?? {}) as Record<string, unknown>)) {
+    if (!allowedKeys.has(key)) {
+      return mcpError(rpcId, -32602, `Unexpected argument: ${key}`);
+    }
+  }
+
+  const args = (rawArgs ?? {}) as { includeCompleted?: unknown };
+  if (args.includeCompleted !== undefined && typeof args.includeCompleted !== "boolean") {
+    return mcpError(rpcId, -32602, "includeCompleted must be a boolean");
+  }
+
+  try {
+    const captures = await executeListCapturesForMcp({
+      userId: sessionUserId,
+      includeCompleted: args.includeCompleted as boolean | undefined,
+    });
+    return mcpToolResult(rpcId, captures);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Tool execution failed";
+    return mcpError(rpcId, -32000, message);
+  }
+}
+
+async function handleUpdateCapturesBatchTool(
+  executeBatchUpdateCapturesFromMcp: (args: {
+    userId: string;
+    ids: Id<"captures">[];
+    status: "done" | "deleted";
+  }) => Promise<unknown>,
+  rpcId: unknown,
+  sessionUserId: string,
+  parsedScopes: ParsedScopes,
+  rawArgs: unknown
+): Promise<Response> {
+  if (!hasRequiredScope(parsedScopes, TASKS_WRITE_SCOPE)) {
+    return mcpError(rpcId, -32001, "Missing required scope: tasks:write");
+  }
+  if (rawArgs !== undefined && (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs))) {
+    return mcpError(rpcId, -32602, "Invalid arguments");
+  }
+
+  const allowedKeys = new Set(["ids", "status"]);
+  for (const key of Object.keys((rawArgs ?? {}) as Record<string, unknown>)) {
+    if (!allowedKeys.has(key)) {
+      return mcpError(rpcId, -32602, `Unexpected argument: ${key}`);
+    }
+  }
+
+  const args = (rawArgs ?? {}) as { ids?: unknown; status?: unknown };
+  if (!Array.isArray(args.ids) || args.ids.length === 0 || args.ids.some((id) => typeof id !== "string")) {
+    return mcpError(rpcId, -32602, "ids is required and must be a non-empty string array");
+  }
+  if (args.status !== "done" && args.status !== "deleted") {
+    return mcpError(rpcId, -32602, "status must be either done or deleted");
+  }
+
+  try {
+    const result = await executeBatchUpdateCapturesFromMcp({
+      userId: sessionUserId,
+      ids: args.ids as Id<"captures">[],
+      status: args.status,
     });
     return mcpToolResult(rpcId, result);
   } catch (error) {
@@ -318,6 +513,67 @@ function getToolsList() {
             type: "string",
             description:
               "Tag name filter using trimmed/lowercased closest-match logic: exact match first, then prefix/contains variants. Results include tasks at/under the matched tag.",
+          },
+        },
+      },
+    },
+    {
+      name: "createTask",
+      description:
+        "Create a task for the authenticated user. Supports content/status/priority/dueDate and additive agent/PR attachment fields.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["content"],
+        properties: {
+          content: { type: "string" },
+          status: {
+            type: "string",
+            enum: ["not_started", "in_progress", "blocked", "closed"],
+          },
+          priority: {
+            type: "string",
+            enum: ["triage", "low", "medium", "high"],
+          },
+          dueDate: {
+            description:
+              "Due date in local ISO format YYYY-MM-DD. Pass null to create without a due date.",
+            oneOf: [{ type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, { type: "null" }],
+          },
+          addAgent: { type: "string" },
+          addPullRequestByUrl: { type: "string" },
+        },
+      },
+    },
+    {
+      name: "listCaptures",
+      description:
+        "List captures for the authenticated user. Returns id/text/creation time; defaults to open captures.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          includeCompleted: { type: "boolean" },
+        },
+      },
+    },
+    {
+      name: "updateCapturesBatch",
+      description:
+        "Update multiple captures by id with a single status action: done (mark complete) or deleted.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["ids", "status"],
+        properties: {
+          ids: {
+            type: "array",
+            minItems: 1,
+            items: { type: "string" },
+          },
+          status: {
+            type: "string",
+            enum: ["done", "deleted"],
           },
         },
       },
@@ -421,13 +677,46 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           arguments?: unknown;
         };
         const toolName = typeof params.name === "string" ? params.name : undefined;
-        if (toolName !== "readTasks" && toolName !== "updateTask") {
+        if (
+          toolName !== "readTasks" &&
+          toolName !== "createTask" &&
+          toolName !== "listCaptures" &&
+          toolName !== "updateCapturesBatch" &&
+          toolName !== "updateTask"
+        ) {
           return mcpError(rpcId, -32601, "Tool not found");
         }
 
         if (toolName === "readTasks") {
           return handleReadTasksTool(
             (args) => ctx.runQuery(internal.tasks.listForMcp, args),
+            rpcId,
+            sessionUserId,
+            parsedScopes,
+            params.arguments
+          );
+        }
+        if (toolName === "createTask") {
+          return handleCreateTaskTool(
+            (args) => ctx.runMutation(internal.tasks.createFromMcp, args),
+            rpcId,
+            sessionUserId,
+            parsedScopes,
+            params.arguments
+          );
+        }
+        if (toolName === "listCaptures") {
+          return handleListCapturesTool(
+            (args) => ctx.runQuery(internal.captures.listForMcp, args),
+            rpcId,
+            sessionUserId,
+            parsedScopes,
+            params.arguments
+          );
+        }
+        if (toolName === "updateCapturesBatch") {
+          return handleUpdateCapturesBatchTool(
+            (args) => ctx.runMutation(internal.captures.updateBatchFromMcp, args),
             rpcId,
             sessionUserId,
             parsedScopes,

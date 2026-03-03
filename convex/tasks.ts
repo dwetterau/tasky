@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query, QueryCtx } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { getAuthUserId } from "./auth";
 import { Doc, Id } from "./_generated/dataModel";
-import { taskStatus, taskPriority } from "./schema";
+import { taskStatus, taskPriority, EventSource } from "./schema";
 import { insertEvent } from "./events";
 import { parseGitHubPullRequestUrl } from "./pullRequests";
 
@@ -156,6 +156,111 @@ function extractAgentExternalId(input: string): string | null {
     return null;
   }
   return null;
+}
+
+function getEventTagIds(tagIds: Id<"tags">[]): Id<"tags">[] | undefined {
+  return tagIds.length > 0 ? tagIds : undefined;
+}
+
+async function attachAgentToTaskIfMissing(args: {
+  ctx: MutationCtx;
+  userId: string;
+  taskId: Id<"tasks">;
+  addAgentInput: string;
+  now: number;
+  source?: EventSource;
+  eventTagIds?: Id<"tags">[];
+}): Promise<
+  | {
+      id: Id<"agents">;
+      externalId: string;
+    }
+  | undefined
+> {
+  const externalId = extractAgentExternalId(args.addAgentInput);
+  if (!externalId) {
+    throw new Error("Invalid agent input. Use bc-... or cursor.com/agents/bc-...");
+  }
+
+  const existingForTask = await args.ctx.db
+    .query("agents")
+    .withIndex("by_user_task", (q) => q.eq("userId", args.userId).eq("taskId", args.taskId))
+    .filter((q) => q.eq(q.field("externalId"), externalId))
+    .first();
+  if (existingForTask) {
+    return undefined;
+  }
+
+  const existingForUser = await args.ctx.db
+    .query("agents")
+    .withIndex("by_user_external_id", (q) => q.eq("userId", args.userId).eq("externalId", externalId))
+    .first();
+  if (existingForUser && existingForUser.taskId !== args.taskId) {
+    throw new Error("Agent external ID already exists on another task");
+  }
+  if (existingForUser) {
+    return undefined;
+  }
+
+  const agentId = await args.ctx.db.insert("agents", {
+    userId: args.userId,
+    taskId: args.taskId,
+    externalId,
+    link: `https://cursor.com/agents/${externalId}`,
+    title: externalId,
+    status: "",
+    lastSyncedAt: undefined,
+    updatedAt: args.now,
+  });
+  await insertEvent(args.ctx, {
+    userId: args.userId,
+    entityId: agentId,
+    action: { type: "agent.created" },
+    source: args.source,
+    tagIds: args.eventTagIds,
+  });
+  return { id: agentId, externalId };
+}
+
+async function attachPullRequestToTaskIfMissing(args: {
+  ctx: MutationCtx;
+  userId: string;
+  taskId: Id<"tasks">;
+  addPullRequestByUrl: string;
+  now: number;
+  source?: EventSource;
+  eventTagIds?: Id<"tags">[];
+}): Promise<
+  | {
+      id: Id<"pullRequests">;
+      url: string;
+    }
+  | undefined
+> {
+  const normalized = parseGitHubPullRequestUrl(args.addPullRequestByUrl);
+  const existingForTask = await args.ctx.db
+    .query("pullRequests")
+    .withIndex("by_user_task", (q) => q.eq("userId", args.userId).eq("taskId", args.taskId))
+    .filter((q) => q.eq(q.field("url"), normalized.url))
+    .first();
+  if (existingForTask) {
+    return undefined;
+  }
+
+  const pullRequestId = await args.ctx.db.insert("pullRequests", {
+    userId: args.userId,
+    taskId: args.taskId,
+    url: normalized.url,
+    updatedAt: args.now,
+  });
+  await insertEvent(args.ctx, {
+    userId: args.userId,
+    entityId: pullRequestId,
+    action: { type: "pull_request.created" },
+    source: args.source,
+    tagIds: args.eventTagIds,
+  });
+  return { id: pullRequestId, url: normalized.url };
 }
 
 export const listForMcp = internalQuery({
@@ -333,16 +438,13 @@ export const updateFromMcp = internalMutation({
       statusUpdatedAt?: number;
       completedAt?: number | undefined;
     } = {};
-    let taskEdited = false;
 
     if (args.content !== undefined && args.content !== task.content) {
       updates.content = args.content;
-      taskEdited = true;
     }
     if (args.status !== undefined && args.status !== task.status) {
       updates.status = args.status;
       updates.statusUpdatedAt = now;
-      taskEdited = true;
       if (args.status === "closed" && task.status !== "closed") {
         updates.completedAt = now;
       } else if (args.status !== "closed" && task.status === "closed") {
@@ -351,13 +453,11 @@ export const updateFromMcp = internalMutation({
     }
     if (args.priority !== undefined && args.priority !== task.priority) {
       updates.priority = args.priority;
-      taskEdited = true;
     }
     if (args.dueDate !== undefined) {
       const normalizedDueDate = args.dueDate ?? undefined;
       if (normalizedDueDate !== task.dueDate) {
         updates.dueDate = normalizedDueDate;
-        taskEdited = true;
       }
     }
 
@@ -365,12 +465,18 @@ export const updateFromMcp = internalMutation({
       await ctx.db.patch(args.id, updates);
     }
 
-    if (taskEdited) {
+    const hasPrimaryTaskFieldInRequest =
+      args.content !== undefined ||
+      args.status !== undefined ||
+      args.priority !== undefined ||
+      args.dueDate !== undefined;
+    if (hasPrimaryTaskFieldInRequest) {
       await insertEvent(ctx, {
         userId: args.userId,
         entityId: args.id,
         action: { type: "task.edited" },
-        tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+        source: "MCP",
+        tagIds: getEventTagIds(task.tagIds),
       });
     }
     if (args.status !== undefined && args.status !== task.status) {
@@ -378,7 +484,8 @@ export const updateFromMcp = internalMutation({
         userId: args.userId,
         entityId: args.id,
         action: { type: "task.status_changed", from: task.status, to: args.status },
-        tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+        source: "MCP",
+        tagIds: getEventTagIds(task.tagIds),
       });
     }
     if (args.priority !== undefined && args.priority !== task.priority) {
@@ -386,7 +493,8 @@ export const updateFromMcp = internalMutation({
         userId: args.userId,
         entityId: args.id,
         action: { type: "task.priority_changed", from: task.priority, to: args.priority },
-        tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+        source: "MCP",
+        tagIds: getEventTagIds(task.tagIds),
       });
     }
 
@@ -404,43 +512,15 @@ export const updateFromMcp = internalMutation({
       | undefined;
 
     if (args.addAgent !== undefined) {
-      const externalId = extractAgentExternalId(args.addAgent);
-      if (!externalId) {
-        throw new Error("Invalid agent input. Use bc-... or cursor.com/agents/bc-...");
-      }
-      const existingForTask = await ctx.db
-        .query("agents")
-        .withIndex("by_user_task", (q) => q.eq("userId", args.userId).eq("taskId", args.id))
-        .filter((q) => q.eq(q.field("externalId"), externalId))
-        .first();
-      if (!existingForTask) {
-        const existingForUser = await ctx.db
-          .query("agents")
-          .withIndex("by_user_external_id", (q) =>
-            q.eq("userId", args.userId).eq("externalId", externalId)
-          )
-          .first();
-        if (existingForUser) {
-          throw new Error("Agent external ID already exists on another task");
-        }
-        const agentId = await ctx.db.insert("agents", {
-          userId: args.userId,
-          taskId: args.id,
-          externalId,
-          link: `https://cursor.com/agents/${externalId}`,
-          title: externalId,
-          status: "",
-          lastSyncedAt: undefined,
-          updatedAt: now,
-        });
-        await insertEvent(ctx, {
-          userId: args.userId,
-          entityId: agentId,
-          action: { type: "agent.created" },
-          tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
-        });
-        addedAgent = { id: agentId, externalId };
-      }
+      addedAgent = await attachAgentToTaskIfMissing({
+        ctx,
+        userId: args.userId,
+        taskId: args.id,
+        addAgentInput: args.addAgent,
+        now,
+        source: "MCP",
+        eventTagIds: getEventTagIds(task.tagIds),
+      });
     }
 
     if (args.removeAgentById !== undefined) {
@@ -450,7 +530,8 @@ export const updateFromMcp = internalMutation({
           userId: args.userId,
           entityId: existingForTask._id,
           action: { type: "agent.deleted" },
-          tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+          source: "MCP",
+          tagIds: getEventTagIds(task.tagIds),
         });
         await ctx.db.delete(existingForTask._id);
         removedAgent = { id: existingForTask._id, externalId: existingForTask.externalId };
@@ -471,27 +552,15 @@ export const updateFromMcp = internalMutation({
       | undefined;
 
     if (args.addPullRequestByUrl !== undefined) {
-      const normalized = parseGitHubPullRequestUrl(args.addPullRequestByUrl);
-      const existingForTask = await ctx.db
-        .query("pullRequests")
-        .withIndex("by_user_task", (q) => q.eq("userId", args.userId).eq("taskId", args.id))
-        .filter((q) => q.eq(q.field("url"), normalized.url))
-        .first();
-      if (!existingForTask) {
-        const pullRequestId = await ctx.db.insert("pullRequests", {
-          userId: args.userId,
-          taskId: args.id,
-          url: normalized.url,
-          updatedAt: now,
-        });
-        await insertEvent(ctx, {
-          userId: args.userId,
-          entityId: pullRequestId,
-          action: { type: "pull_request.created" },
-          tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
-        });
-        addedPullRequest = { id: pullRequestId, url: normalized.url };
-      }
+      addedPullRequest = await attachPullRequestToTaskIfMissing({
+        ctx,
+        userId: args.userId,
+        taskId: args.id,
+        addPullRequestByUrl: args.addPullRequestByUrl,
+        now,
+        source: "MCP",
+        eventTagIds: getEventTagIds(task.tagIds),
+      });
     }
 
     if (args.removePullRequestByUrl !== undefined) {
@@ -506,7 +575,8 @@ export const updateFromMcp = internalMutation({
           userId: args.userId,
           entityId: existingForTask._id,
           action: { type: "pull_request.deleted" },
-          tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+          source: "MCP",
+          tagIds: getEventTagIds(task.tagIds),
         });
         await ctx.db.delete(existingForTask._id);
         removedPullRequest = { id: existingForTask._id, url: normalized.url };
@@ -525,6 +595,79 @@ export const updateFromMcp = internalMutation({
       removedAgent,
       addedPullRequest,
       removedPullRequest,
+    };
+  },
+});
+
+export const createFromMcp = internalMutation({
+  args: {
+    userId: v.string(),
+    tagRootId: v.optional(v.id("tags")),
+    content: v.string(),
+    status: v.optional(taskStatus),
+    priority: v.optional(taskPriority),
+    dueDate: v.optional(v.union(v.string(), v.null())),
+    addAgent: v.optional(v.string()),
+    addPullRequestByUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (args.tagRootId) {
+      const rootTag = await ctx.db.get(args.tagRootId);
+      if (!rootTag || rootTag.userId !== args.userId) {
+        throw new Error("Tag scope is invalid for this user");
+      }
+    }
+
+    const now = Date.now();
+    const status = args.status ?? "not_started";
+    const taskId = await ctx.db.insert("tasks", {
+      userId: args.userId,
+      content: args.content,
+      tagIds: [],
+      status,
+      priority: args.priority ?? "triage",
+      dueDate: args.dueDate ?? undefined,
+      statusUpdatedAt: now,
+      completedAt: status === "closed" ? now : undefined,
+    });
+
+    await insertEvent(ctx, {
+      userId: args.userId,
+      entityId: taskId,
+      action: { type: "task.created" },
+      source: "MCP",
+    });
+
+    const addedAgent =
+      args.addAgent === undefined
+        ? undefined
+        : await attachAgentToTaskIfMissing({
+            ctx,
+            userId: args.userId,
+            taskId,
+            addAgentInput: args.addAgent,
+            now,
+            source: "MCP",
+            eventTagIds: undefined,
+          });
+
+    const addedPullRequest =
+      args.addPullRequestByUrl === undefined
+        ? undefined
+        : await attachPullRequestToTaskIfMissing({
+            ctx,
+            userId: args.userId,
+            taskId,
+            addPullRequestByUrl: args.addPullRequestByUrl,
+            now,
+            source: "MCP",
+            eventTagIds: undefined,
+          });
+
+    return {
+      taskId,
+      addedAgent,
+      addedPullRequest,
     };
   },
 });
