@@ -74,7 +74,11 @@ export const createForTask = mutation({
       )
       .first();
     if (existing) {
-      throw new Error("Agent external ID already exists");
+      if (existing.taskId === args.taskId) {
+        // Idempotent re-attach: return existing row instead of failing.
+        return existing._id;
+      }
+      throw new Error("Agent external ID already exists on another task");
     }
 
     const now = Date.now();
