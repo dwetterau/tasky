@@ -197,8 +197,9 @@ async function attachAgentToTaskIfMissing(args: {
 
   const existingForTask = await args.ctx.db
     .query("agents")
-    .withIndex("by_user_task", (q) => q.eq("userId", args.userId).eq("taskId", args.taskId))
-    .filter((q) => q.eq(q.field("externalId"), externalId))
+    .withIndex("by_user_task_external_id", (q) =>
+      q.eq("userId", args.userId).eq("taskId", args.taskId).eq("externalId", externalId)
+    )
     .first();
   if (existingForTask) {
     return undefined;
@@ -253,8 +254,9 @@ async function attachPullRequestToTaskIfMissing(args: {
   const normalized = parseGitHubPullRequestUrl(args.addPullRequestByUrl);
   const existingForTask = await args.ctx.db
     .query("pullRequests")
-    .withIndex("by_user_task", (q) => q.eq("userId", args.userId).eq("taskId", args.taskId))
-    .filter((q) => q.eq(q.field("url"), normalized.url))
+    .withIndex("by_user_task_url", (q) =>
+      q.eq("userId", args.userId).eq("taskId", args.taskId).eq("url", normalized.url)
+    )
     .first();
   if (existingForTask) {
     return undefined;
@@ -581,8 +583,9 @@ export const updateFromMcp = internalMutation({
       const normalized = parseGitHubPullRequestUrl(args.removePullRequestByUrl);
       const existingForTask = await ctx.db
         .query("pullRequests")
-        .withIndex("by_user_task", (q) => q.eq("userId", args.userId).eq("taskId", args.id))
-        .filter((q) => q.eq(q.field("url"), normalized.url))
+        .withIndex("by_user_task_url", (q) =>
+          q.eq("userId", args.userId).eq("taskId", args.id).eq("url", normalized.url)
+        )
         .first();
       if (existingForTask) {
         await insertEvent(ctx, {
