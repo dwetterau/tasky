@@ -128,7 +128,7 @@ export default defineSchema({
     userId: v.string(),
     taskId: v.id("tasks"),
     url: v.string(),
-    githubState: v.optional(v.union(v.literal("OPEN"), v.literal("CLOSED"))),
+    githubState: v.optional(v.union(v.literal("OPEN"), v.literal("CLOSED"), v.literal("MERGED"))),
     isDraft: v.optional(v.boolean()),
     isMerged: v.optional(v.boolean()),
     lastSyncedAt: v.optional(v.number()),

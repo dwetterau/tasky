@@ -55,7 +55,7 @@ export type PullRequestAttachment = {
   _id: Id<"pullRequests">;
   taskId: Id<"tasks">;
   url: string;
-  githubState?: "OPEN" | "CLOSED";
+  githubState?: "OPEN" | "CLOSED" | "MERGED";
   isDraft?: boolean;
   isMerged?: boolean;
   lastSyncedAt?: number;
@@ -89,13 +89,20 @@ export const PR_ICON_PATHS = {
 } as const;
 
 export function getAgentStatusInfo(status: string): { label: string; color: string } {
-  const s = status.toLowerCase();
-  if (!s) return { label: "Syncing", color: "#94a3b8" };
-  if (s === "completed" || s === "done" || s === "finished") return { label: "Completed", color: "#34d399" };
-  if (s === "running" || s === "generating" || s === "in_progress" || s === "working") return { label: "Running", color: "#60a5fa" };
-  if (s === "failed" || s === "error") return { label: "Failed", color: "#f87171" };
-  if (s === "stopped" || s === "cancelled") return { label: "Stopped", color: "#a1a1aa" };
-  return { label: status || "Unknown", color: "#94a3b8" };
+  const s = status.trim().toLowerCase();
+  if (!s) return { label: "Unknown", color: "#9ca3af" };
+  if (s === "finished") return { label: "Finished", color: "#22c55e" };
+  if (s === "errored") return { label: "Errored", color: "#ef4444" };
+  if (s === "running") return { label: "Running", color: "#3b82f6" };
+  if (s === "creating") return { label: "Creating", color: "#3b82f6" };
+  if (s === "archived") return { label: "Archived", color: "#9ca3af" };
+  if (s === "expired") return { label: "Expired", color: "#9ca3af" };
+  return { label: status, color: "#9ca3af" };
+}
+
+export function getAgentStatusDetail(status: string): string {
+  const raw = status.trim();
+  return raw ? `raw status: ${raw}` : "raw status: unknown";
 }
 
 export function getPullRequestStatusInfo(pullRequest: PullRequestAttachment): {
@@ -103,19 +110,34 @@ export function getPullRequestStatusInfo(pullRequest: PullRequestAttachment): {
   color: string;
   iconPath: string;
 } {
-  if (pullRequest.isMerged) {
+  const githubState = String((pullRequest as { githubState?: unknown }).githubState ?? "").toUpperCase();
+  if (pullRequest.isMerged || githubState === "MERGED") {
     return { label: "Merged", color: "#a78bfa", iconPath: PR_ICON_PATHS.merged };
   }
+  if (githubState === "OPEN") {
+    return { label: "Open", color: "#22c55e", iconPath: PR_ICON_PATHS.open };
+  }
   if (pullRequest.isDraft) {
-    return { label: "Draft", color: "#fbbf24", iconPath: PR_ICON_PATHS.draft };
+    return { label: "Draft", color: "#9ca3af", iconPath: PR_ICON_PATHS.draft };
   }
-  if (pullRequest.githubState === "OPEN") {
-    return { label: "Open", color: "#34d399", iconPath: PR_ICON_PATHS.open };
+  if (githubState === "CLOSED") {
+    return { label: "Closed", color: "#ef4444", iconPath: PR_ICON_PATHS.closed };
   }
-  if (pullRequest.githubState === "CLOSED") {
-    return { label: "Closed", color: "#a1a1aa", iconPath: PR_ICON_PATHS.closed };
+  return { label: "Unknown", color: "#9ca3af", iconPath: PR_ICON_PATHS.open };
+}
+
+export function getPullRequestStatusDetail(pullRequest: PullRequestAttachment): string {
+  const parts: string[] = [];
+  if (pullRequest.githubState !== undefined) {
+    parts.push(`githubState=${pullRequest.githubState}`);
   }
-  return { label: "PR", color: "#94a3b8", iconPath: PR_ICON_PATHS.open };
+  if (pullRequest.isDraft !== undefined) {
+    parts.push(`isDraft=${String(pullRequest.isDraft)}`);
+  }
+  if (pullRequest.isMerged !== undefined) {
+    parts.push(`isMerged=${String(pullRequest.isMerged)}`);
+  }
+  return parts.length > 0 ? `raw status: ${parts.join(", ")}` : "raw status: unknown";
 }
 
 export function getPullRequestHref(url: string): string {
