@@ -440,13 +440,11 @@ export function TaskModal({
   const parsedAgentExternalId = extractExternalId(agentInput);
   const canAddPendingAgent =
     !isEditing &&
-    createdFromCaptureId !== undefined &&
     !!parsedAgentExternalId &&
     !pendingAgentExternalIds.includes(parsedAgentExternalId);
   const normalizedPendingPrInput = prInput.trim() ? normalizePullRequestUrl(prInput) : "";
   const canAddPendingPr =
     !isEditing &&
-    createdFromCaptureId !== undefined &&
     normalizedPendingPrInput.length > 0 &&
     !pendingPullRequestUrls.includes(normalizedPendingPrInput);
 
@@ -574,8 +572,7 @@ export function TaskModal({
               />
             </div>
 
-            {(isEditing || createdFromCaptureId !== undefined) && (
-              <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
                 {/* Agents section */}
                 <div>
                   <label className="block text-xs font-medium text-(--muted) mb-1.5">Agents</label>
@@ -648,7 +645,7 @@ export function TaskModal({
                         </button>
                       </form>
                     )}
-                    {!isEditing && createdFromCaptureId !== undefined && (
+                    {!isEditing && (
                       <>
                         {pendingAgentExternalIds.map((externalId) => (
                           <div key={externalId} className="flex items-center gap-1.5 group">
@@ -796,7 +793,7 @@ export function TaskModal({
                         </button>
                       </form>
                     )}
-                    {!isEditing && createdFromCaptureId !== undefined && (
+                    {!isEditing && (
                       <>
                         {pendingPullRequestUrls.map((url) => (
                           <div key={url} className="flex items-center gap-1.5 group">
@@ -877,7 +874,6 @@ export function TaskModal({
                   </div>
                 </div>
               </div>
-            )}
           </div>
         </div>
 
