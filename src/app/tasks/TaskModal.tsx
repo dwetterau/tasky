@@ -17,7 +17,6 @@ import {
   PRIORITY_ORDER,
   CURSOR_ICON_VIEWBOX,
   CURSOR_ICON_PATH,
-  PR_ICON_PATHS,
   getAgentStatusInfo,
   getPullRequestStatusInfo,
   getPullRequestHref,
@@ -121,6 +120,12 @@ function extractExternalId(input: string): string | null {
   return null;
 }
 
+function normalizePullRequestUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return trimmed;
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export function TaskModal({
   isOpen,
   onClose,
@@ -159,8 +164,8 @@ export function TaskModal({
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
   const [prInput, setPrInput] = useState("");
   const [agentInput, setAgentInput] = useState("");
-  const [draftAgentExternalIds, setDraftAgentExternalIds] = useState<string[]>([]);
-  const [draftPullRequestUrls, setDraftPullRequestUrls] = useState<string[]>([]);
+  const [pendingAgentExternalIds, setPendingAgentExternalIds] = useState<string[]>([]);
+  const [pendingPullRequestUrls, setPendingPullRequestUrls] = useState<string[]>([]);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   const create = useTrackedMutation(api.tasks.create).withOptimisticUpdate(
@@ -180,8 +185,26 @@ export function TaskModal({
         priority: args.priority ?? ("triage" as const),
         dueDate: args.dueDate,
         tags: selectedTagsFull,
-        agents: [],
-        pullRequests: [],
+        agents: (args.agentExternalIds ?? []).map((externalId) => ({
+          _id: crypto.randomUUID() as Id<"agents">,
+          _creationTime: Number.MAX_SAFE_INTEGER,
+          userId: "",
+          taskId: "" as Id<"tasks">,
+          externalId,
+          link: `https://cursor.com/agents/${externalId}`,
+          title: externalId,
+          status: "",
+          updatedAt: Date.now(),
+        })),
+        pullRequests: (args.pullRequestUrls ?? []).map((url) => ({
+          _id: crypto.randomUUID() as Id<"pullRequests">,
+          _creationTime: Number.MAX_SAFE_INTEGER,
+          userId: "",
+          taskId: "" as Id<"tasks">,
+          url: normalizePullRequestUrl(url),
+          normalized: null,
+          updatedAt: Date.now(),
+        })),
       };
 
       const tasks = localStore.getQuery(api.tasks.list, {});
@@ -235,29 +258,15 @@ export function TaskModal({
   const update = useTrackedMutation(api.tasks.update).withOptimisticUpdate(
     (localStore, args) => {
       const allTagsFull = localStore.getQuery(api.tags.list, {});
-      const now = Date.now();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const applyUpdate = (t: any) => {
         if (t._id !== args.id) return t;
-        const nextStatus = args.status ?? t.status;
-        const nextCompletedAt =
-          args.status === undefined
-            ? t.completedAt
-            : nextStatus === "closed" && t.status !== "closed"
-              ? now
-              : nextStatus !== "closed" && t.status === "closed"
-                ? undefined
-                : t.completedAt;
-        const nextStatusUpdatedAt =
-          args.status !== undefined && nextStatus !== t.status ? now : t.statusUpdatedAt;
         return {
           ...t,
           content: args.content ?? t.content,
           tagIds: args.tagIds ?? t.tagIds,
-          status: nextStatus,
+          status: args.status ?? t.status,
           priority: args.priority ?? t.priority,
-          completedAt: nextCompletedAt,
-          statusUpdatedAt: nextStatusUpdatedAt,
           dueDate: args.dueDate !== undefined
             ? (args.dueDate ?? undefined)
             : t.dueDate,
@@ -321,8 +330,8 @@ export function TaskModal({
       setShowUnsavedChanges(false);
       setPrInput("");
       setAgentInput("");
-      setDraftAgentExternalIds([]);
-      setDraftPullRequestUrls([]);
+      setPendingAgentExternalIds([]);
+      setPendingPullRequestUrls([]);
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
@@ -379,10 +388,10 @@ export function TaskModal({
     }
   }, []);
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!content.trim()) return;
     if (task) {
-      await update({
+      update({
         id: task._id,
         content: content.trim(),
         tagIds,
@@ -390,30 +399,30 @@ export function TaskModal({
         priority,
         dueDate: dueDate || null,
       });
+      onClose();
     } else {
       if (createdFromCaptureId) {
         persistLastCaptureTag(tagIds);
       }
-      const taskId = await create({
+      const agentExternalIds =
+        pendingAgentExternalIds.length > 0 ? pendingAgentExternalIds : undefined;
+      const pullRequestUrls =
+        pendingPullRequestUrls.length > 0 ? pendingPullRequestUrls : undefined;
+
+      // Close immediately so optimistic create can continue in background.
+      onClose();
+      create({
         content: content.trim(),
         tagIds: tagIds.length > 0 ? tagIds : undefined,
         status,
         priority,
         dueDate: dueDate || undefined,
         createdFromCaptureId,
+        agentExternalIds,
+        pullRequestUrls,
       });
-      if (onAttachAgent) {
-        for (const externalId of draftAgentExternalIds) {
-          await onAttachAgent({ taskId, externalId });
-        }
-      }
-      if (onAttachPr) {
-        for (const url of draftPullRequestUrls) {
-          await onAttachPr({ taskId, url });
-        }
-      }
+      return;
     }
-    onClose();
   };
 
   const handleDelete = () => {
@@ -425,6 +434,19 @@ export function TaskModal({
   };
 
   if (!isOpen) return null;
+
+  const parsedAgentExternalId = extractExternalId(agentInput);
+  const canAddPendingAgent =
+    !isEditing &&
+    createdFromCaptureId !== undefined &&
+    !!parsedAgentExternalId &&
+    !pendingAgentExternalIds.includes(parsedAgentExternalId);
+  const normalizedPendingPrInput = prInput.trim() ? normalizePullRequestUrl(prInput) : "";
+  const canAddPendingPr =
+    !isEditing &&
+    createdFromCaptureId !== undefined &&
+    normalizedPendingPrInput.length > 0 &&
+    !pendingPullRequestUrls.includes(normalizedPendingPrInput);
 
   return (
     <div 
@@ -489,9 +511,7 @@ export function TaskModal({
               <MarkdownEditor
                 value={content}
                 onChange={setContent}
-                onSubmit={() => {
-                  void handleSubmit();
-                }}
+                onSubmit={handleSubmit}
                 placeholder="What needs to be done?"
                 minHeight="200px"
                 autoFocus
@@ -552,58 +572,33 @@ export function TaskModal({
               />
             </div>
 
-            {(onAttachAgent || onAttachPr) && (
+            {(isEditing || createdFromCaptureId !== undefined) && (
               <div className="grid grid-cols-2 gap-3">
                 {/* Agents section */}
                 <div>
                   <label className="block text-xs font-medium text-(--muted) mb-1.5">Agents</label>
                   <div className="space-y-1.5">
-                    {task
-                      ? task.agents.map((agent) => {
-                          const agentStatus = getAgentStatusInfo(agent.status);
-                          return (
-                            <div key={agent._id} className="flex items-center gap-1.5 group">
-                              <a
-                                href={agent.link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
-                                style={{ backgroundColor: `${agentStatus.color}18` }}
-                                title={`${agent.externalId} · ${agentStatus.label}`}
-                              >
-                                <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
-                                  <path d={CURSOR_ICON_PATH} />
-                                </svg>
-                                <span className="truncate">{agent.title}</span>
-                              </a>
-                              {onRemoveAgent && (
-                                <button
-                                  type="button"
-                                  onClick={() => onRemoveAgent(agent._id)}
-                                  className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
-                                  title="Remove agent"
-                                >
-                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })
-                      : draftAgentExternalIds.map((externalId) => (
-                          <div key={externalId} className="flex items-center gap-1.5 group">
-                            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0 bg-(--card-border)">
-                              <svg className="w-3 h-3.5 shrink-0 text-(--muted)" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor">
-                                <path d={CURSOR_ICON_PATH} />
-                              </svg>
-                              <span className="truncate">{externalId}</span>
-                            </div>
+                    {(isEditing ? task!.agents : []).map((agent) => {
+                      const agentStatus = getAgentStatusInfo(agent.status);
+                      return (
+                        <div key={agent._id} className="flex items-center gap-1.5 group">
+                          <a
+                            href={agent.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
+                            style={{ backgroundColor: `${agentStatus.color}18` }}
+                            title={`${agent.externalId} · ${agentStatus.label}`}
+                          >
+                            <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
+                              <path d={CURSOR_ICON_PATH} />
+                            </svg>
+                            <span className="truncate">{agent.title}</span>
+                          </a>
+                          {onRemoveAgent && (
                             <button
                               type="button"
-                              onClick={() =>
-                                setDraftAgentExternalIds((prev) => prev.filter((item) => item !== externalId))
-                              }
+                              onClick={() => onRemoveAgent(agent._id)}
                               className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
                               title="Remove agent"
                             >
@@ -611,22 +606,18 @@ export function TaskModal({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                               </svg>
                             </button>
-                          </div>
-                        ))}
-                    {onAttachAgent && (
+                          )}
+                        </div>
+                      );
+                    })}
+                    {isEditing && onAttachAgent && task && (
                       <form
                         className="flex items-center gap-1.5"
                         onSubmit={(e) => {
                           e.preventDefault();
                           const externalId = extractExternalId(agentInput);
                           if (externalId) {
-                            if (task) {
-                              onAttachAgent({ taskId: task._id, externalId });
-                            } else {
-                              setDraftAgentExternalIds((prev) =>
-                                prev.includes(externalId) ? prev : [...prev, externalId]
-                              );
-                            }
+                            onAttachAgent({ taskId: task._id, externalId });
                             setAgentInput("");
                           }
                         }}
@@ -650,64 +641,34 @@ export function TaskModal({
                         </button>
                       </form>
                     )}
-                  </div>
-                </div>
-
-                {/* Pull Requests section */}
-                <div>
-                  <label className="block text-xs font-medium text-(--muted) mb-1.5">Pull Requests</label>
-                  <div className="space-y-1.5">
-                    {task
-                      ? task.pullRequests.map((pr) => {
-                          const label = pr.normalized
-                            ? `${pr.normalized.owner}/${pr.normalized.repo}#${pr.normalized.number}`
-                            : pr.url;
-                          const status = getPullRequestStatusInfo(pr);
-                          return (
-                            <div key={pr._id} className="flex items-center gap-1.5 group">
-                              <a
-                                href={getPullRequestHref(pr.url)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
-                                style={{ backgroundColor: `${status.color}18` }}
-                                title={`${label} · ${status.label}`}
+                    {!isEditing && createdFromCaptureId !== undefined && (
+                      <>
+                        {pendingAgentExternalIds.map((externalId) => (
+                          <div key={externalId} className="flex items-center gap-1.5 group">
+                            <span
+                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0"
+                              style={{ backgroundColor: `${getAgentStatusInfo("").color}18` }}
+                              title={externalId}
+                            >
+                              <svg
+                                className="w-3 h-3.5 shrink-0"
+                                viewBox={CURSOR_ICON_VIEWBOX}
+                                fill="currentColor"
+                                style={{ color: getAgentStatusInfo("").color }}
                               >
-                                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
-                                  <path d={status.iconPath} />
-                                </svg>
-                                <span className="truncate">{label}</span>
-                              </a>
-                              {onRemovePr && (
-                                <button
-                                  type="button"
-                                  onClick={() => onRemovePr(pr._id)}
-                                  className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
-                                  title="Remove pull request"
-                                >
-                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })
-                      : draftPullRequestUrls.map((url) => (
-                          <div key={url} className="flex items-center gap-1.5 group">
-                            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0 bg-(--card-border)">
-                              <svg className="w-3.5 h-3.5 shrink-0 text-(--muted)" viewBox="0 0 16 16" fill="currentColor">
-                                <path d={PR_ICON_PATHS.open} />
+                                <path d={CURSOR_ICON_PATH} />
                               </svg>
-                              <span className="truncate">{url}</span>
-                            </div>
+                              <span className="truncate">{externalId}</span>
+                            </span>
                             <button
                               type="button"
                               onClick={() =>
-                                setDraftPullRequestUrls((prev) => prev.filter((item) => item !== url))
+                                setPendingAgentExternalIds((current) =>
+                                  current.filter((id) => id !== externalId)
+                                )
                               }
-                              className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
-                              title="Remove pull request"
+                              className="p-0.5 rounded text-(--muted) hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
+                              title="Remove agent"
                             >
                               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -715,20 +676,86 @@ export function TaskModal({
                             </button>
                           </div>
                         ))}
-                    {onAttachPr && (
+                        <form
+                          className="flex items-center gap-1.5"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (!parsedAgentExternalId || pendingAgentExternalIds.includes(parsedAgentExternalId)) {
+                              return;
+                            }
+                            setPendingAgentExternalIds((current) => [...current, parsedAgentExternalId]);
+                            setAgentInput("");
+                          }}
+                        >
+                          <input
+                            type="text"
+                            value={agentInput}
+                            onChange={(e) => setAgentInput(e.target.value)}
+                            placeholder="bc-... or agent URL"
+                            className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!canAddPendingAgent}
+                            className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                            title="Add agent"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                          </button>
+                        </form>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pull Requests section */}
+                <div>
+                  <label className="block text-xs font-medium text-(--muted) mb-1.5">Pull Requests</label>
+                  <div className="space-y-1.5">
+                    {(isEditing ? task!.pullRequests : []).map((pr) => {
+                      const label = pr.normalized
+                        ? `${pr.normalized.owner}/${pr.normalized.repo}#${pr.normalized.number}`
+                        : pr.url;
+                      const status = getPullRequestStatusInfo(pr);
+                      return (
+                        <div key={pr._id} className="flex items-center gap-1.5 group">
+                          <a
+                            href={getPullRequestHref(pr.url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
+                            style={{ backgroundColor: `${status.color}18` }}
+                            title={`${label} · ${status.label}`}
+                          >
+                            <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
+                              <path d={status.iconPath} />
+                            </svg>
+                            <span className="truncate">{label}</span>
+                          </a>
+                          {onRemovePr && (
+                            <button
+                              type="button"
+                              onClick={() => onRemovePr(pr._id)}
+                              className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
+                              title="Remove pull request"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {isEditing && onAttachPr && task && (
                       <form
                         className="flex items-center gap-1.5"
                         onSubmit={(e) => {
                           e.preventDefault();
                           if (prInput.trim()) {
-                            if (task) {
-                              onAttachPr({ taskId: task._id, url: prInput.trim() });
-                            } else {
-                              const trimmed = prInput.trim();
-                              setDraftPullRequestUrls((prev) =>
-                                prev.includes(trimmed) ? prev : [...prev, trimmed]
-                              );
-                            }
+                            onAttachPr({ taskId: task._id, url: prInput.trim() });
                             setPrInput("");
                           }
                         }}
@@ -752,6 +779,89 @@ export function TaskModal({
                         </button>
                       </form>
                     )}
+                    {!isEditing && createdFromCaptureId !== undefined && (
+                      <>
+                        {pendingPullRequestUrls.map((url) => (
+                          <div key={url} className="flex items-center gap-1.5 group">
+                            <span
+                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0"
+                              style={{ backgroundColor: `${getPullRequestStatusInfo({ _id: "" as Id<"pullRequests">, taskId: "" as Id<"tasks">, url }).color}18` }}
+                              title={url}
+                            >
+                              <svg
+                                className="w-3.5 h-3.5 shrink-0"
+                                viewBox="0 0 16 16"
+                                fill="currentColor"
+                                style={{
+                                  color: getPullRequestStatusInfo({
+                                    _id: "" as Id<"pullRequests">,
+                                    taskId: "" as Id<"tasks">,
+                                    url,
+                                  }).color,
+                                }}
+                              >
+                                <path
+                                  d={
+                                    getPullRequestStatusInfo({
+                                      _id: "" as Id<"pullRequests">,
+                                      taskId: "" as Id<"tasks">,
+                                      url,
+                                    }).iconPath
+                                  }
+                                />
+                              </svg>
+                              <span className="truncate">{url}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPendingPullRequestUrls((current) =>
+                                  current.filter((existingUrl) => existingUrl !== url)
+                                )
+                              }
+                              className="p-0.5 rounded text-(--muted) hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
+                              title="Remove pull request"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                        <form
+                          className="flex items-center gap-1.5"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (
+                              !normalizedPendingPrInput ||
+                              pendingPullRequestUrls.includes(normalizedPendingPrInput)
+                            ) {
+                              return;
+                            }
+                            setPendingPullRequestUrls((current) => [...current, normalizedPendingPrInput]);
+                            setPrInput("");
+                          }}
+                        >
+                          <input
+                            type="text"
+                            value={prInput}
+                            onChange={(e) => setPrInput(e.target.value)}
+                            placeholder="github.com/owner/repo/pull/123"
+                            className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!canAddPendingPr}
+                            className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                            title="Add pull request"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                          </button>
+                        </form>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -768,9 +878,7 @@ export function TaskModal({
             Cancel
           </button>
           <button
-            onClick={() => {
-              void handleSubmit();
-            }}
+            onClick={handleSubmit}
             disabled={!content.trim()}
             className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >

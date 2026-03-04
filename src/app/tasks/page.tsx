@@ -918,22 +918,24 @@ function TasksList() {
       agents: (task.agents as AgentAttachment[] | undefined) ?? [],
       pullRequests: (task.pullRequests as PullRequestAttachment[] | undefined) ?? [],
     };
-    for (const pullRequest of taskWithRelations.pullRequests) {
-      const normalized = pullRequest.normalized ?? parseGitHubPrUrl(pullRequest.url);
-      if (!normalized) continue;
-      visiblePullRequestsForSync.push({
-        pullRequestId: pullRequest._id,
-        url: pullRequest.url,
-        owner: normalized.owner,
-        repo: normalized.repo,
-        number: normalized.number,
-      });
-    }
-    for (const agent of taskWithRelations.agents) {
-      visibleAgentsForSync.push({
-        agentId: agent._id,
-        externalId: agent.externalId,
-      });
+    if (task.status !== "closed") {
+      for (const pullRequest of taskWithRelations.pullRequests) {
+        const normalized = pullRequest.normalized ?? parseGitHubPrUrl(pullRequest.url);
+        if (!normalized) continue;
+        visiblePullRequestsForSync.push({
+          pullRequestId: pullRequest._id,
+          url: pullRequest.url,
+          owner: normalized.owner,
+          repo: normalized.repo,
+          number: normalized.number,
+        });
+      }
+      for (const agent of taskWithRelations.agents) {
+        visibleAgentsForSync.push({
+          agentId: agent._id,
+          externalId: agent.externalId,
+        });
+      }
     }
     tasksByStatus[task.status].push(taskWithRelations);
     tasksByPriority[task.priority].push(taskWithRelations);
