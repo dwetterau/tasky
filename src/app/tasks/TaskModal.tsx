@@ -18,7 +18,9 @@ import {
   CURSOR_ICON_VIEWBOX,
   CURSOR_ICON_PATH,
   getAgentStatusInfo,
+  getAgentStatusDetail,
   getPullRequestStatusInfo,
+  getPullRequestStatusDetail,
   getPullRequestHref,
 } from "./constants";
 import { ConfirmModal } from "../../components/ConfirmModal";
@@ -580,17 +582,22 @@ export function TaskModal({
                   <div className="space-y-1.5">
                     {(isEditing ? task!.agents : []).map((agent) => {
                       const agentStatus = getAgentStatusInfo(agent.status);
+                      const statusDetail = getAgentStatusDetail(agent.status);
                       return (
                         <div key={agent._id} className="flex items-center gap-1.5 group">
                           <a
                             href={agent.link}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
-                            style={{ backgroundColor: `${agentStatus.color}18` }}
-                            title={`${agent.externalId} · ${agentStatus.label}`}
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0 bg-(--card-border)"
+                            title={`${agent.externalId} · ${agentStatus.label} · ${statusDetail}`}
                           >
-                            <svg className="w-3 h-3.5 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" style={{ color: agentStatus.color }}>
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ backgroundColor: agentStatus.color }}
+                              title={`${agentStatus.label} · ${statusDetail}`}
+                            />
+                            <svg className="w-3 h-3.5 shrink-0 text-(--muted)" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor">
                               <path d={CURSOR_ICON_PATH} />
                             </svg>
                             <span className="truncate">{agent.title}</span>
@@ -645,21 +652,26 @@ export function TaskModal({
                       <>
                         {pendingAgentExternalIds.map((externalId) => (
                           <div key={externalId} className="flex items-center gap-1.5 group">
+                            {(() => {
+                              const pendingAgentStatus = getAgentStatusInfo("");
+                              return (
                             <span
                               className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0"
-                              style={{ backgroundColor: `${getAgentStatusInfo("").color}18` }}
+                              style={{ backgroundColor: "var(--card-border)" }}
                               title={externalId}
                             >
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: pendingAgentStatus.color }} />
                               <svg
-                                className="w-3 h-3.5 shrink-0"
+                                className="w-3 h-3.5 shrink-0 text-(--muted)"
                                 viewBox={CURSOR_ICON_VIEWBOX}
                                 fill="currentColor"
-                                style={{ color: getAgentStatusInfo("").color }}
                               >
                                 <path d={CURSOR_ICON_PATH} />
                               </svg>
                               <span className="truncate">{externalId}</span>
                             </span>
+                              );
+                            })()}
                             <button
                               type="button"
                               onClick={() =>
@@ -719,17 +731,22 @@ export function TaskModal({
                         ? `${pr.normalized.owner}/${pr.normalized.repo}#${pr.normalized.number}`
                         : pr.url;
                       const status = getPullRequestStatusInfo(pr);
+                      const statusDetail = getPullRequestStatusDetail(pr);
                       return (
                         <div key={pr._id} className="flex items-center gap-1.5 group">
                           <a
                             href={getPullRequestHref(pr.url)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0"
-                            style={{ backgroundColor: `${status.color}18` }}
-                            title={`${label} · ${status.label}`}
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0 bg-(--card-border)"
+                            title={`${label} · ${status.label} · ${statusDetail}`}
                           >
-                            <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" style={{ color: status.color }}>
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ backgroundColor: status.color }}
+                              title={`${status.label} · ${statusDetail}`}
+                            />
+                            <svg className="w-3.5 h-3.5 shrink-0 text-(--muted)" viewBox="0 0 16 16" fill="currentColor">
                               <path d={status.iconPath} />
                             </svg>
                             <span className="truncate">{label}</span>
@@ -783,35 +800,30 @@ export function TaskModal({
                       <>
                         {pendingPullRequestUrls.map((url) => (
                           <div key={url} className="flex items-center gap-1.5 group">
+                            {(() => {
+                              const pendingPrStatus = getPullRequestStatusInfo({
+                                _id: "" as Id<"pullRequests">,
+                                taskId: "" as Id<"tasks">,
+                                url,
+                              });
+                              return (
                             <span
                               className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0"
-                              style={{ backgroundColor: `${getPullRequestStatusInfo({ _id: "" as Id<"pullRequests">, taskId: "" as Id<"tasks">, url }).color}18` }}
+                              style={{ backgroundColor: "var(--card-border)" }}
                               title={url}
                             >
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: pendingPrStatus.color }} />
                               <svg
-                                className="w-3.5 h-3.5 shrink-0"
+                                className="w-3.5 h-3.5 shrink-0 text-(--muted)"
                                 viewBox="0 0 16 16"
                                 fill="currentColor"
-                                style={{
-                                  color: getPullRequestStatusInfo({
-                                    _id: "" as Id<"pullRequests">,
-                                    taskId: "" as Id<"tasks">,
-                                    url,
-                                  }).color,
-                                }}
                               >
-                                <path
-                                  d={
-                                    getPullRequestStatusInfo({
-                                      _id: "" as Id<"pullRequests">,
-                                      taskId: "" as Id<"tasks">,
-                                      url,
-                                    }).iconPath
-                                  }
-                                />
+                                <path d={pendingPrStatus.iconPath} />
                               </svg>
                               <span className="truncate">{url}</span>
                             </span>
+                              );
+                            })()}
                             <button
                               type="button"
                               onClick={() =>

@@ -149,7 +149,7 @@ export const remove = mutation({
   },
 });
 
-const syncPatchState = v.union(v.literal("OPEN"), v.literal("CLOSED"));
+const syncPatchState = v.union(v.literal("OPEN"), v.literal("CLOSED"), v.literal("MERGED"));
 
 export const patchSyncFieldsInternal = internalMutation({
   args: {
@@ -371,7 +371,7 @@ export const syncPullRequestsBatch = action({
         string,
         | {
             pullRequest: {
-              state: "OPEN" | "CLOSED";
+              state: "OPEN" | "CLOSED" | "MERGED";
               isDraft: boolean;
               merged: boolean;
             } | null;
