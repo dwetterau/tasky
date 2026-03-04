@@ -68,7 +68,11 @@ export function TagSelector({
     setIsOpen(false);
     setSearch("");
     setHighlightedIndex(0);
-    inputRef.current?.focus();
+    // Prevent immediate reopen from focus/onClick interactions after selection.
+    inputRef.current?.blur();
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   };
 
   const removeTag = (tagId: Id<"tags">) => {
