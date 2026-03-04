@@ -18,9 +18,7 @@ import {
   CURSOR_ICON_VIEWBOX,
   CURSOR_ICON_PATH,
   getAgentStatusInfo,
-  getAgentStatusDetail,
   getPullRequestStatusInfo,
-  getPullRequestStatusDetail,
   getPullRequestHref,
 } from "./constants";
 import { ConfirmModal } from "../../components/ConfirmModal";
@@ -579,7 +577,6 @@ export function TaskModal({
                   <div className="space-y-1.5">
                     {(isEditing ? task!.agents : []).map((agent) => {
                       const agentStatus = getAgentStatusInfo(agent.status);
-                      const statusDetail = getAgentStatusDetail(agent.status);
                       return (
                         <div key={agent._id} className="flex items-center gap-1.5 group">
                           <a
@@ -587,12 +584,12 @@ export function TaskModal({
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0 bg-(--card-border)"
-                            title={`${agent.externalId} · ${agentStatus.label} · ${statusDetail}`}
+                            title={`${agent.externalId} · ${agentStatus.label}`}
                           >
                             <span
                               className="w-1.5 h-1.5 rounded-full shrink-0"
                               style={{ backgroundColor: agentStatus.color }}
-                              title={`${agentStatus.label} · ${statusDetail}`}
+                              title={agentStatus.label}
                             />
                             <svg className="w-3 h-3.5 shrink-0 text-(--muted)" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor">
                               <path d={CURSOR_ICON_PATH} />
@@ -728,7 +725,6 @@ export function TaskModal({
                         ? `${pr.normalized.owner}/${pr.normalized.repo}#${pr.normalized.number}`
                         : pr.url;
                       const status = getPullRequestStatusInfo(pr);
-                      const statusDetail = getPullRequestStatusDetail(pr);
                       return (
                         <div key={pr._id} className="flex items-center gap-1.5 group">
                           <a
@@ -736,12 +732,12 @@ export function TaskModal({
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0 bg-(--card-border)"
-                            title={`${label} · ${status.label} · ${statusDetail}`}
+                            title={`${label} · ${status.label}`}
                           >
                             <span
                               className="w-1.5 h-1.5 rounded-full shrink-0"
                               style={{ backgroundColor: status.color }}
-                              title={`${status.label} · ${statusDetail}`}
+                              title={status.label}
                             />
                             <svg className="w-3.5 h-3.5 shrink-0 text-(--muted)" viewBox="0 0 16 16" fill="currentColor">
                               <path d={status.iconPath} />
