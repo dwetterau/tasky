@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
 import { PR_ICON_PATHS } from "./constants";
 
@@ -16,6 +16,7 @@ export function AttachPrModal({
   onAttach: (args: { taskId: Id<"tasks">; url: string }) => void;
 }) {
   const [url, setUrl] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -27,6 +28,17 @@ export function AttachPrModal({
     document.addEventListener("keydown", onEscape);
     return () => document.removeEventListener("keydown", onEscape);
   }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timeoutId = window.setTimeout(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus();
+      input.select();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen]);
 
   if (!isOpen || !taskId) return null;
 
@@ -65,9 +77,16 @@ export function AttachPrModal({
         <div>
           <label className="block text-xs font-medium text-(--muted) mb-1">GitHub PR URL</label>
           <input
+            ref={inputRef}
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
             placeholder="https://github.com/owner/repo/pull/123"
             className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
           />

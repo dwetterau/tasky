@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
 import { CURSOR_ICON_VIEWBOX, CURSOR_ICON_PATH } from "./constants";
 
@@ -45,6 +45,7 @@ export function AttachAgentModal({
   }) => void;
 }) {
   const [agentInput, setAgentInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -56,6 +57,17 @@ export function AttachAgentModal({
     document.addEventListener("keydown", onEscape);
     return () => document.removeEventListener("keydown", onEscape);
   }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timeoutId = window.setTimeout(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus();
+      input.select();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen]);
 
   if (!isOpen || !taskId) return null;
 
@@ -96,9 +108,16 @@ export function AttachAgentModal({
           <div>
             <label className="block text-xs font-medium text-(--muted) mb-1">Agent Link or ID</label>
             <input
+              ref={inputRef}
               type="text"
               value={agentInput}
               onChange={(e) => setAgentInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
               placeholder="cursor.com/agents/bc-xxxx or bc-xxxx"
               className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
             />

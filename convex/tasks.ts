@@ -704,6 +704,8 @@ export const create = mutation({
     priority: v.optional(taskPriority),
     dueDate: v.optional(v.string()),
     createdFromCaptureId: v.optional(v.id("captures")),
+    agentExternalIds: v.optional(v.array(v.string())),
+    pullRequestUrls: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -731,6 +733,51 @@ export const create = mutation({
       action: { type: "task.created" },
       tagIds: tagIds.length > 0 ? tagIds : undefined,
     });
+
+    const agentExternalIds = Array.from(
+      new Set((args.agentExternalIds ?? []).map((value) => extractAgentExternalId(value)).filter((value): value is string => Boolean(value)))
+    );
+    for (const externalId of agentExternalIds) {
+      const agentId = await ctx.db.insert("agents", {
+        userId,
+        taskId,
+        externalId,
+        link: `https://cursor.com/agents/${externalId}`,
+        title: externalId,
+        status: "",
+        lastSyncedAt: undefined,
+        updatedAt: now,
+      });
+      await insertEvent(ctx, {
+        userId,
+        entityId: agentId,
+        action: { type: "agent.created" },
+        tagIds: tagIds.length > 0 ? tagIds : undefined,
+      });
+    }
+
+    const pullRequestUrls = Array.from(
+      new Set(
+        (args.pullRequestUrls ?? [])
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      )
+    );
+    for (const pullRequestUrl of pullRequestUrls) {
+      const normalized = parseGitHubPullRequestUrl(pullRequestUrl);
+      const pullRequestId = await ctx.db.insert("pullRequests", {
+        userId,
+        taskId,
+        url: normalized.url,
+        updatedAt: now,
+      });
+      await insertEvent(ctx, {
+        userId,
+        entityId: pullRequestId,
+        action: { type: "pull_request.created" },
+        tagIds: tagIds.length > 0 ? tagIds : undefined,
+      });
+    }
 
     // If created from a capture, delete the source capture
     if (args.createdFromCaptureId) {
