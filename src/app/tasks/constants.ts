@@ -100,11 +100,6 @@ export function getAgentStatusInfo(status: string): { label: string; color: stri
   return { label: status, color: "#9ca3af" };
 }
 
-export function getAgentStatusDetail(status: string): string {
-  const raw = status.trim();
-  return raw ? `raw status: ${raw}` : "raw status: unknown";
-}
-
 export function getPullRequestStatusInfo(pullRequest: PullRequestAttachment): {
   label: string;
   color: string;
@@ -124,20 +119,6 @@ export function getPullRequestStatusInfo(pullRequest: PullRequestAttachment): {
     return { label: "Closed", color: "#ef4444", iconPath: PR_ICON_PATHS.closed };
   }
   return { label: "Unknown", color: "#9ca3af", iconPath: PR_ICON_PATHS.open };
-}
-
-export function getPullRequestStatusDetail(pullRequest: PullRequestAttachment): string {
-  const parts: string[] = [];
-  if (pullRequest.githubState !== undefined) {
-    parts.push(`githubState=${pullRequest.githubState}`);
-  }
-  if (pullRequest.isDraft !== undefined) {
-    parts.push(`isDraft=${String(pullRequest.isDraft)}`);
-  }
-  if (pullRequest.isMerged !== undefined) {
-    parts.push(`isMerged=${String(pullRequest.isMerged)}`);
-  }
-  return parts.length > 0 ? `raw status: ${parts.join(", ")}` : "raw status: unknown";
 }
 
 export function getPullRequestHref(url: string): string {
