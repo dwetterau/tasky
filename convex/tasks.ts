@@ -1004,6 +1004,58 @@ export const updatePriority = mutation({
   },
 });
 
+export const reopenBlockedWithTerminalAgents = mutation({
+  args: {
+    taskIds: v.optional(v.array(v.id("tasks"))),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const candidateTaskIds = new Set(args.taskIds ?? []);
+    const blockedTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user_status", (q) => q.eq("userId", userId).eq("status", "blocked"))
+      .collect();
+
+    const filteredBlockedTasks =
+      candidateTaskIds.size > 0
+        ? blockedTasks.filter((task) => candidateTaskIds.has(task._id))
+        : blockedTasks;
+
+    const reopenedTaskIds: Id<"tasks">[] = [];
+    for (const task of filteredBlockedTasks) {
+      const agents = await ctx.db
+        .query("agents")
+        .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", task._id))
+        .collect();
+      if (agents.length === 0) continue;
+
+      const allTerminal = agents.every((agent) => {
+        const status = agent.status.trim().toUpperCase();
+        return status === "FINISHED" || status === "ERRORED";
+      });
+      if (!allTerminal) continue;
+
+      await ctx.db.patch(task._id, {
+        status: "in_progress",
+        statusUpdatedAt: Date.now(),
+      });
+      await insertEvent(ctx, {
+        userId,
+        entityId: task._id,
+        action: { type: "task.status_changed", from: "blocked", to: "in_progress" },
+        tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+      });
+      reopenedTaskIds.push(task._id);
+    }
+
+    return { reopenedTaskIds, reopenedCount: reopenedTaskIds.length };
+  },
+});
+
 export const remove = mutation({
   args: { id: v.id("tasks") },
   handler: async (ctx, args) => {
