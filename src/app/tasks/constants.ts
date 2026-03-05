@@ -26,8 +26,8 @@ export const PRIORITY_ORDER: TaskPriority[] = [...taskPriorityValues];
 
 // Priority weight for sorting (higher number = higher priority = shown first)
 export const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
-  urgent: 5,
-  triage: 4,
+  triage: 5,
+  urgent: 4,
   high: 3,
   medium: 2,
   low: 1,
