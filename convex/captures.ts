@@ -84,7 +84,7 @@ export const listForMcp = internalQuery({
   },
 });
 
-export const updateBatchFromMcp = internalMutation({
+export const updateFromMcp = internalMutation({
   args: {
     userId: v.string(),
     ids: v.array(v.id("captures")),
@@ -140,6 +140,41 @@ export const updateBatchFromMcp = internalMutation({
       status: args.status,
       updatedCount,
       results,
+    };
+  },
+});
+
+export const createFromMcp = internalMutation({
+  args: {
+    userId: v.string(),
+    texts: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const created: Array<{ id: string; text: string }> = [];
+
+    for (let index = 0; index < args.texts.length; index += 1) {
+      const trimmedText = args.texts[index]?.trim();
+      if (!trimmedText) {
+        throw new Error(`texts[${index}] must be a non-empty string`);
+      }
+
+      const captureId = await ctx.db.insert("captures", {
+        userId: args.userId,
+        text: trimmedText,
+        completed: false,
+      });
+      await insertEvent(ctx, {
+        userId: args.userId,
+        entityId: captureId,
+        action: { type: "capture.created" },
+        source: "MCP",
+      });
+      created.push({ id: captureId, text: trimmedText });
+    }
+
+    return {
+      createdCount: created.length,
+      captures: created,
     };
   },
 });
