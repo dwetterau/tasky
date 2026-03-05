@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
 import { AUTH_PENDING_KEY } from "@/lib/useAuthSession";
@@ -75,7 +75,9 @@ function getNavHref(item: typeof navItems[number]): string {
 
 export function Navigation() {
   const user = useQuery(api.tags.currentUser);
+  const onboardingState = useQuery(api.onboarding.getState);
   const pathname = usePathname();
+  const router = useRouter();
   const { isSaving } = useSaving();
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -102,6 +104,13 @@ export function Navigation() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [profileDropdownOpen]);
+
+  useEffect(() => {
+    if (onboardingState === undefined) return;
+    if (onboardingState.hasCompletedOnboarding) return;
+    if (pathname === "/onboarding") return;
+    router.replace("/onboarding");
+  }, [onboardingState, pathname, router]);
 
   return (
     <nav className="fixed top-0 left-0 right-0 bg-(--card-bg) border-b border-(--card-border) z-50">
@@ -172,6 +181,16 @@ export function Navigation() {
               {profileDropdownOpen && (
                 <div className="absolute right-0 mt-2 w-48 bg-(--card-bg) border border-(--card-border) rounded-lg shadow-lg py-1 z-50">
                   <Link
+                    href="/onboarding"
+                    onClick={() => setProfileDropdownOpen(false)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
+                    </svg>
+                    Onboarding
+                  </Link>
+                  <Link
                     href="/settings"
                     onClick={() => setProfileDropdownOpen(false)}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors"
@@ -237,6 +256,16 @@ export function Navigation() {
                 </Link>
               );
             })}
+            <Link
+              href="/onboarding"
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center gap-3 px-3 py-3 text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
+              </svg>
+              <span className="font-medium">Onboarding</span>
+            </Link>
             <Link
               href="/settings"
               onClick={() => setMenuOpen(false)}

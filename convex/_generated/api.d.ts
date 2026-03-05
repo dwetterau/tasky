@@ -18,6 +18,7 @@ import type * as mcp from "../mcp.js";
 import type * as mcpScopes from "../mcpScopes.js";
 import type * as migrations from "../migrations.js";
 import type * as notes from "../notes.js";
+import type * as onboarding from "../onboarding.js";
 import type * as pullRequests from "../pullRequests.js";
 import type * as tags from "../tags.js";
 import type * as tasks from "../tasks.js";
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   mcpScopes: typeof mcpScopes;
   migrations: typeof migrations;
   notes: typeof notes;
+  onboarding: typeof onboarding;
   pullRequests: typeof pullRequests;
   tags: typeof tags;
   tasks: typeof tasks;

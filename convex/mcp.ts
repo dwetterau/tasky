@@ -446,8 +446,8 @@ async function handleListCapturesTool(
   }
 }
 
-async function handleUpdateCapturesBatchTool(
-  executeBatchUpdateCapturesFromMcp: (args: {
+async function handleUpdateCapturesTool(
+  executeUpdateCapturesFromMcp: (args: {
     userId: string;
     ids: Id<"captures">[];
     status: "done" | "deleted";
@@ -480,10 +480,54 @@ async function handleUpdateCapturesBatchTool(
   }
 
   try {
-    const result = await executeBatchUpdateCapturesFromMcp({
+    const result = await executeUpdateCapturesFromMcp({
       userId: sessionUserId,
       ids: args.ids as Id<"captures">[],
       status: args.status,
+    });
+    return mcpToolResult(rpcId, result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Tool execution failed";
+    return mcpError(rpcId, -32000, message);
+  }
+}
+
+async function handleCreateCapturesTool(
+  executeCreateCapturesFromMcp: (args: {
+    userId: string;
+    texts: string[];
+  }) => Promise<unknown>,
+  rpcId: unknown,
+  sessionUserId: string,
+  parsedScopes: ParsedScopes,
+  rawArgs: unknown
+): Promise<Response> {
+  if (!hasRequiredScope(parsedScopes, TASKS_WRITE_SCOPE)) {
+    return mcpError(rpcId, -32001, "Missing required scope: tasks:write");
+  }
+  if (rawArgs !== undefined && (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs))) {
+    return mcpError(rpcId, -32602, "Invalid arguments");
+  }
+
+  const allowedKeys = new Set(["texts"]);
+  for (const key of Object.keys((rawArgs ?? {}) as Record<string, unknown>)) {
+    if (!allowedKeys.has(key)) {
+      return mcpError(rpcId, -32602, `Unexpected argument: ${key}`);
+    }
+  }
+
+  const args = (rawArgs ?? {}) as { texts?: unknown };
+  if (!Array.isArray(args.texts) || args.texts.length === 0 || args.texts.some((text) => typeof text !== "string")) {
+    return mcpError(rpcId, -32602, "texts is required and must be a non-empty string array");
+  }
+  if (args.texts.some((text) => !text.trim())) {
+    return mcpError(rpcId, -32602, "texts entries must be non-empty strings");
+  }
+
+  try {
+    const result = await executeCreateCapturesFromMcp({
+      userId: sessionUserId,
+      texts: args.texts,
     });
     return mcpToolResult(rpcId, result);
   } catch (error) {
@@ -560,7 +604,7 @@ function getToolsList() {
       },
     },
     {
-      name: "updateCapturesBatch",
+      name: "updateCaptures",
       description:
         "Update multiple captures by id with a single status action: done (mark complete) or deleted.",
       inputSchema: {
@@ -576,6 +620,24 @@ function getToolsList() {
           status: {
             type: "string",
             enum: ["done", "deleted"],
+          },
+        },
+      },
+    },
+    {
+      name: "createCaptures",
+      description:
+        "Create multiple captures for the authenticated user from a single list of capture text values.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["texts"],
+        properties: {
+          texts: {
+            type: "array",
+            minItems: 1,
+            items: { type: "string" },
+            description: "Capture text values to create. Each entry must be a non-empty string.",
           },
         },
       },
@@ -683,7 +745,8 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           toolName !== "readTasks" &&
           toolName !== "createTask" &&
           toolName !== "listCaptures" &&
-          toolName !== "updateCapturesBatch" &&
+          toolName !== "updateCaptures" &&
+          toolName !== "createCaptures" &&
           toolName !== "updateTask"
         ) {
           return mcpError(rpcId, -32601, "Tool not found");
@@ -716,9 +779,18 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
             params.arguments
           );
         }
-        if (toolName === "updateCapturesBatch") {
-          return handleUpdateCapturesBatchTool(
-            (args) => ctx.runMutation(internal.captures.updateBatchFromMcp, args),
+        if (toolName === "updateCaptures") {
+          return handleUpdateCapturesTool(
+            (args) => ctx.runMutation(internal.captures.updateFromMcp, args),
+            rpcId,
+            sessionUserId,
+            parsedScopes,
+            params.arguments
+          );
+        }
+        if (toolName === "createCaptures") {
+          return handleCreateCapturesTool(
+            (args) => ctx.runMutation(internal.captures.createFromMcp, args),
             rpcId,
             sessionUserId,
             parsedScopes,

@@ -173,4 +173,10 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_parent", ["userId", "parentId"])
     .index("by_user_name", ["userId", "name"]),
+
+  onboardingStates: defineTable({
+    userId: v.string(),
+    completedAt: v.number(), // Unix timestamp (ms) when onboarding was completed
+    lastViewedAt: v.optional(v.number()), // Unix timestamp (ms) for analytics/debugging
+  }).index("by_user", ["userId"]),
 });
