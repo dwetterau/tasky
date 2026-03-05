@@ -8,6 +8,7 @@ export { taskStatusValues, taskPriorityValues };
 export const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   not_started: { label: "Not Started", color: "#6b7280" },
   in_progress: { label: "In Progress", color: "#3b82f6" },
+  agent_running: { label: "Agent Running", color: "#8b5cf6" },
   blocked: { label: "Blocked", color: "#ef4444" },
   closed: { label: "Closed", color: "#22c55e" },
 };
@@ -17,14 +18,15 @@ export const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: strin
   low: { label: "Low", color: "#22c55e" },
   medium: { label: "Medium", color: "#f59e0b" },
   high: { label: "High", color: "#ef4444" },
+  urgent: { label: "Urgent", color: "#ec4899" },
 };
 
 export const STATUS_ORDER: TaskStatus[] = [...taskStatusValues];
 export const PRIORITY_ORDER: TaskPriority[] = [...taskPriorityValues];
 
 // Priority weight for sorting (higher number = higher priority = shown first)
-// Triage (un-prioritized) is treated as highest priority so it appears first and gets attention
 export const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
+  urgent: 5,
   triage: 4,
   high: 3,
   medium: 2,
@@ -35,8 +37,9 @@ export const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
 export const STATUS_WEIGHT: Record<TaskStatus, number> = {
   not_started: 0,
   in_progress: 1,
-  blocked: 2,
-  closed: 3,
+  agent_running: 2,
+  blocked: 3,
+  closed: 4,
 };
 
 export type KanbanMode = "status" | "priority";

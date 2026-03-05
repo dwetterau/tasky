@@ -895,6 +895,7 @@ function TasksList() {
   const tasksByStatus: Record<TaskStatus, TaskView[]> = {
     not_started: [],
     in_progress: [],
+    agent_running: [],
     blocked: [],
     closed: [],
   };
@@ -904,6 +905,7 @@ function TasksList() {
     low: [],
     medium: [],
     high: [],
+    urgent: [],
   };
   const visiblePullRequestsForSync: Array<{
     pullRequestId: Id<"pullRequests">;
@@ -1023,7 +1025,7 @@ function TasksList() {
       <Navigation />
       <div className="flex-1 flex pt-16 min-h-0">
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full flex-1 flex flex-col min-h-0 pt-8">
+          <div className="max-w-376 mx-auto px-4 sm:px-6 lg:px-8 w-full flex-1 flex flex-col min-h-0 pt-8">
           {/* Search UI */}
           <div className="mb-6 space-y-3">
             <div className="flex gap-2 flex-wrap">
@@ -1171,7 +1173,7 @@ function TasksList() {
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
             >
-              <div className="flex gap-6 overflow-x-auto pb-4 flex-1 min-h-0">
+              <div className="flex gap-2 overflow-x-auto pb-4 flex-1 min-h-0">
                 {kanbanMode === "status" ? (
                   STATUS_ORDER.map((status) => (
                     <KanbanColumn
