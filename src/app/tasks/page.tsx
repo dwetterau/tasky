@@ -710,7 +710,7 @@ function TasksList() {
   );
   const syncAgentStates = useAction(api.agents.syncAgentStates);
   const syncPullRequestsBatch = useAction(api.pullRequests.syncPullRequestsBatch);
-  const reopenBlockedWithTerminalAgents = useTrackedMutation(api.tasks.reopenBlockedWithTerminalAgents);
+  const syncAgentRunningStatuses = useTrackedMutation(api.tasks.reopenBlockedWithTerminalAgents);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -983,8 +983,12 @@ function TasksList() {
     setIsRefreshingLinks(true);
     try {
       const syncPromises: Array<Promise<unknown>> = [];
-      const blockedTaskIdsWithAgents = (tasks ?? [])
-        .filter((task) => task.status === "blocked" && ((task.agents as AgentAttachment[] | undefined) ?? []).length > 0)
+      const taskIdsForAgentRunningSync = (tasks ?? [])
+        .filter((task) => {
+          const hasAgents = ((task.agents as AgentAttachment[] | undefined) ?? []).length > 0;
+          if (!hasAgents) return false;
+          return task.status === "agent_running" || task.status === "not_started" || task.status === "in_progress";
+        })
         .map((task) => task._id);
       if (visiblePullRequestsForSync.length > 0) {
         syncPromises.push(
@@ -1010,9 +1014,9 @@ function TasksList() {
         );
       }
       await Promise.all(syncPromises);
-      if (blockedTaskIdsWithAgents.length > 0) {
-        await reopenBlockedWithTerminalAgents({
-          taskIds: blockedTaskIdsWithAgents,
+      if (taskIdsForAgentRunningSync.length > 0) {
+        await syncAgentRunningStatuses({
+          taskIds: taskIdsForAgentRunningSync,
         });
       }
     } finally {
