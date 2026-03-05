@@ -117,7 +117,7 @@ export const list = query({
   },
 });
 
-const openTaskStatuses: Array<Doc<"tasks">["status"]> = ["not_started", "in_progress", "blocked"];
+const openTaskStatuses: Array<Doc<"tasks">["status"]> = ["not_started", "in_progress", "agent_running", "blocked"];
 const allTaskStatuses: Array<Doc<"tasks">["status"]> = [...openTaskStatuses, "closed"];
 
 function normalizeTagText(value: string): string {

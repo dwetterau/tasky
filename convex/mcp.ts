@@ -61,20 +61,21 @@ function parseScopes(scopeString: string): ParsedScopes {
 }
 
 function parseTaskStatuses(input: unknown):
-  | Array<"not_started" | "in_progress" | "blocked" | "closed">
+  | Array<"not_started" | "in_progress" | "agent_running" | "blocked" | "closed">
   | undefined {
   if (!Array.isArray(input)) return undefined;
   return input.filter(
-    (status): status is "not_started" | "in_progress" | "blocked" | "closed" =>
+    (status): status is "not_started" | "in_progress" | "agent_running" | "blocked" | "closed" =>
       status === "not_started" ||
       status === "in_progress" ||
+      status === "agent_running" ||
       status === "blocked" ||
       status === "closed"
   );
 }
 
-type TaskStatus = "not_started" | "in_progress" | "blocked" | "closed";
-type TaskPriority = "triage" | "low" | "medium" | "high";
+type TaskStatus = "not_started" | "in_progress" | "agent_running" | "blocked" | "closed";
+type TaskPriority = "triage" | "low" | "medium" | "high" | "urgent";
 
 type ParsedTaskMutationArgs = {
   taskId?: Id<"tasks">;
@@ -92,6 +93,7 @@ function parseTaskStatus(input: unknown): TaskStatus | undefined {
   if (
     input === "not_started" ||
     input === "in_progress" ||
+    input === "agent_running" ||
     input === "blocked" ||
     input === "closed"
   ) {
@@ -101,7 +103,7 @@ function parseTaskStatus(input: unknown): TaskStatus | undefined {
 }
 
 function parseTaskPriority(input: unknown): TaskPriority | undefined {
-  if (input === "triage" || input === "low" || input === "medium" || input === "high") {
+  if (input === "triage" || input === "low" || input === "medium" || input === "high" || input === "urgent") {
     return input;
   }
   return undefined;
@@ -235,7 +237,7 @@ async function handleReadTasksTool(
   executeListForMcp: (args: {
     userId: string;
     includeClosed: boolean;
-    statuses?: Array<"not_started" | "in_progress" | "blocked" | "closed">;
+    statuses?: Array<"not_started" | "in_progress" | "agent_running" | "blocked" | "closed">;
     tagRootId?: Id<"tags">;
     searchQuery?: string;
     filterTag?: string;
@@ -293,8 +295,8 @@ async function handleUpdateTaskTool(
     id: Id<"tasks">;
     tagRootId?: Id<"tags">;
     content?: string;
-    status?: "not_started" | "in_progress" | "blocked" | "closed";
-    priority?: "triage" | "low" | "medium" | "high";
+    status?: "not_started" | "in_progress" | "agent_running" | "blocked" | "closed";
+    priority?: "triage" | "low" | "medium" | "high" | "urgent";
     dueDate?: string | null;
     addAgent?: string;
     removeAgentById?: Id<"agents">;
@@ -362,8 +364,8 @@ async function handleCreateTaskTool(
     userId: string;
     tagRootId?: Id<"tags">;
     content: string;
-    status?: "not_started" | "in_progress" | "blocked" | "closed";
-    priority?: "triage" | "low" | "medium" | "high";
+    status?: "not_started" | "in_progress" | "agent_running" | "blocked" | "closed";
+    priority?: "triage" | "low" | "medium" | "high" | "urgent";
     dueDate?: string | null;
     addAgent?: string;
     addPullRequestByUrl?: string;
@@ -505,7 +507,7 @@ function getToolsList() {
             type: "array",
             items: {
               type: "string",
-              enum: ["not_started", "in_progress", "blocked", "closed"],
+              enum: ["not_started", "in_progress", "agent_running", "blocked", "closed"],
             },
           },
           searchQuery: { type: "string" },
@@ -529,11 +531,11 @@ function getToolsList() {
           content: { type: "string" },
           status: {
             type: "string",
-            enum: ["not_started", "in_progress", "blocked", "closed"],
+            enum: ["not_started", "in_progress", "agent_running", "blocked", "closed"],
           },
           priority: {
             type: "string",
-            enum: ["triage", "low", "medium", "high"],
+            enum: ["triage", "low", "medium", "high", "urgent"],
           },
           dueDate: {
             description:
@@ -591,11 +593,11 @@ function getToolsList() {
           content: { type: "string" },
           status: {
             type: "string",
-            enum: ["not_started", "in_progress", "blocked", "closed"],
+            enum: ["not_started", "in_progress", "agent_running", "blocked", "closed"],
           },
           priority: {
             type: "string",
-            enum: ["triage", "low", "medium", "high"],
+            enum: ["triage", "low", "medium", "high", "urgent"],
           },
           dueDate: {
             description:
