@@ -15,10 +15,28 @@ function formatTimestamp(timestamp: number): string {
 }
 
 function SettingsContent() {
+  const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
+  const convexSubdomain = (() => {
+    if (!convexSiteUrl) return "<your-project>";
+    try {
+      return new URL(convexSiteUrl).hostname.split(".")[0] || "<your-project>";
+    } catch {
+      return "<your-project>";
+    }
+  })();
+  const mcpConfig = `{
+  "mcpServers": {
+    "tasky": {
+      "url": "https://${convexSubdomain}.convex.site/api/mcp"
+    }
+  }
+}`;
   const keys = useQuery(api.apiKeys.list, {});
   const [name, setName] = useState("");
   const [type, setType] = useState<"github" | "cursor_agent_sdk">("github");
   const [value, setValue] = useState("");
+  const namePlaceholder =
+    type === "github" ? "Production GitHub token" : "Production Cursor Agent SDK key";
 
   const create = useTrackedMutation(api.apiKeys.create).withOptimisticUpdate((localStore, args) => {
     const current = localStore.getQuery(api.apiKeys.list, {});
@@ -77,7 +95,7 @@ function SettingsContent() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Production GitHub token"
+                placeholder={namePlaceholder}
                 className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
               />
             </div>
@@ -102,6 +120,25 @@ function SettingsContent() {
               placeholder="Paste API key"
               className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
             />
+            {type === "github" ? (
+              <p className="mt-2 text-xs text-(--muted)">
+                Tip: You can use your GitHub CLI token. Run "<code>gh auth token</code>", then paste
+                the output here.
+              </p>
+            ) : type === "cursor_agent_sdk" ? (
+              <p className="mt-2 text-xs text-(--muted)">
+                Tip: Create a key in your Cursor dashboard:{" "}
+                <a
+                  href="https://cursor.com/dashboard?tab=cloud-agents#my-user-api-keys"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-accent hover:underline"
+                >
+                  cursor.com/dashboard?tab=cloud-agents#my-user-api-keys
+                </a>
+                .
+              </p>
+            ) : null}
           </div>
           <div className="flex justify-end">
             <button
@@ -145,6 +182,16 @@ function SettingsContent() {
               ))}
             </div>
           )}
+        </div>
+
+        <div className="bg-(--card-bg) border border-(--card-border) rounded-xl p-5 mt-6">
+          <h2 className="text-base font-medium mb-2">Cursor MCP Config</h2>
+          <p className="text-sm text-(--muted) mb-3">
+            Add this to your Cursor MCP config file (typically <code>~/.cursor/mcp.json</code>).
+          </p>
+          <pre className="overflow-x-auto rounded-lg border border-(--card-border) bg-background p-3 text-xs leading-relaxed">
+            <code>{mcpConfig}</code>
+          </pre>
         </div>
       </div>
     </div>
