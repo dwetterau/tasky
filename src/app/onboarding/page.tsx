@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Navigation } from "@/components/Navigation";
 import { SignIn } from "@/components/SignIn";
@@ -20,7 +20,7 @@ const sections = [
   {
     title: "Tasks",
     description:
-      "Tasks are your execution lane: most start from captures, then move to Done. Integrate Cursor Agents and GitHub to automate progress updates.",
+      "Tasks are your execution lane: most start from captures, then move to Done. Set up Cursor Agents and GitHub on the Settings page to automate progress updates.",
   },
   {
     title: "Notes",
@@ -49,6 +49,16 @@ export default function OnboardingPage() {
   const completeOnboarding = useTrackedMutation(api.onboarding.complete);
   const router = useRouter();
   const [clickedSections, setClickedSections] = useState<Set<string>>(() => new Set());
+  const hasMarkedSeenRef = useRef(false);
+
+  useEffect(() => {
+    if (!session || onboardingState === undefined || onboardingState.hasCompletedOnboarding || hasMarkedSeenRef.current) {
+      return;
+    }
+
+    hasMarkedSeenRef.current = true;
+    void completeOnboarding({});
+  }, [completeOnboarding, onboardingState, session]);
 
   if (isPending) {
     return (
