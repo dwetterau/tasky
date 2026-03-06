@@ -44,6 +44,12 @@ export function AttachPrModal({
     return () => window.clearTimeout(timeoutId);
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!submitError) return;
+    const timeoutId = window.setTimeout(() => setSubmitError(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [submitError]);
+
   if (!isOpen || !taskId) return null;
 
   const handleClose = () => {

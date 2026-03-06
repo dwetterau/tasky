@@ -386,6 +386,18 @@ export function TaskModal({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [isOpen, handleCloseAttempt, showDeleteConfirm, showUnsavedChanges]);
 
+  useEffect(() => {
+    if (!agentAttachError) return;
+    const timeoutId = window.setTimeout(() => setAgentAttachError(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [agentAttachError]);
+
+  useEffect(() => {
+    if (!prAttachError) return;
+    const timeoutId = window.setTimeout(() => setPrAttachError(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [prAttachError]);
+
   const selectedTags = tagIds
     .map((id) => allTags.find((t) => t._id === id))
     .filter((t): t is Tag => t !== undefined);
