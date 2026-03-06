@@ -463,7 +463,7 @@ function KanbanColumn({
   );
 }
 
-function TasksList() {
+function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix: string }) {
   const [searchText, setSearchText] = useState("");
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -629,6 +629,7 @@ function TasksList() {
     }
   );
   const syncAgentStates = useAction(api.agents.syncAgentStates);
+  const launchAgent = useAction(api.agents.launch);
   const syncPullRequestsBatch = useAction(api.pullRequests.syncPullRequestsBatch);
   const syncAgentRunningStatuses = useTrackedMutation(api.tasks.reopenBlockedWithTerminalAgents);
 
@@ -682,6 +683,11 @@ function TasksList() {
     return (allTasks ?? []).find((t) => t._id === editingTaskId) ?? null;
   }, [editingTaskId, allTasks]);
 
+  const attachAgentTask = useMemo(() => {
+    if (!attachAgentTaskId) return null;
+    return (allTasks ?? []).find((t) => t._id === attachAgentTaskId) ?? null;
+  }, [attachAgentTaskId, allTasks]);
+
   const clearSearch = () => {
     setSearchText("");
     handleTagChange(null);
@@ -710,6 +716,9 @@ function TasksList() {
     try {
       await syncAgentStates({
         items: [{ agentId: result.agentId, externalId: args.externalId }],
+      });
+      await syncAgentRunningStatuses({
+        taskIds: [args.taskId],
       });
     } catch {
       // Keep attach success even if background metadata sync fails.
@@ -744,6 +753,65 @@ function TasksList() {
     } catch {
       // Keep attach success even if background metadata sync fails.
     }
+  };
+
+  const handleTaskCreated = async (result: {
+    taskId: Id<"tasks">;
+    createdAgents: Array<{
+      agentId: Id<"agents">;
+      externalId: string;
+    }>;
+  }) => {
+    if (result.createdAgents.length === 0) return;
+    try {
+      await syncAgentStates({
+        items: result.createdAgents,
+      });
+      await syncAgentRunningStatuses({
+        taskIds: [result.taskId],
+      });
+    } catch {
+      // Keep task creation success even if background metadata sync fails.
+    }
+  };
+
+  const handleStartAgentFromAttachModal = async (args: {
+    taskId: Id<"tasks">;
+    repository: string;
+    branch: string;
+    prompt: string;
+  }) => {
+    const launchedAgent = await launchAgent({
+      repository: args.repository,
+      branch: args.branch,
+      promptText: args.prompt,
+    });
+    const result = await createAgent({
+      taskId: args.taskId,
+      externalId: launchedAgent.externalId,
+      link: launchedAgent.link,
+      title: launchedAgent.title,
+      status: launchedAgent.status,
+    });
+    if (result.status === "already_attached_to_task") {
+      throw new Error(AGENT_ALREADY_ATTACHED_TO_TASK_ERROR);
+    }
+    if (result.status === "linked_to_other_task") {
+      throw new Error(AGENT_ALREADY_LINKED_ERROR);
+    }
+    if (result.status === "invalid_external_id") {
+      throw new Error(result.message);
+    }
+    try {
+      await syncAgentStates({
+        items: [{ agentId: result.agentId, externalId: launchedAgent.externalId }],
+      });
+    } catch {
+      // Keep attach success even if background metadata sync fails.
+    }
+    await syncAgentRunningStatuses({
+      taskIds: [args.taskId],
+    });
   };
 
   // Helper to determine column from a target ID (could be column or task)
@@ -932,8 +1000,7 @@ function TasksList() {
       const taskIdsForAgentRunningSync = (tasks ?? [])
         .filter((task) => {
           const hasAgents = ((task.agents as AgentAttachment[] | undefined) ?? []).length > 0;
-          if (!hasAgents) return false;
-          return task.status === "agent_running" || task.status === "not_started" || task.status === "in_progress";
+          return hasAgents;
         })
         .map((task) => task._id);
       if (visiblePullRequestsForSync.length > 0) {
@@ -1069,11 +1136,25 @@ function TasksList() {
                   <button
                     onClick={handleRefreshVisibleLinks}
                     disabled={isRefreshingLinks}
-                    className="text-sm text-accent hover:underline disabled:text-(--muted) disabled:no-underline disabled:cursor-not-allowed"
+                    aria-busy={isRefreshingLinks}
+                    className="inline-flex items-center gap-1.5 text-sm text-accent transition-colors hover:underline disabled:text-(--muted) disabled:no-underline disabled:cursor-not-allowed"
                   >
-                    {isRefreshingLinks
-                      ? "Refreshing links..."
-                      : `Refresh all links (${visibleLinksCount})`}
+                    {isRefreshingLinks && (
+                      <svg
+                        className="w-3.5 h-3.5 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    )}
+                    <span>
+                      {isRefreshingLinks
+                        ? "Refreshing links..."
+                        : `Refresh all links (${visibleLinksCount})`}
+                    </span>
                   </button>
                 )}
                 {debouncedSearchText.trim() !== "" && (
@@ -1185,6 +1266,7 @@ function TasksList() {
         allTags={allTags}
         initialTagId={selectedTagId}
         activeSearchArgs={activeSearchArgs}
+        onTaskCreated={handleTaskCreated}
         onAttachAgent={handleAttachAgent}
         onAttachPr={handleAttachPr}
       />
@@ -1196,6 +1278,7 @@ function TasksList() {
           task={editingTask}
           allTags={allTags}
           activeSearchArgs={activeSearchArgs}
+          onTaskCreated={handleTaskCreated}
           onAttachAgent={handleAttachAgent}
           onRemoveAgent={(id) => removeAgent({ id })}
           onAttachPr={handleAttachPr}
@@ -1208,6 +1291,9 @@ function TasksList() {
         taskId={attachAgentTaskId}
         onClose={() => setAttachAgentTaskId(null)}
         onAttach={handleAttachAgent}
+        onStartAgent={handleStartAgentFromAttachModal}
+        storageKeySuffix={startAgentStorageKeySuffix}
+        initialPrompt={attachAgentTask?.content ?? ""}
       />
 
       <AttachPrModal
@@ -1231,5 +1317,11 @@ export default function TasksPage() {
     );
   }
 
-  return session ? <TasksList /> : <SignIn />;
+  return session ? (
+    <TasksList
+      startAgentStorageKeySuffix={String(session.user.email ?? session.user.name ?? "user")}
+    />
+  ) : (
+    <SignIn />
+  );
 }

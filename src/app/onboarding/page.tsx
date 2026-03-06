@@ -7,6 +7,7 @@ import { useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Navigation } from "@/components/Navigation";
 import { SignIn } from "@/components/SignIn";
+import { TaskyWordmark } from "@/components/TaskyWordmark";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 
@@ -77,9 +78,12 @@ export default function OnboardingPage() {
         <div className={`mx-auto ${hasCompletedOnboarding ? "max-w-5xl" : "max-w-6xl"}`}>
           <div className="rounded-2xl border border-(--card-border) bg-(--card-bg) shadow-2xl shadow-black/20 overflow-hidden">
             <div className="border-b border-(--card-border) px-6 py-8 sm:px-10">
-              <p className="text-xl font-bold bg-linear-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent mb-3">
-                Tasky
-              </p>
+              <TaskyWordmark
+                priority
+                className="mb-4"
+                imageClassName="h-8 w-auto shrink-0"
+                textClassName="text-2xl"
+              />
               <h1 className="text-3xl sm:text-4xl font-semibold">Organize your thoughts in an agent-first world</h1>
             </div>
 

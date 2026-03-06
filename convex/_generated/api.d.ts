@@ -13,6 +13,7 @@ import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
 import type * as captures from "../captures.js";
 import type * as events from "../events.js";
+import type * as githubRepos from "../githubRepos.js";
 import type * as http from "../http.js";
 import type * as mcp from "../mcp.js";
 import type * as mcpScopes from "../mcpScopes.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   captures: typeof captures;
   events: typeof events;
+  githubRepos: typeof githubRepos;
   http: typeof http;
   mcp: typeof mcp;
   mcpScopes: typeof mcpScopes;

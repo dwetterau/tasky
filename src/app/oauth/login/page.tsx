@@ -4,6 +4,7 @@ import { Suspense, useMemo } from "react";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { SignIn } from "@/components/SignIn";
+import { TaskyWordmark } from "@/components/TaskyWordmark";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { authClient } from "@/lib/auth-client";
 import { UserIdentity } from "@/components/UserIdentity";
@@ -74,9 +75,11 @@ function OAuthLoginPageContent() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl p-8 max-w-xl w-full shadow-2xl">
-        <p className="text-sm font-semibold bg-linear-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent mb-4">
-          Tasky
-        </p>
+        <TaskyWordmark
+          className="mb-4"
+          imageClassName="h-[1.7rem] w-auto shrink-0"
+          textClassName="text-lg"
+        />
         <div className="mb-6">
           <UserIdentity
             name={session.user.name}

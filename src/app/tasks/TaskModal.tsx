@@ -1,9 +1,11 @@
 "use client";
 
+import { useAction } from "convex/react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
+import { useAuthSession } from "@/lib/useAuthSession";
 import { TagSelector, Tag } from "../../components/TagSelector";
 import { StyledSelect, type SelectOption } from "../../components/StyledSelect";
 import { MarkdownEditor } from "../../components/MarkdownEditor";
@@ -23,9 +25,12 @@ import {
 } from "./constants";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import {
+  AGENT_ALREADY_ATTACHED_TO_TASK_ERROR,
+  AGENT_ALREADY_LINKED_ERROR,
   getAgentAttachmentErrorMessage,
   getPullRequestAttachmentErrorMessage,
 } from "./attachmentErrors";
+import { StartAgentModal } from "./StartAgentModal";
 
 function UnsavedChangesModal({
   isOpen,
@@ -139,6 +144,7 @@ export function TaskModal({
   initialContent,
   createdFromCaptureId,
   activeSearchArgs,
+  onTaskCreated,
   onAttachAgent,
   onRemoveAgent,
   onAttachPr,
@@ -152,6 +158,13 @@ export function TaskModal({
   initialContent?: string;
   createdFromCaptureId?: Id<"captures">;
   activeSearchArgs?: TaskSearchArgs;
+  onTaskCreated?: (result: {
+    taskId: Id<"tasks">;
+    createdAgents: Array<{
+      agentId: Id<"agents">;
+      externalId: string;
+    }>;
+  }) => Promise<void> | void;
   onAttachAgent?: (args: { taskId: Id<"tasks">; externalId: string }) => Promise<void> | void;
   onRemoveAgent?: (id: Id<"agents">) => void;
   onAttachPr?: (args: { taskId: Id<"tasks">; url: string }) => Promise<void> | void;
@@ -174,7 +187,11 @@ export function TaskModal({
   const [isAttachingPr, setIsAttachingPr] = useState(false);
   const [pendingAgentExternalIds, setPendingAgentExternalIds] = useState<string[]>([]);
   const [pendingPullRequestUrls, setPendingPullRequestUrls] = useState<string[]>([]);
+  const [showStartAgentModal, setShowStartAgentModal] = useState(false);
+  const [isLaunchingStartedAgent, setIsLaunchingStartedAgent] = useState(false);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
+  const { session } = useAuthSession();
+  const launchAgent = useAction(api.agents.launch);
 
   const create = useTrackedMutation(api.tasks.create).withOptimisticUpdate(
     (localStore, args) => {
@@ -315,6 +332,7 @@ export function TaskModal({
       }
     }
   );
+  const createAgentRecord = useTrackedMutation(api.agents.createForTask);
 
   // Reset form when modal opens
   useEffect(() => {
@@ -344,6 +362,8 @@ export function TaskModal({
       setIsAttachingPr(false);
       setPendingAgentExternalIds([]);
       setPendingPullRequestUrls([]);
+      setShowStartAgentModal(false);
+      setIsLaunchingStartedAgent(false);
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
@@ -402,6 +422,11 @@ export function TaskModal({
     .map((id) => allTags.find((t) => t._id === id))
     .filter((t): t is Tag => t !== undefined);
 
+  const startAgentStorageKey = useMemo(
+    () => String(session?.user.email ?? session?.user.name ?? "user"),
+    [session]
+  );
+
   const persistLastCaptureTag = useCallback((nextTagIds: Id<"tags">[]) => {
     if (typeof window === "undefined") return;
     const lastTagId = nextTagIds[nextTagIds.length - 1];
@@ -435,16 +460,19 @@ export function TaskModal({
 
       // Close immediately so optimistic create can continue in background.
       onClose();
-      create({
-        content: content.trim(),
-        tagIds: tagIds.length > 0 ? tagIds : undefined,
-        status,
-        priority,
-        dueDate: dueDate || undefined,
-        createdFromCaptureId,
-        agentExternalIds,
-        pullRequestUrls,
-      });
+      void (async () => {
+        const result = await create({
+          content: content.trim(),
+          tagIds: tagIds.length > 0 ? tagIds : undefined,
+          status,
+          priority,
+          dueDate: dueDate || undefined,
+          createdFromCaptureId,
+          agentExternalIds,
+          pullRequestUrls,
+        });
+        await onTaskCreated?.(result);
+      })();
       return;
     }
   };
@@ -495,6 +523,89 @@ export function TaskModal({
       setPrAttachError(getPullRequestAttachmentErrorMessage(error));
     } finally {
       setIsAttachingPr(false);
+    }
+  };
+
+  const handleStartAgent = async (args: { repository: string; branch: string; prompt: string }) => {
+    if (!content.trim()) {
+      throw new Error("Task content is required before starting an agent.");
+    }
+
+    setIsLaunchingStartedAgent(true);
+    try {
+      const launchedAgent = await launchAgent({
+        repository: args.repository,
+        branch: args.branch,
+        promptText: args.prompt,
+      });
+
+      if (task) {
+        const result = await createAgentRecord({
+          taskId: task._id,
+          externalId: launchedAgent.externalId,
+          link: launchedAgent.link,
+          title: launchedAgent.title,
+          status: launchedAgent.status,
+        });
+        if (result.status === "already_attached_to_task") {
+          throw new Error(AGENT_ALREADY_ATTACHED_TO_TASK_ERROR);
+        }
+        if (result.status === "linked_to_other_task") {
+          throw new Error(AGENT_ALREADY_LINKED_ERROR);
+        }
+        if (result.status === "invalid_external_id") {
+          throw new Error(result.message);
+        }
+        await onTaskCreated?.({
+          taskId: task._id,
+          createdAgents: [{ agentId: result.agentId, externalId: launchedAgent.externalId }],
+        });
+        return;
+      }
+
+      if (createdFromCaptureId) {
+        persistLastCaptureTag(tagIds);
+      }
+
+      const createdTask = await create({
+        content: content.trim(),
+        tagIds: tagIds.length > 0 ? tagIds : undefined,
+        status,
+        priority,
+        dueDate: dueDate || undefined,
+        createdFromCaptureId,
+        agentExternalIds: pendingAgentExternalIds.length > 0 ? pendingAgentExternalIds : undefined,
+        pullRequestUrls: pendingPullRequestUrls.length > 0 ? pendingPullRequestUrls : undefined,
+      });
+
+      const attachResult = await createAgentRecord({
+        taskId: createdTask.taskId,
+        externalId: launchedAgent.externalId,
+        link: launchedAgent.link,
+        title: launchedAgent.title,
+        status: launchedAgent.status,
+      });
+      if (attachResult.status === "already_attached_to_task") {
+        throw new Error(AGENT_ALREADY_ATTACHED_TO_TASK_ERROR);
+      }
+      if (attachResult.status === "linked_to_other_task") {
+        throw new Error(AGENT_ALREADY_LINKED_ERROR);
+      }
+      if (attachResult.status === "invalid_external_id") {
+        throw new Error(attachResult.message);
+      }
+
+      await onTaskCreated?.({
+        taskId: createdTask.taskId,
+        createdAgents: [
+          ...createdTask.createdAgents,
+          { agentId: attachResult.agentId, externalId: launchedAgent.externalId },
+        ],
+      });
+
+      onClose();
+    } finally {
+      setIsLaunchingStartedAgent(false);
     }
   };
 
@@ -949,21 +1060,45 @@ export function TaskModal({
         </div>
 
         {/* Fixed footer */}
-        <div className="flex items-center justify-end gap-3 px-5 pb-4 pt-4 border-t border-(--card-border) mt-4">
+        <div className="flex items-center justify-between gap-3 px-5 pb-4 pt-4 border-t border-(--card-border) mt-4">
           <button
-            onClick={handleCloseAttempt}
-            className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+            type="button"
+            onClick={() => setShowStartAgentModal(true)}
+            disabled={isLaunchingStartedAgent}
+            className="px-4 py-2 text-sm border border-(--card-border) text-foreground rounded-lg transition-colors font-medium hover:bg-(--card-border) flex items-center gap-2"
           >
-            Cancel
+            <svg className="w-3.5 h-4 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" aria-hidden="true">
+              <path d={CURSOR_ICON_PATH} />
+            </svg>
+            Start Agent
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!content.trim()}
-            className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isEditing ? "Save Changes" : "Create Task"}
-          </button>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCloseAttempt}
+              className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!content.trim()}
+              className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isEditing ? "Save Changes" : "Create Task"}
+            </button>
+          </div>
         </div>
+
+        {showStartAgentModal && (
+          <StartAgentModal
+            isOpen={showStartAgentModal}
+            onClose={() => setShowStartAgentModal(false)}
+            storageKeySuffix={startAgentStorageKey}
+            initialPrompt={content}
+            onStart={handleStartAgent}
+          />
+        )}
 
         {isEditing && (
           <>

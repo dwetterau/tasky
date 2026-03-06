@@ -10,6 +10,7 @@ import { AUTH_PENDING_KEY } from "@/lib/useAuthSession";
 import { getStoredTagId } from "@/lib/useSelectedTag";
 import { useSaving } from "@/lib/SavingContext";
 import { UserIdentity } from "@/components/UserIdentity";
+import { TaskyWordmark } from "@/components/TaskyWordmark";
 
 const navItems = [
   {
@@ -117,9 +118,13 @@ export function Navigation() {
       <div className="px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Logo and Nav Links */}
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-xl font-bold bg-linear-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
-            Tasky
-          </Link>
+          <TaskyWordmark
+            href="/"
+            priority
+            className="shrink-0"
+            imageClassName="h-[1.35rem] w-auto shrink-0"
+            textClassName="text-xl"
+          />
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-1">
