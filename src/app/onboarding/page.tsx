@@ -46,7 +46,14 @@ const sections = [
 export default function OnboardingPage() {
   const { session, isPending } = useAuthSession();
   const onboardingState = useQuery(api.onboarding.getState, session ? {} : "skip");
-  const completeOnboarding = useTrackedMutation(api.onboarding.complete);
+  const completeOnboarding = useTrackedMutation(api.onboarding.complete).withOptimisticUpdate(
+    (localStore) => {
+      localStore.setQuery(api.onboarding.getState, {}, {
+        hasCompletedOnboarding: true,
+        completedAt: Date.now(),
+      });
+    }
+  );
   const router = useRouter();
   const [clickedSections, setClickedSections] = useState<Set<string>>(() => new Set());
   const hasMarkedSeenRef = useRef(false);
