@@ -61,7 +61,7 @@ export function SignIn() {
             imageClassName="h-[2.7rem] w-auto"
             textClassName="text-4xl"
           />
-          <p className="text-(--muted)">Your personal task manager</p>
+          <p className="text-(--muted)">Manage your tasks and agents in one place</p>
         </div>
         <button
           onClick={() => void handleGitHubSignIn()}
