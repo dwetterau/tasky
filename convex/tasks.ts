@@ -740,6 +740,7 @@ export const create = mutation({
     });
 
     const tagIds = args.tagIds ?? [];
+    const createdAgents: Array<{ agentId: Id<"agents">; externalId: string }> = [];
     await insertEvent(ctx, {
       userId,
       entityId: taskId,
@@ -761,6 +762,7 @@ export const create = mutation({
         lastSyncedAt: undefined,
         updatedAt: now,
       });
+      createdAgents.push({ agentId, externalId });
       await insertEvent(ctx, {
         userId,
         entityId: agentId,
@@ -805,7 +807,10 @@ export const create = mutation({
       }
     }
 
-    return taskId;
+    return {
+      taskId,
+      createdAgents,
+    };
   },
 });
 
@@ -1038,9 +1043,9 @@ export const reopenBlockedWithTerminalAgents = mutation({
         ? tasks.filter((task) => candidateTaskIds.has(task._id))
         : tasks;
 
-    const reopenedTaskIds: Id<"tasks">[] = [];
+    const updatedTaskIds: Id<"tasks">[] = [];
     for (const task of filteredTasks) {
-      if (task.status === "blocked" || task.status === "closed") continue;
+      if (task.status === "closed") continue;
       const agents = await ctx.db
         .query("agents")
         .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", task._id))
@@ -1051,23 +1056,8 @@ export const reopenBlockedWithTerminalAgents = mutation({
         const status = agent.status.trim().toUpperCase();
         return status === "RUNNING" || status === "CREATING";
       });
-      if (task.status === "agent_running") {
-        if (hasRunningAgent) continue;
-        await ctx.db.patch(task._id, {
-          status: "in_progress",
-          statusUpdatedAt: Date.now(),
-        });
-        await insertEvent(ctx, {
-          userId,
-          entityId: task._id,
-          action: { type: "task.status_changed", from: "agent_running", to: "in_progress" },
-          tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
-        });
-        reopenedTaskIds.push(task._id);
-        continue;
-      }
-
-      if ((task.status === "not_started" || task.status === "in_progress") && hasRunningAgent) {
+      if (hasRunningAgent) {
+        if (task.status === "agent_running") continue;
         await ctx.db.patch(task._id, {
           status: "agent_running",
           statusUpdatedAt: Date.now(),
@@ -1078,11 +1068,26 @@ export const reopenBlockedWithTerminalAgents = mutation({
           action: { type: "task.status_changed", from: task.status, to: "agent_running" },
           tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
         });
-        reopenedTaskIds.push(task._id);
+        updatedTaskIds.push(task._id);
+        continue;
+      }
+
+      if (task.status === "agent_running") {
+        await ctx.db.patch(task._id, {
+          status: "in_progress",
+          statusUpdatedAt: Date.now(),
+        });
+        await insertEvent(ctx, {
+          userId,
+          entityId: task._id,
+          action: { type: "task.status_changed", from: "agent_running", to: "in_progress" },
+          tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
+        });
+        updatedTaskIds.push(task._id);
       }
     }
 
-    return { reopenedTaskIds, reopenedCount: reopenedTaskIds.length };
+    return { updatedTaskIds, updatedCount: updatedTaskIds.length };
   },
 });
 

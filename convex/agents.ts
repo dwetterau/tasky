@@ -176,6 +176,15 @@ type CursorAgentResponse = {
   };
 };
 
+type CursorLaunchResponse = {
+  id: string;
+  name?: string;
+  status?: string;
+  target?: {
+    url?: string;
+  };
+};
+
 type FetchStatus = "updated" | "not_found" | "failed";
 type FetchResult =
   | { status: "updated"; payload: CursorAgentResponse }
@@ -196,6 +205,33 @@ function buildBasicAuthHeader(apiKey: string): string {
 
 function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 429 || (status >= 500 && status <= 599);
+}
+
+function normalizeRepositoryUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    throw new Error("Repository is required");
+  }
+
+  const candidate = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    throw new Error("Repository must be a valid GitHub URL");
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  if (hostname !== "github.com" && hostname !== "www.github.com") {
+    throw new Error("Repository must point to github.com");
+  }
+
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (parts.length < 2) {
+    throw new Error("Repository URL must look like github.com/<owner>/<repo>");
+  }
+
+  return `https://github.com/${parts[0]}/${parts[1]}`;
 }
 
 async function fetchCursorAgentWithRetry(
@@ -241,6 +277,87 @@ async function fetchCursorAgentWithRetry(
 
   return { status: "failed", reason: "Retry limit exceeded" };
 }
+
+export const launch = action({
+  args: {
+    repository: v.string(),
+    branch: v.string(),
+    promptText: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const promptText = args.promptText.trim();
+    if (!promptText) {
+      throw new Error("Prompt is required");
+    }
+
+    const repository = normalizeRepositoryUrl(args.repository);
+    const branch = args.branch.trim();
+    if (!branch) {
+      throw new Error("Branch is required");
+    }
+    const keyRow = await ctx.runQuery(internal.apiKeys.getLatestByTypeInternal, {
+      userId,
+      type: "cursor_agent_sdk",
+    });
+    if (!keyRow) {
+      throw new Error("Add a Cursor Agent SDK key in Settings before starting an agent");
+    }
+
+    const token = await decryptApiKey(keyRow.encryptedValue, keyRow.iv);
+    if (!token.trim()) {
+      throw new Error("Add a valid Cursor Agent SDK key in Settings before starting an agent");
+    }
+
+    const response = await fetch("https://api.cursor.com/v0/agents", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: buildBasicAuthHeader(token),
+      },
+      body: JSON.stringify({
+        prompt: {
+          text: promptText,
+        },
+        source: {
+          repository,
+          ref: branch,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      if (response.status === 401 || response.status === 403) {
+        throw new Error("Cursor rejected the saved SDK key. Update it in Settings and try again.");
+      }
+      throw new Error(
+        `Cursor agent launch failed with status ${response.status}${
+          responseText ? `: ${responseText.slice(0, 200)}` : ""
+        }`
+      );
+    }
+
+    const payload = (await response.json()) as CursorLaunchResponse;
+    const externalId = String(payload.id ?? "").trim();
+    if (!externalId) {
+      throw new Error("Cursor agent launch did not return an agent ID");
+    }
+
+    return {
+      externalId,
+      title: String(payload.name ?? externalId).trim() || externalId,
+      status: String(payload.status ?? "CREATING").trim() || "CREATING",
+      link: String(payload.target?.url ?? `https://cursor.com/agents/${externalId}`).trim(),
+      repository,
+    };
+  },
+});
 
 async function mapWithConcurrency<T, R>(
   items: T[],

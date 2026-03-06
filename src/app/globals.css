@@ -5,8 +5,10 @@
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
-  --accent: #10b981;
-  --accent-hover: #059669;
+  --brand: #4daf47;
+  --accent: #347c34;
+  --accent-hover: #2b662b;
+  --accent-subtle: #4daf4718;
   --card-bg: #ffffff;
   --card-border: #e2e8f0;
   --muted: #64748b;
@@ -17,8 +19,10 @@
   :root {
     --background: #0f0f0f;
     --foreground: #f5f5f5;
-    --accent: #10b981;
-    --accent-hover: #059669;
+    --brand: #5cc754;
+    --accent: #4c9f45;
+    --accent-hover: #3d8238;
+    --accent-subtle: #5cc75426;
     --card-bg: #1a1a1a;
     --card-border: #2a2a2a;
     --muted: #94a3b8;

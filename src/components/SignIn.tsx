@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { AUTH_PENDING_KEY } from "@/lib/useAuthSession";
+import { TaskyWordmark } from "@/components/TaskyWordmark";
 
 export function SignIn() {
   const [isLoading, setIsLoading] = useState(false);
@@ -54,9 +55,12 @@ export function SignIn() {
     <div className="min-h-screen flex items-center justify-center">
       <div className="bg-(--card-bg) border border-(--card-border) rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-linear-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
-            Tasky
-          </h1>
+          <TaskyWordmark
+            priority
+            className="mb-2 justify-center"
+            imageClassName="h-[2.7rem] w-auto"
+            textClassName="text-4xl"
+          />
           <p className="text-(--muted)">Your personal task manager</p>
         </div>
         <button

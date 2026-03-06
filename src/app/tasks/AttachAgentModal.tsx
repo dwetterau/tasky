@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
 import { CURSOR_ICON_VIEWBOX, CURSOR_ICON_PATH } from "./constants";
 import { getAgentAttachmentErrorMessage } from "./attachmentErrors";
+import { StartAgentModal } from "./StartAgentModal";
 
 function extractExternalId(input: string): string | null {
   const trimmed = input.trim();
@@ -36,6 +37,9 @@ export function AttachAgentModal({
   taskId,
   onClose,
   onAttach,
+  onStartAgent,
+  storageKeySuffix,
+  initialPrompt,
 }: {
   isOpen: boolean;
   taskId: Id<"tasks"> | null;
@@ -44,11 +48,21 @@ export function AttachAgentModal({
     taskId: Id<"tasks">;
     externalId: string;
   }) => Promise<void> | void;
+  onStartAgent: (args: {
+    taskId: Id<"tasks">;
+    repository: string;
+    branch: string;
+    prompt: string;
+  }) => Promise<void> | void;
+  storageKeySuffix: string;
+  initialPrompt: string;
 }) {
   const [agentInput, setAgentInput] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showStartAgentModal, setShowStartAgentModal] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -85,6 +99,7 @@ export function AttachAgentModal({
     setAgentInput("");
     setSubmitError(null);
     setIsSubmitting(false);
+    setShowStartAgentModal(false);
     onClose();
   };
 
@@ -109,7 +124,12 @@ export function AttachAgentModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={handleClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
+      onClick={(e) => { if (e.target === mouseDownTargetRef.current) handleClose(); }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div
         className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
@@ -160,22 +180,47 @@ export function AttachAgentModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-3 pt-5">
+        <div className="flex items-center justify-between gap-3 pt-5">
           <button
-            onClick={handleClose}
+            onClick={() => setShowStartAgentModal(true)}
             disabled={isSubmitting}
-            className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+            className="px-4 py-2 text-sm text-accent hover:text-white border border-accent/30 hover:bg-accent rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent disabled:hover:bg-transparent"
           >
-            Cancel
+            Start Agent
           </button>
-          <button
-            onClick={() => void handleSubmit()}
-            disabled={!canSubmit || isSubmitting}
-            className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSubmitting ? "Attaching..." : "Attach Agent"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleClose}
+              disabled={isSubmitting}
+              className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void handleSubmit()}
+              disabled={!canSubmit || isSubmitting}
+              className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? "Attaching..." : "Attach Agent"}
+            </button>
+          </div>
         </div>
+
+        <StartAgentModal
+          isOpen={showStartAgentModal}
+          onClose={() => setShowStartAgentModal(false)}
+          storageKeySuffix={storageKeySuffix}
+          initialPrompt={initialPrompt}
+          onStart={async ({ repository, branch, prompt }) => {
+            await onStartAgent({
+              taskId,
+              repository,
+              branch,
+              prompt,
+            });
+            handleClose();
+          }}
+        />
       </div>
     </div>
   );
