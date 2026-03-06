@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
 import { CURSOR_ICON_VIEWBOX, CURSOR_ICON_PATH } from "./constants";
+import { getAgentAttachmentErrorMessage } from "./attachmentErrors";
 
 function extractExternalId(input: string): string | null {
   const trimmed = input.trim();
@@ -42,15 +43,18 @@ export function AttachAgentModal({
   onAttach: (args: {
     taskId: Id<"tasks">;
     externalId: string;
-  }) => void;
+  }) => Promise<void> | void;
 }) {
   const [agentInput, setAgentInput] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && isOpen) {
         setAgentInput("");
+        setSubmitError(null);
         onClose();
       }
     };
@@ -73,19 +77,29 @@ export function AttachAgentModal({
 
   const handleClose = () => {
     setAgentInput("");
+    setSubmitError(null);
+    setIsSubmitting(false);
     onClose();
   };
 
   const parsedExternalId = extractExternalId(agentInput);
   const canSubmit = Boolean(parsedExternalId);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!parsedExternalId) return;
-    onAttach({
-      taskId,
-      externalId: parsedExternalId,
-    });
-    handleClose();
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onAttach({
+        taskId,
+        externalId: parsedExternalId,
+      });
+      handleClose();
+    } catch (error) {
+      setSubmitError(getAgentAttachmentErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -111,22 +125,31 @@ export function AttachAgentModal({
               ref={inputRef}
               type="text"
               value={agentInput}
-              onChange={(e) => setAgentInput(e.target.value)}
+              onChange={(e) => {
+                setAgentInput(e.target.value);
+                setSubmitError(null);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  handleSubmit();
+                  void handleSubmit();
                 }
               }}
               placeholder="cursor.com/agents/bc-xxxx or bc-xxxx"
-              className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
+              disabled={isSubmitting}
+              className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
             />
           </div>
-          {agentInput.trim() && (
-            <p className={`text-xs ${parsedExternalId ? "text-(--muted)" : "text-red-400"}`}>
-              {parsedExternalId
-                ? `External ID: ${parsedExternalId}`
-                : "Enter a Cursor agent URL or a bc-... external ID"}
+          {(submitError || agentInput.trim()) && (
+            <p
+              className={`text-xs ${
+                submitError || !parsedExternalId ? "text-red-400" : "text-(--muted)"
+              }`}
+            >
+              {submitError ??
+                (parsedExternalId
+                  ? `External ID: ${parsedExternalId}`
+                  : "Enter a Cursor agent URL or a bc-... external ID")}
             </p>
           )}
         </div>
@@ -134,16 +157,17 @@ export function AttachAgentModal({
         <div className="flex items-center justify-end gap-3 pt-5">
           <button
             onClick={handleClose}
+            disabled={isSubmitting}
             className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
           >
             Cancel
           </button>
           <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit || isSubmitting}
             className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Attach Agent
+            {isSubmitting ? "Attaching..." : "Attach Agent"}
           </button>
         </div>
       </div>
