@@ -778,26 +778,34 @@ function TasksList() {
       title: args.externalId,
       status: "",
     });
-    await syncAgentStates({
-      items: [{ agentId, externalId: args.externalId }],
-    });
+    try {
+      await syncAgentStates({
+        items: [{ agentId, externalId: args.externalId }],
+      });
+    } catch {
+      // Keep attach success even if background metadata sync fails.
+    }
   };
 
   const handleAttachPr = async (args: { taskId: Id<"tasks">; url: string }) => {
     const pullRequestId = await createPullRequest(args);
     const normalized = parseGitHubPrUrl(args.url);
     if (!normalized) return;
-    await syncPullRequestsBatch({
-      items: [
-        {
-          pullRequestId,
-          url: args.url,
-          owner: normalized.owner,
-          repo: normalized.repo,
-          number: normalized.number,
-        },
-      ],
-    });
+    try {
+      await syncPullRequestsBatch({
+        items: [
+          {
+            pullRequestId,
+            url: args.url,
+            owner: normalized.owner,
+            repo: normalized.repo,
+            number: normalized.number,
+          },
+        ],
+      });
+    } catch {
+      // Keep attach success even if background metadata sync fails.
+    }
   };
 
   // Helper to determine column from a target ID (could be column or task)

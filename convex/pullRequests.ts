@@ -53,6 +53,8 @@ export function parseGitHubPullRequestUrl(rawUrl: string): {
   };
 }
 
+const PULL_REQUEST_ALREADY_LINKED_ERROR = "Pull request is already linked to another task";
+
 export const listByTask = query({
   args: { taskId: v.id("tasks") },
   handler: async (ctx, args) => {
@@ -103,6 +105,17 @@ export const createForTask = mutation({
     }
 
     const normalized = parseGitHubPullRequestUrl(args.url.trim());
+    const existing = await ctx.db
+      .query("pullRequests")
+      .withIndex("by_user_url", (q) => q.eq("userId", userId).eq("url", normalized.url))
+      .first();
+    if (existing) {
+      if (existing.taskId === args.taskId) {
+        return existing._id;
+      }
+      throw new Error(PULL_REQUEST_ALREADY_LINKED_ERROR);
+    }
+
     const now = Date.now();
     const pullRequestId = await ctx.db.insert("pullRequests", {
       userId,

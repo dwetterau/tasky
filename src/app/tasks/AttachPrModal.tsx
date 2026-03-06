@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
 import { PR_ICON_PATHS } from "./constants";
+import { getPullRequestAttachmentErrorMessage } from "./attachmentErrors";
 
 export function AttachPrModal({
   isOpen,
@@ -13,15 +14,18 @@ export function AttachPrModal({
   isOpen: boolean;
   taskId: Id<"tasks"> | null;
   onClose: () => void;
-  onAttach: (args: { taskId: Id<"tasks">; url: string }) => void;
+  onAttach: (args: { taskId: Id<"tasks">; url: string }) => Promise<void> | void;
 }) {
   const [url, setUrl] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && isOpen) {
         setUrl("");
+        setSubmitError(null);
         onClose();
       }
     };
@@ -44,18 +48,28 @@ export function AttachPrModal({
 
   const handleClose = () => {
     setUrl("");
+    setSubmitError(null);
+    setIsSubmitting(false);
     onClose();
   };
 
   const canSubmit = Boolean(url.trim());
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return;
-    onAttach({
-      taskId,
-      url: url.trim(),
-    });
-    handleClose();
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onAttach({
+        taskId,
+        url: url.trim(),
+      });
+      handleClose();
+    } catch (error) {
+      setSubmitError(getPullRequestAttachmentErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -80,31 +94,41 @@ export function AttachPrModal({
             ref={inputRef}
             type="url"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setSubmitError(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                handleSubmit();
+                void handleSubmit();
               }
             }}
             placeholder="https://github.com/owner/repo/pull/123"
-            className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
+            disabled={isSubmitting}
+            className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
           />
         </div>
+        {(submitError || url.trim()) && (
+          <p className={`mt-3 text-xs ${submitError ? "text-red-400" : "text-(--muted)"}`}>
+            {submitError ?? "Enter a GitHub pull request URL like github.com/owner/repo/pull/123."}
+          </p>
+        )}
 
         <div className="flex items-center justify-end gap-3 pt-5">
           <button
             onClick={handleClose}
+            disabled={isSubmitting}
             className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
           >
             Cancel
           </button>
           <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit || isSubmitting}
             className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Attach PR
+            {isSubmitting ? "Attaching..." : "Attach PR"}
           </button>
         </div>
       </div>

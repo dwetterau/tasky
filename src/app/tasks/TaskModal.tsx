@@ -22,6 +22,10 @@ import {
   getPullRequestHref,
 } from "./constants";
 import { ConfirmModal } from "../../components/ConfirmModal";
+import {
+  getAgentAttachmentErrorMessage,
+  getPullRequestAttachmentErrorMessage,
+} from "./attachmentErrors";
 
 function UnsavedChangesModal({
   isOpen,
@@ -148,9 +152,9 @@ export function TaskModal({
   initialContent?: string;
   createdFromCaptureId?: Id<"captures">;
   activeSearchArgs?: TaskSearchArgs;
-  onAttachAgent?: (args: { taskId: Id<"tasks">; externalId: string }) => void;
+  onAttachAgent?: (args: { taskId: Id<"tasks">; externalId: string }) => Promise<void> | void;
   onRemoveAgent?: (id: Id<"agents">) => void;
-  onAttachPr?: (args: { taskId: Id<"tasks">; url: string }) => void;
+  onAttachPr?: (args: { taskId: Id<"tasks">; url: string }) => Promise<void> | void;
   onRemovePr?: (id: Id<"pullRequests">) => void;
 }) {
   const isEditing = !!task;
@@ -164,6 +168,10 @@ export function TaskModal({
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
   const [prInput, setPrInput] = useState("");
   const [agentInput, setAgentInput] = useState("");
+  const [agentAttachError, setAgentAttachError] = useState<string | null>(null);
+  const [prAttachError, setPrAttachError] = useState<string | null>(null);
+  const [isAttachingAgent, setIsAttachingAgent] = useState(false);
+  const [isAttachingPr, setIsAttachingPr] = useState(false);
   const [pendingAgentExternalIds, setPendingAgentExternalIds] = useState<string[]>([]);
   const [pendingPullRequestUrls, setPendingPullRequestUrls] = useState<string[]>([]);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
@@ -330,6 +338,10 @@ export function TaskModal({
       setShowUnsavedChanges(false);
       setPrInput("");
       setAgentInput("");
+      setAgentAttachError(null);
+      setPrAttachError(null);
+      setIsAttachingAgent(false);
+      setIsAttachingPr(false);
       setPendingAgentExternalIds([]);
       setPendingPullRequestUrls([]);
     }, 0);
@@ -445,6 +457,34 @@ export function TaskModal({
     !isEditing &&
     normalizedPendingPrInput.length > 0 &&
     !pendingPullRequestUrls.includes(normalizedPendingPrInput);
+
+  const handleAttachAgentSubmit = async () => {
+    if (!isEditing || !task || !onAttachAgent || !parsedAgentExternalId) return;
+    setIsAttachingAgent(true);
+    setAgentAttachError(null);
+    try {
+      await onAttachAgent({ taskId: task._id, externalId: parsedAgentExternalId });
+      setAgentInput("");
+    } catch (error) {
+      setAgentAttachError(getAgentAttachmentErrorMessage(error));
+    } finally {
+      setIsAttachingAgent(false);
+    }
+  };
+
+  const handleAttachPrSubmit = async () => {
+    if (!isEditing || !task || !onAttachPr || !prInput.trim()) return;
+    setIsAttachingPr(true);
+    setPrAttachError(null);
+    try {
+      await onAttachPr({ taskId: task._id, url: prInput.trim() });
+      setPrInput("");
+    } catch (error) {
+      setPrAttachError(getPullRequestAttachmentErrorMessage(error));
+    } finally {
+      setIsAttachingPr(false);
+    }
+  };
 
   return (
     <div 
@@ -613,33 +653,47 @@ export function TaskModal({
                     })}
                     {isEditing && onAttachAgent && task && (
                       <form
-                        className="flex items-center gap-1.5"
+                        className="space-y-1.5"
                         onSubmit={(e) => {
                           e.preventDefault();
-                          const externalId = extractExternalId(agentInput);
-                          if (externalId) {
-                            onAttachAgent({ taskId: task._id, externalId });
-                            setAgentInput("");
-                          }
+                          void handleAttachAgentSubmit();
                         }}
                       >
-                        <input
-                          type="text"
-                          value={agentInput}
-                          onChange={(e) => setAgentInput(e.target.value)}
-                          placeholder="bc-... or agent URL"
-                          className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs"
-                        />
-                        <button
-                          type="submit"
-                          disabled={!extractExternalId(agentInput)}
-                          className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-                          title="Add agent"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={agentInput}
+                            onChange={(e) => {
+                              setAgentInput(e.target.value);
+                              setAgentAttachError(null);
+                            }}
+                            placeholder="bc-... or agent URL"
+                            disabled={isAttachingAgent}
+                            className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!parsedAgentExternalId || isAttachingAgent}
+                            className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                            title="Add agent"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                          </button>
+                        </div>
+                        {(agentAttachError || agentInput.trim()) && (
+                          <p
+                            className={`text-xs ${
+                              agentAttachError || !parsedAgentExternalId ? "text-red-400" : "text-(--muted)"
+                            }`}
+                          >
+                            {agentAttachError ??
+                              (parsedAgentExternalId
+                                ? `External ID: ${parsedAgentExternalId}`
+                                : "Enter a Cursor agent URL or a bc-... external ID")}
+                          </p>
+                        )}
                       </form>
                     )}
                     {!isEditing && (
@@ -761,32 +815,41 @@ export function TaskModal({
                     })}
                     {isEditing && onAttachPr && task && (
                       <form
-                        className="flex items-center gap-1.5"
+                        className="space-y-1.5"
                         onSubmit={(e) => {
                           e.preventDefault();
-                          if (prInput.trim()) {
-                            onAttachPr({ taskId: task._id, url: prInput.trim() });
-                            setPrInput("");
-                          }
+                          void handleAttachPrSubmit();
                         }}
                       >
-                        <input
-                          type="text"
-                          value={prInput}
-                          onChange={(e) => setPrInput(e.target.value)}
-                          placeholder="github.com/owner/repo/pull/123"
-                          className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs"
-                        />
-                        <button
-                          type="submit"
-                          disabled={!prInput.trim()}
-                          className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-                          title="Add pull request"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={prInput}
+                            onChange={(e) => {
+                              setPrInput(e.target.value);
+                              setPrAttachError(null);
+                            }}
+                            placeholder="github.com/owner/repo/pull/123"
+                            disabled={isAttachingPr}
+                            className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!prInput.trim() || isAttachingPr}
+                            className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                            title="Add pull request"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                          </button>
+                        </div>
+                        {(prAttachError || prInput.trim()) && (
+                          <p className={`text-xs ${prAttachError ? "text-red-400" : "text-(--muted)"}`}>
+                            {prAttachError ??
+                              "Enter a GitHub pull request URL like github.com/owner/repo/pull/123."}
+                          </p>
+                        )}
                       </form>
                     )}
                     {!isEditing && (

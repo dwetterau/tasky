@@ -269,6 +269,17 @@ async function attachPullRequestToTaskIfMissing(args: {
     return undefined;
   }
 
+  const existingForUser = await args.ctx.db
+    .query("pullRequests")
+    .withIndex("by_user_url", (q) => q.eq("userId", args.userId).eq("url", normalized.url))
+    .first();
+  if (existingForUser && existingForUser.taskId !== args.taskId) {
+    throw new Error("Pull request is already linked to another task");
+  }
+  if (existingForUser) {
+    return undefined;
+  }
+
   const pullRequestId = await args.ctx.db.insert("pullRequests", {
     userId: args.userId,
     taskId: args.taskId,
@@ -327,7 +338,9 @@ export const listForMcp = internalQuery({
       );
       tasks = taskGroups.flat();
     }
-    tasks = filterStaleClosedTasks(tasks);
+    if (!normalizedSearchQuery) {
+      tasks = filterStaleClosedTasks(tasks);
+    }
 
     const applyTagSubtreeFilter = async (rootTagId: Id<"tags">, invalidErrorMessage: string) => {
       const rootTag = await ctx.db.get(rootTagId);
@@ -1146,7 +1159,10 @@ export const search = query({
         .withIndex("by_user", (q) => q.eq("userId", userId))
         .collect();
     }
-    tasks = filterStaleClosedTasks(tasks);
+    // Keep retention for filter-only views, but do not trim closed tasks for text searches.
+    if (!(args.searchText && args.searchText.trim())) {
+      tasks = filterStaleClosedTasks(tasks);
+    }
 
     // If filtering by "no tag", filter for tasks with empty tagIds
     if (args.noTag) {

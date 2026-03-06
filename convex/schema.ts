@@ -114,7 +114,7 @@ export default defineSchema({
   agents: defineTable({
     userId: v.string(),
     taskId: v.id("tasks"),
-    externalId: v.string(), // External system identifier (unique per user)
+    externalId: v.string(), // External system identifier; must be unique per user across all tasks
     link: v.string(),
     title: v.string(),
     status: v.string(),
@@ -129,7 +129,7 @@ export default defineSchema({
   pullRequests: defineTable({
     userId: v.string(),
     taskId: v.id("tasks"),
-    url: v.string(),
+    url: v.string(), // Canonical GitHub PR URL; must be unique per user across all tasks
     githubState: v.optional(v.union(v.literal("OPEN"), v.literal("CLOSED"), v.literal("MERGED"))),
     isDraft: v.optional(v.boolean()),
     isMerged: v.optional(v.boolean()),
@@ -138,6 +138,7 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_task", ["userId", "taskId"])
+    .index("by_user_url", ["userId", "url"])
     .index("by_user_task_url", ["userId", "taskId", "url"]),
 
   apiKeys: defineTable({
