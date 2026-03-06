@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
 import { ConvexClientProvider } from "./ConvexClientProvider";
+import { SiteFooter } from "@/components/SiteFooter";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,7 +30,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ConvexClientProvider>{children}</ConvexClientProvider>
+        <ConvexClientProvider>
+          <div className="flex min-h-screen flex-col">
+            <div className="flex-1">{children}</div>
+            <SiteFooter />
+          </div>
+        </ConvexClientProvider>
         <Analytics />
       </body>
     </html>
