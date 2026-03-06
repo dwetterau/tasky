@@ -64,7 +64,10 @@ export const createForTask = mutation({
 
     const externalId = args.externalId.trim();
     if (!externalId) {
-      throw new Error("External ID is required");
+      return {
+        status: "invalid_external_id" as const,
+        message: "External ID is required",
+      };
     }
 
     const existing = await ctx.db
@@ -75,10 +78,14 @@ export const createForTask = mutation({
       .first();
     if (existing) {
       if (existing.taskId === args.taskId) {
-        // Idempotent re-attach: return existing row instead of failing.
-        return existing._id;
+        return {
+          status: "already_attached_to_task" as const,
+          agentId: existing._id,
+        };
       }
-      throw new Error("Agent external ID already exists on another task");
+      return {
+        status: "linked_to_other_task" as const,
+      };
     }
 
     const now = Date.now();
@@ -100,7 +107,10 @@ export const createForTask = mutation({
       tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
     });
 
-    return agentId;
+    return {
+      status: "attached" as const,
+      agentId,
+    };
   },
 });
 

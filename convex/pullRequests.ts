@@ -104,16 +104,29 @@ export const createForTask = mutation({
       throw new Error("Task not found or access denied");
     }
 
-    const normalized = parseGitHubPullRequestUrl(args.url.trim());
+    let normalized: ReturnType<typeof parseGitHubPullRequestUrl>;
+    try {
+      normalized = parseGitHubPullRequestUrl(args.url.trim());
+    } catch (error) {
+      return {
+        status: "invalid_pull_request_url" as const,
+        message: error instanceof Error ? error.message : "Invalid pull request URL",
+      };
+    }
     const existing = await ctx.db
       .query("pullRequests")
       .withIndex("by_user_url", (q) => q.eq("userId", userId).eq("url", normalized.url))
       .first();
     if (existing) {
       if (existing.taskId === args.taskId) {
-        return existing._id;
+        return {
+          status: "already_attached_to_task" as const,
+          pullRequestId: existing._id,
+        };
       }
-      throw new Error(PULL_REQUEST_ALREADY_LINKED_ERROR);
+      return {
+        status: "linked_to_other_task" as const,
+      };
     }
 
     const now = Date.now();
@@ -131,7 +144,10 @@ export const createForTask = mutation({
       tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
     });
 
-    return pullRequestId;
+    return {
+      status: "attached" as const,
+      pullRequestId,
+    };
   },
 });
 

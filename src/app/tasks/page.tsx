@@ -50,6 +50,12 @@ import {
 } from "./constants";
 import { AttachAgentModal } from "./AttachAgentModal";
 import { AttachPrModal } from "./AttachPrModal";
+import {
+  AGENT_ALREADY_ATTACHED_TO_TASK_ERROR,
+  AGENT_ALREADY_LINKED_ERROR,
+  PULL_REQUEST_ALREADY_ATTACHED_TO_TASK_ERROR,
+  PULL_REQUEST_ALREADY_LINKED_ERROR,
+} from "./attachmentErrors";
 
 function formatDueDateForViewer(dueDate: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueDate);
@@ -576,94 +582,8 @@ function TasksList() {
     }
   );
 
-  const createAgent = useTrackedMutation(api.agents.createForTask).withOptimisticUpdate(
-    (localStore, args) => {
-      const now = Date.now();
-      const tempAgent = {
-        _id: crypto.randomUUID() as Id<"agents">,
-        _creationTime: Number.MAX_SAFE_INTEGER,
-        userId: "",
-        taskId: args.taskId,
-        externalId: args.externalId,
-        link: args.link,
-        title: args.title,
-        status: args.status,
-        lastSyncedAt: undefined,
-        updatedAt: now,
-      };
-
-      const applyToTask = <T extends { _id: Id<"tasks">; agents?: AgentAttachment[] }>(task: T): T =>
-        task._id === args.taskId
-          ? ({ ...task, agents: [tempAgent, ...(task.agents ?? [])] } as T)
-          : task;
-
-      const listTasks = localStore.getQuery(api.tasks.list, {});
-      if (listTasks !== undefined) {
-        localStore.setQuery(api.tasks.list, {}, listTasks.map((task) => applyToTask(task)));
-      }
-
-      const currentSearchText = searchTextRef.current.trim() || undefined;
-      const currentTagId = selectedTagIdRef.current ?? undefined;
-      const currentNoTag = selectedNoTagRef.current || undefined;
-      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
-        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
-        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
-        if (searchTasks !== undefined) {
-          localStore.setQuery(
-            api.tasks.search,
-            searchArgs,
-            searchTasks.map((task) => applyToTask(task))
-          );
-        }
-      }
-    }
-  );
-
-  const createPullRequest = useTrackedMutation(api.pullRequests.createForTask).withOptimisticUpdate(
-    (localStore, args) => {
-      const now = Date.now();
-      const tempPullRequest = {
-        _id: crypto.randomUUID() as Id<"pullRequests">,
-        _creationTime: Number.MAX_SAFE_INTEGER,
-        userId: "",
-        taskId: args.taskId,
-        url: args.url,
-        githubState: undefined,
-        isDraft: undefined,
-        isMerged: undefined,
-        lastSyncedAt: undefined,
-        normalized: parseGitHubPrUrl(args.url),
-        updatedAt: now,
-      };
-
-      const applyToTask = <T extends { _id: Id<"tasks">; pullRequests?: PullRequestAttachment[] }>(
-        task: T
-      ): T =>
-        task._id === args.taskId
-          ? ({ ...task, pullRequests: [tempPullRequest, ...(task.pullRequests ?? [])] } as T)
-          : task;
-
-      const listTasks = localStore.getQuery(api.tasks.list, {});
-      if (listTasks !== undefined) {
-        localStore.setQuery(api.tasks.list, {}, listTasks.map((task) => applyToTask(task)));
-      }
-
-      const currentSearchText = searchTextRef.current.trim() || undefined;
-      const currentTagId = selectedTagIdRef.current ?? undefined;
-      const currentNoTag = selectedNoTagRef.current || undefined;
-      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
-        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
-        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
-        if (searchTasks !== undefined) {
-          localStore.setQuery(
-            api.tasks.search,
-            searchArgs,
-            searchTasks.map((task) => applyToTask(task))
-          );
-        }
-      }
-    }
-  );
+  const createAgent = useTrackedMutation(api.agents.createForTask);
+  const createPullRequest = useTrackedMutation(api.pullRequests.createForTask);
   const removeAgent = useTrackedMutation(api.agents.remove).withOptimisticUpdate(
     (localStore, args) => {
       const removeFromTask = <T extends { _id: Id<"tasks">; agents?: AgentAttachment[] }>(t: T): T => ({
@@ -771,16 +691,25 @@ function TasksList() {
     taskId: Id<"tasks">;
     externalId: string;
   }) => {
-    const agentId = await createAgent({
+    const result = await createAgent({
       taskId: args.taskId,
       externalId: args.externalId,
       link: `https://cursor.com/agents/${args.externalId}`,
       title: args.externalId,
       status: "",
     });
+    if (result.status === "already_attached_to_task") {
+      throw new Error(AGENT_ALREADY_ATTACHED_TO_TASK_ERROR);
+    }
+    if (result.status === "linked_to_other_task") {
+      throw new Error(AGENT_ALREADY_LINKED_ERROR);
+    }
+    if (result.status === "invalid_external_id") {
+      throw new Error(result.message);
+    }
     try {
       await syncAgentStates({
-        items: [{ agentId, externalId: args.externalId }],
+        items: [{ agentId: result.agentId, externalId: args.externalId }],
       });
     } catch {
       // Keep attach success even if background metadata sync fails.
@@ -788,14 +717,23 @@ function TasksList() {
   };
 
   const handleAttachPr = async (args: { taskId: Id<"tasks">; url: string }) => {
-    const pullRequestId = await createPullRequest(args);
+    const result = await createPullRequest(args);
+    if (result.status === "already_attached_to_task") {
+      throw new Error(PULL_REQUEST_ALREADY_ATTACHED_TO_TASK_ERROR);
+    }
+    if (result.status === "linked_to_other_task") {
+      throw new Error(PULL_REQUEST_ALREADY_LINKED_ERROR);
+    }
+    if (result.status === "invalid_pull_request_url") {
+      throw new Error(result.message);
+    }
     const normalized = parseGitHubPrUrl(args.url);
     if (!normalized) return;
     try {
       await syncPullRequestsBatch({
         items: [
           {
-            pullRequestId,
+            pullRequestId: result.pullRequestId,
             url: args.url,
             owner: normalized.owner,
             repo: normalized.repo,
