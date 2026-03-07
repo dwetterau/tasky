@@ -121,6 +121,12 @@ function parseGitHubPrUrl(rawUrl: string): PullRequestAttachment["normalized"] {
   }
 }
 
+function getCanonicalPullRequestUrl(
+  normalized: NonNullable<PullRequestAttachment["normalized"]>
+): string {
+  return `github.com/${normalized.owner}/${normalized.repo}/pull/${normalized.number}`;
+}
+
 
 function TaskCard({
   task,
@@ -715,7 +721,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     }
     try {
       await syncAgentStates({
-        items: [{ agentId: result.agentId, externalId: args.externalId }],
+        items: [{ agentId: result.agentId, externalId: args.externalId, taskId: args.taskId }],
       });
       await syncAgentRunningStatuses({
         taskIds: [args.taskId],
@@ -743,7 +749,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         items: [
           {
             pullRequestId: result.pullRequestId,
-            url: args.url,
+            url: getCanonicalPullRequestUrl(normalized),
             owner: normalized.owner,
             repo: normalized.repo,
             number: normalized.number,
@@ -765,7 +771,10 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     if (result.createdAgents.length === 0) return;
     try {
       await syncAgentStates({
-        items: result.createdAgents,
+        items: result.createdAgents.map((agent) => ({
+          ...agent,
+          taskId: result.taskId,
+        })),
       });
       await syncAgentRunningStatuses({
         taskIds: [result.taskId],
@@ -804,7 +813,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     }
     try {
       await syncAgentStates({
-        items: [{ agentId: result.agentId, externalId: launchedAgent.externalId }],
+        items: [{ agentId: result.agentId, externalId: launchedAgent.externalId, taskId: args.taskId }],
       });
     } catch {
       // Keep attach success even if background metadata sync fails.
@@ -931,6 +940,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
   const visibleAgentsForSync: Array<{
     agentId: Id<"agents">;
     externalId: string;
+    taskId: Id<"tasks">;
   }> = [];
 
   let displayedTaskCount = 0;
@@ -949,7 +959,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         if (!normalized) continue;
         visiblePullRequestsForSync.push({
           pullRequestId: pullRequest._id,
-          url: pullRequest.url,
+          url: getCanonicalPullRequestUrl(normalized),
           owner: normalized.owner,
           repo: normalized.repo,
           number: normalized.number,
@@ -959,6 +969,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         visibleAgentsForSync.push({
           agentId: agent._id,
           externalId: agent.externalId,
+          taskId: task._id,
         });
       }
     }
@@ -996,37 +1007,35 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     if (visibleLinksCount === 0 || isRefreshingLinks) return;
     setIsRefreshingLinks(true);
     try {
-      const syncPromises: Array<Promise<unknown>> = [];
-      const taskIdsForAgentRunningSync = (tasks ?? [])
-        .filter((task) => {
-          const hasAgents = ((task.agents as AgentAttachment[] | undefined) ?? []).length > 0;
-          return hasAgents;
-        })
-        .map((task) => task._id);
-      if (visiblePullRequestsForSync.length > 0) {
-        syncPromises.push(
-          syncPullRequestsBatch({
-            items: visiblePullRequestsForSync.map((item) => ({
-              pullRequestId: item.pullRequestId,
-              url: item.url,
-              owner: item.owner,
-              repo: item.repo,
-              number: item.number,
-            })),
-          })
-        );
-      }
+      const taskIdsForAgentRunningSync = Array.from(
+        new Set(visibleAgentsForSync.map((item) => item.taskId))
+      );
       if (visibleAgentsForSync.length > 0) {
-        syncPromises.push(
-          syncAgentStates({
-            items: visibleAgentsForSync.map((item) => ({
-              agentId: item.agentId,
-              externalId: item.externalId,
-            })),
-          })
-        );
+        await syncAgentStates({
+          items: visibleAgentsForSync.map((item) => ({
+            agentId: item.agentId,
+            externalId: item.externalId,
+            taskId: item.taskId,
+          })),
+          pullRequestsToSync: visiblePullRequestsForSync.map((item) => ({
+            pullRequestId: item.pullRequestId,
+            url: item.url,
+            owner: item.owner,
+            repo: item.repo,
+            number: item.number,
+          })),
+        });
+      } else if (visiblePullRequestsForSync.length > 0) {
+        await syncPullRequestsBatch({
+          items: visiblePullRequestsForSync.map((item) => ({
+            pullRequestId: item.pullRequestId,
+            url: item.url,
+            owner: item.owner,
+            repo: item.repo,
+            number: item.number,
+          })),
+        });
       }
-      await Promise.all(syncPromises);
       if (taskIdsForAgentRunningSync.length > 0) {
         await syncAgentRunningStatuses({
           taskIds: taskIdsForAgentRunningSync,
