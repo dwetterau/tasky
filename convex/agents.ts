@@ -173,6 +173,7 @@ type CursorAgentResponse = {
   status?: string;
   target?: {
     url?: string;
+    prUrl?: string;
   };
 };
 
@@ -182,6 +183,7 @@ type CursorLaunchResponse = {
   status?: string;
   target?: {
     url?: string;
+    prUrl?: string;
   };
 };
 
@@ -354,6 +356,7 @@ export const launch = action({
       title: String(payload.name ?? externalId).trim() || externalId,
       status: String(payload.status ?? "CREATING").trim() || "CREATING",
       link: String(payload.target?.url ?? `https://cursor.com/agents/${externalId}`).trim(),
+      prUrl: String(payload.target?.prUrl ?? "").trim() || undefined,
       repository,
     };
   },
@@ -388,7 +391,19 @@ export const syncAgentStates = action({
       v.object({
         agentId: v.id("agents"),
         externalId: v.string(),
+        taskId: v.id("tasks"),
       })
+    ),
+    pullRequestsToSync: v.optional(
+      v.array(
+        v.object({
+          pullRequestId: v.id("pullRequests"),
+          url: v.string(),
+          owner: v.optional(v.string()),
+          repo: v.optional(v.string()),
+          number: v.optional(v.number()),
+        })
+      )
     ),
   },
   handler: async (ctx, args) => {
@@ -409,6 +424,7 @@ export const syncAgentStates = action({
         results: args.items.map((item) => ({
           agentId: item.agentId,
           status: "skipped_no_token" as const,
+          prUrl: undefined,
         })),
       };
     }
@@ -421,6 +437,7 @@ export const syncAgentStates = action({
         results: args.items.map((item) => ({
           agentId: item.agentId,
           status: "skipped_no_token" as const,
+          prUrl: undefined,
         })),
       };
     }
@@ -463,6 +480,7 @@ export const syncAgentStates = action({
       agentId: Id<"agents">;
       status: FetchStatus;
       reason?: string;
+      prUrl?: string;
     }> = [];
     let updatedCount = 0;
 
@@ -487,6 +505,7 @@ export const syncAgentStates = action({
 
       for (const agentId of entry.target.agentIds) {
         try {
+          const prUrl = String(entry.result.payload.target?.prUrl ?? "").trim() || undefined;
           const patched = await ctx.runMutation(internal.agents.patchSyncFieldsInternal, {
             agentId,
             userId,
@@ -499,7 +518,7 @@ export const syncAgentStates = action({
             perAgentResults.push({ agentId, status: "not_found" });
             continue;
           }
-          perAgentResults.push({ agentId, status: "updated" });
+          perAgentResults.push({ agentId, status: "updated", prUrl });
           updatedCount += 1;
         } catch (error) {
           perAgentResults.push({
@@ -509,6 +528,66 @@ export const syncAgentStates = action({
           });
         }
       }
+    }
+
+    const pullRequestSyncById = new Map<
+      Id<"pullRequests">,
+      {
+        pullRequestId: Id<"pullRequests">;
+        url: string;
+        owner?: string;
+        repo?: string;
+        number?: number;
+      }
+    >();
+    for (const item of args.pullRequestsToSync ?? []) {
+      pullRequestSyncById.set(item.pullRequestId, item);
+    }
+
+    const taskIdByAgentId = new Map(args.items.map((item) => [item.agentId, item.taskId]));
+    const discoveredPullRequests = new Map<
+      string,
+      {
+        taskId: Id<"tasks">;
+        url: string;
+      }
+    >();
+    for (const result of perAgentResults) {
+      if (!result.prUrl) continue;
+      const taskId = taskIdByAgentId.get(result.agentId);
+      if (!taskId) continue;
+      discoveredPullRequests.set(`${taskId}:${result.prUrl}`, {
+        taskId,
+        url: result.prUrl,
+      });
+    }
+
+    for (const item of discoveredPullRequests.values()) {
+      const attached = await ctx.runMutation(internal.pullRequests.createForTaskIfMissingInternal, {
+        userId,
+        taskId: item.taskId,
+        url: item.url,
+      });
+      if (
+        attached.status !== "attached" &&
+        attached.status !== "already_attached_to_task"
+      ) {
+        continue;
+      }
+      pullRequestSyncById.set(attached.pullRequestId, {
+        pullRequestId: attached.pullRequestId,
+        url: attached.url,
+        owner: attached.owner,
+        repo: attached.repo,
+        number: attached.number,
+      });
+    }
+
+    if (pullRequestSyncById.size > 0) {
+      await ctx.runAction(internal.pullRequests.syncPullRequestsBatchInternal, {
+        userId,
+        items: Array.from(pullRequestSyncById.values()),
+      });
     }
 
     return {
