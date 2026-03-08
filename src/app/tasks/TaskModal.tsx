@@ -438,7 +438,6 @@ export function TaskModal({
   }, []);
 
   const handleSubmit = () => {
-    if (!content.trim()) return;
     if (task) {
       update({
         id: task._id,
@@ -527,10 +526,6 @@ export function TaskModal({
   };
 
   const handleStartAgent = async (args: { repository: string; branch: string; prompt: string }) => {
-    if (!content.trim()) {
-      throw new Error("Task content is required before starting an agent.");
-    }
-
     setIsLaunchingStartedAgent(true);
     try {
       const launchedAgent = await launchAgent({
@@ -567,8 +562,9 @@ export function TaskModal({
         persistLastCaptureTag(tagIds);
       }
 
+      const fallbackContent = launchedAgent.title.trim();
       const createdTask = await create({
-        content: content.trim(),
+        content: content.trim() || fallbackContent,
         tagIds: tagIds.length > 0 ? tagIds : undefined,
         status,
         priority,
@@ -1082,7 +1078,6 @@ export function TaskModal({
             </button>
             <button
               onClick={handleSubmit}
-              disabled={!content.trim()}
               className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isEditing ? "Save Changes" : "Create Task"}

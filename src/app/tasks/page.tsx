@@ -637,6 +637,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
   const syncAgentStates = useAction(api.agents.syncAgentStates);
   const launchAgent = useAction(api.agents.launch);
   const syncPullRequestsBatch = useAction(api.pullRequests.syncPullRequestsBatch);
+  const fillEmptyContentFromAgentTitle = useTrackedMutation(api.tasks.fillEmptyContentFromAgentTitle);
   const syncAgentRunningStatuses = useTrackedMutation(api.tasks.reopenBlockedWithTerminalAgents);
 
   useEffect(() => {
@@ -776,11 +777,22 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
           taskId: result.taskId,
         })),
       });
+    } catch {
+      // Keep task creation success even if background metadata sync fails.
+    }
+    try {
+      await fillEmptyContentFromAgentTitle({
+        taskId: result.taskId,
+      });
+    } catch {
+      // Keep task creation success even if the empty-content backfill fails.
+    }
+    try {
       await syncAgentRunningStatuses({
         taskIds: [result.taskId],
       });
     } catch {
-      // Keep task creation success even if background metadata sync fails.
+      // Keep task creation success even if background status sync fails.
     }
   };
 
