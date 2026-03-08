@@ -814,6 +814,43 @@ export const create = mutation({
   },
 });
 
+export const fillEmptyContentFromAgentTitle = mutation({
+  args: {
+    taskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.userId !== userId) {
+      throw new Error("Task not found or access denied");
+    }
+
+    if (task.content.trim().length > 0) {
+      return { updated: false };
+    }
+
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", args.taskId))
+      .order("desc")
+      .collect();
+
+    for (const agent of agents) {
+      const title = agent.title.trim();
+      if (title && title !== agent.externalId.trim()) {
+        await ctx.db.patch(args.taskId, { content: title });
+        return { updated: true, content: title };
+      }
+    }
+
+    return { updated: false };
+  },
+});
+
 export const createFromCapture = mutation({
   args: {
     captureId: v.id("captures"),

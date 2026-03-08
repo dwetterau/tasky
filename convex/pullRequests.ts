@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalAction, internalMutation, mutation, query, action } from "./_generated/server";
+import { ActionCtx, internalAction, internalMutation, mutation, query, action } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
 import { decryptApiKey } from "./apiKeys";
@@ -291,6 +291,17 @@ type DedupedBatchItem = {
   pullRequestIds: Id<"pullRequests">[];
 };
 
+type PullRequestSyncArgs = {
+  userId: string;
+  items: Array<{
+    pullRequestId: Id<"pullRequests">;
+    url: string;
+    owner?: string;
+    repo?: string;
+    number?: number;
+  }>;
+};
+
 function sanitizeGraphQlString(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
@@ -343,8 +354,8 @@ function normalizeBatchItem(
 }
 
 async function syncPullRequestsBatchImpl(
-  ctx: Parameters<typeof syncPullRequestsBatchInternal["handler"]>[0],
-  args: Parameters<typeof syncPullRequestsBatchInternal["handler"]>[1]
+  ctx: ActionCtx,
+  args: PullRequestSyncArgs
 ) {
   const now = Date.now();
   const keyRow = await ctx.runQuery(internal.apiKeys.getLatestByTypeInternal, {
@@ -577,7 +588,7 @@ export const syncPullRequestsBatch = action({
     if (!userId) {
       throw new Error("Not authenticated");
     }
-    return await ctx.runAction(internal.pullRequests.syncPullRequestsBatchInternal, {
+    return await syncPullRequestsBatchImpl(ctx, {
       userId,
       items: args.items,
     });
