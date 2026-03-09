@@ -15,7 +15,7 @@ import { TaskyWordmark } from "@/components/TaskyWordmark";
 const navItems = [
   {
     name: "Captures",
-    href: "/",
+    href: "/captures",
     preserveTag: false,
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -119,7 +119,7 @@ export function Navigation() {
         {/* Logo and Nav Links */}
         <div className="flex items-center gap-6">
           <TaskyWordmark
-            href="/"
+            href={pathname === "/captures" ? "/captures" : "/"}
             priority
             className="shrink-0"
             imageClassName="h-[1.35rem] w-auto shrink-0"
