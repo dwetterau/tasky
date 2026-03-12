@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Id } from "../../../convex/_generated/dataModel";
-import { CURSOR_ICON_VIEWBOX, CURSOR_ICON_PATH } from "./constants";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CURSOR_ICON_PATH, CURSOR_ICON_VIEWBOX } from "./constants";
 import { getAgentAttachmentErrorMessage } from "./attachmentErrors";
 import { StartAgentModal } from "./StartAgentModal";
 
@@ -32,30 +31,22 @@ function extractExternalId(input: string): string | null {
   return null;
 }
 
-export function AttachAgentModal({
+export function CreateTaskFromAgentModal({
   isOpen,
-  taskId,
   onClose,
-  onAttach,
+  onCreateFromAgent,
   onStartAgent,
   storageKeySuffix,
-  initialPrompt,
 }: {
   isOpen: boolean;
-  taskId: Id<"tasks"> | null;
   onClose: () => void;
-  onAttach: (args: {
-    taskId: Id<"tasks">;
-    externalId: string;
-  }) => Promise<void> | void;
+  onCreateFromAgent: (args: { externalId: string }) => Promise<void> | void;
   onStartAgent: (args: {
-    taskId: Id<"tasks">;
     repository: string;
     branch: string;
     prompt: string;
   }) => Promise<void> | void;
   storageKeySuffix: string;
-  initialPrompt: string;
 }) {
   const [agentInput, setAgentInput] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -64,17 +55,23 @@ export function AttachAgentModal({
   const inputRef = useRef<HTMLInputElement>(null);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
+  const handleClose = useCallback(() => {
+    setAgentInput("");
+    setSubmitError(null);
+    setIsSubmitting(false);
+    setShowStartAgentModal(false);
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && isOpen) {
-        setAgentInput("");
-        setSubmitError(null);
-        onClose();
+        handleClose();
       }
     };
     document.addEventListener("keydown", onEscape);
     return () => document.removeEventListener("keydown", onEscape);
-  }, [isOpen, onClose]);
+  }, [handleClose, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -93,15 +90,7 @@ export function AttachAgentModal({
     return () => window.clearTimeout(timeoutId);
   }, [submitError]);
 
-  if (!isOpen || !taskId) return null;
-
-  const handleClose = () => {
-    setAgentInput("");
-    setSubmitError(null);
-    setIsSubmitting(false);
-    setShowStartAgentModal(false);
-    onClose();
-  };
+  if (!isOpen) return null;
 
   const parsedExternalId = extractExternalId(agentInput);
   const canSubmit = Boolean(parsedExternalId);
@@ -111,8 +100,7 @@ export function AttachAgentModal({
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      await onAttach({
-        taskId,
+      await onCreateFromAgent({
         externalId: parsedExternalId,
       });
       handleClose();
@@ -126,8 +114,12 @@ export function AttachAgentModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
-      onClick={(e) => { if (e.target === mouseDownTargetRef.current) handleClose(); }}
+      onMouseDown={(e) => {
+        mouseDownTargetRef.current = e.target;
+      }}
+      onClick={(e) => {
+        if (e.target === mouseDownTargetRef.current) handleClose();
+      }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
@@ -141,11 +133,11 @@ export function AttachAgentModal({
               <path d={CURSOR_ICON_PATH} />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold">Attach Agent</h3>
+          <h3 className="text-lg font-semibold">Create Task From Agent</h3>
         </div>
 
         <p className="text-sm text-(--muted) mb-5">
-          Attach an existing Cursor agent, or start a new one.
+          Create a task from an existing Cursor agent, or start a new one.
         </p>
 
         <div className="space-y-3">
@@ -219,7 +211,7 @@ export function AttachAgentModal({
             disabled={!canSubmit || isSubmitting}
             className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting ? "Attaching..." : "Attach Agent"}
+            {isSubmitting ? "Creating..." : "Create Task"}
           </button>
         </div>
 
@@ -227,10 +219,9 @@ export function AttachAgentModal({
           isOpen={showStartAgentModal}
           onClose={() => setShowStartAgentModal(false)}
           storageKeySuffix={storageKeySuffix}
-          initialPrompt={initialPrompt}
+          initialPrompt=""
           onStart={async ({ repository, branch, prompt }) => {
             await onStartAgent({
-              taskId,
               repository,
               branch,
               prompt,

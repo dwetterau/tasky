@@ -50,6 +50,7 @@ import {
 } from "./constants";
 import { AttachAgentModal } from "./AttachAgentModal";
 import { AttachPrModal } from "./AttachPrModal";
+import { CreateTaskFromAgentModal } from "./CreateTaskFromAgentModal";
 import {
   AGENT_ALREADY_ATTACHED_TO_TASK_ERROR,
   AGENT_ALREADY_LINKED_ERROR,
@@ -473,6 +474,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
   const [searchText, setSearchText] = useState("");
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateFromAgentModal, setShowCreateFromAgentModal] = useState(false);
   const [kanbanMode, setKanbanMode] = useState<KanbanMode>("status");
   const [hideClosed, setHideClosed] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<Id<"tasks"> | null>(null);
@@ -588,6 +590,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     }
   );
 
+  const createTask = useTrackedMutation(api.tasks.create);
   const createAgent = useTrackedMutation(api.agents.createForTask);
   const createPullRequest = useTrackedMutation(api.pullRequests.createForTask);
   const removeAgent = useTrackedMutation(api.agents.remove).withOptimisticUpdate(
@@ -794,6 +797,36 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     } catch {
       // Keep task creation success even if background status sync fails.
     }
+  };
+
+  const handleCreateTaskFromExistingAgent = async (args: { externalId: string }) => {
+    const result = await createTask({
+      content: "",
+      tagIds: selectedTagId ? [selectedTagId] : undefined,
+      priority: "triage",
+      agentExternalIds: [args.externalId],
+    });
+    await handleTaskCreated(result);
+  };
+
+  const handleCreateTaskFromStartedAgent = async (args: {
+    repository: string;
+    branch: string;
+    prompt: string;
+  }) => {
+    const launchedAgent = await launchAgent({
+      repository: args.repository,
+      branch: args.branch,
+      promptText: args.prompt,
+    });
+
+    const result = await createTask({
+      content: launchedAgent.title.trim(),
+      tagIds: selectedTagId ? [selectedTagId] : undefined,
+      priority: "triage",
+      agentExternalIds: [launchedAgent.externalId],
+    });
+    await handleTaskCreated(result);
   };
 
   const handleStartAgentFromAttachModal = async (args: {
@@ -1140,6 +1173,17 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
                 </svg>
                 Create Task
               </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateFromAgentModal(true)}
+                className="h-[38px] w-[44px] flex items-center justify-center border border-accent/30 bg-(--card-bg) text-accent hover:bg-accent hover:text-white rounded-lg transition-colors"
+                title="Create task from agent"
+                aria-label="Create task from agent"
+              >
+                <svg className="w-4.5 h-5" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" aria-hidden="true">
+                  <path d={CURSOR_ICON_PATH} />
+                </svg>
+              </button>
             </div>
 
             <div className="flex items-center justify-between">
@@ -1290,6 +1334,14 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         onTaskCreated={handleTaskCreated}
         onAttachAgent={handleAttachAgent}
         onAttachPr={handleAttachPr}
+      />
+
+      <CreateTaskFromAgentModal
+        isOpen={showCreateFromAgentModal}
+        onClose={() => setShowCreateFromAgentModal(false)}
+        onCreateFromAgent={handleCreateTaskFromExistingAgent}
+        onStartAgent={handleCreateTaskFromStartedAgent}
+        storageKeySuffix={startAgentStorageKeySuffix}
       />
 
       {editingTask && (
