@@ -135,14 +135,18 @@ export function AttachAgentModal({
         className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
-            <svg className="w-4.5 h-5 text-accent" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor">
+            <svg className="w-4.5 h-5 text-accent" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor" aria-hidden="true">
               <path d={CURSOR_ICON_PATH} />
             </svg>
           </div>
           <h3 className="text-lg font-semibold">Attach Agent</h3>
         </div>
+
+        <p className="text-sm text-(--muted) mb-5">
+          Attach an existing Cursor agent, or start a new one.
+        </p>
 
         <div className="space-y-3">
           <div>
@@ -180,30 +184,43 @@ export function AttachAgentModal({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 pt-5">
-          <button
-            onClick={() => setShowStartAgentModal(true)}
-            disabled={isSubmitting}
-            className="px-4 py-2 text-sm text-accent hover:text-white border border-accent/30 hover:bg-accent rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent disabled:hover:bg-transparent"
-          >
-            Start Agent
-          </button>
-          <div className="flex items-center gap-3">
+        <div className="my-5 flex items-center gap-3">
+          <div className="h-px flex-1 bg-(--card-border)" />
+          <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-(--muted)">Or</span>
+          <div className="h-px flex-1 bg-(--card-border)" />
+        </div>
+
+        <div className="rounded-xl border border-(--card-border) bg-background/60 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Start a new Cursor cloud agent</p>
+            </div>
             <button
-              onClick={handleClose}
+              type="button"
+              onClick={() => setShowStartAgentModal(true)}
               disabled={isSubmitting}
-              className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+              className="shrink-0 px-4 py-2 text-sm text-accent hover:text-white border border-accent/30 hover:bg-accent rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent disabled:hover:bg-transparent"
             >
-              Cancel
-            </button>
-            <button
-              onClick={() => void handleSubmit()}
-              disabled={!canSubmit || isSubmitting}
-              className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? "Attaching..." : "Attach Agent"}
+              Start Agent
             </button>
           </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-5">
+          <button
+            onClick={handleClose}
+            disabled={isSubmitting}
+            className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit || isSubmitting}
+            className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? "Attaching..." : "Attach Agent"}
+          </button>
         </div>
 
         <StartAgentModal

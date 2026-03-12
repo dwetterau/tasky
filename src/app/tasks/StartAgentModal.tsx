@@ -31,6 +31,8 @@ type RepoSearchResult =
       cacheComplete: boolean;
     };
 
+const REPO_SEARCH_RETRY_DELAYS_MS = [250, 750];
+
 function matchesPrefix(repo: RepoSummary, prefix: string): boolean {
   const normalizedPrefix = prefix.trim().toLowerCase();
   if (!normalizedPrefix) {
@@ -40,6 +42,20 @@ function matchesPrefix(repo: RepoSummary, prefix: string): boolean {
     repo.fullName.toLowerCase().startsWith(normalizedPrefix) ||
     repo.name.toLowerCase().startsWith(normalizedPrefix)
   );
+}
+
+function isTransientRepoSearchError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("connection lost while action was in flight") ||
+    normalized.includes("network error") ||
+    normalized.includes("failed to fetch")
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 export function StartAgentModal({
@@ -78,6 +94,14 @@ export function StartAgentModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    const storedRepo = readStoredRepoSelection(storageKeySuffix);
+    setPrefix(storedRepo);
+    setSelectedRepoFullName(storedRepo || null);
+    setLastResolvedPrefix(storedRepo);
+  }, [isOpen, storageKeySuffix]);
+
+  useEffect(() => {
+    if (!isOpen) return;
 
     const timeoutId = window.setTimeout(() => {
       inputRef.current?.focus();
@@ -97,37 +121,53 @@ export function StartAgentModal({
 
     const currentRequestId = requestIdRef.current + 1;
     requestIdRef.current = currentRequestId;
+    let cancelled = false;
 
     const timeoutId = window.setTimeout(() => {
       setIsLoading(true);
       setUnexpectedError(null);
 
-      void searchRepos({ prefix })
-        .then((nextResult) => {
-          if (requestIdRef.current !== currentRequestId) return;
-          setResult(nextResult as RepoSearchResult);
-          setLastResolvedPrefix(prefix);
-          setSelectedRepoFullName((currentSelection) => {
-            if (!currentSelection) return currentSelection;
-            return nextResult.repos.some((repo) => repo.fullName === currentSelection)
-              ? currentSelection
-              : null;
-          });
-        })
-        .catch((error) => {
-          if (requestIdRef.current !== currentRequestId) return;
-          const message = error instanceof Error ? error.message : "Failed to load GitHub repositories.";
-          setUnexpectedError(message);
-          setResult(null);
-        })
-        .finally(() => {
-          if (requestIdRef.current === currentRequestId) {
+      void (async () => {
+        try {
+          for (let attempt = 0; ; attempt += 1) {
+            try {
+              const nextResult = (await searchRepos({ prefix })) as RepoSearchResult;
+              if (cancelled || requestIdRef.current !== currentRequestId) return;
+              setResult(nextResult);
+              setLastResolvedPrefix(prefix);
+              setSelectedRepoFullName((currentSelection) => {
+                if (!currentSelection) return currentSelection;
+                return nextResult.repos.some((repo) => repo.fullName === currentSelection)
+                  ? currentSelection
+                  : null;
+              });
+              return;
+            } catch (error) {
+              const canRetry =
+                isTransientRepoSearchError(error) && attempt < REPO_SEARCH_RETRY_DELAYS_MS.length;
+              if (!canRetry) {
+                if (cancelled || requestIdRef.current !== currentRequestId) return;
+                const message = error instanceof Error ? error.message : "Failed to load GitHub repositories.";
+                setUnexpectedError(message);
+                setResult(null);
+                return;
+              }
+              await sleep(REPO_SEARCH_RETRY_DELAYS_MS[attempt]);
+              if (cancelled || requestIdRef.current !== currentRequestId) return;
+            }
+          }
+        } finally {
+          if (!cancelled && requestIdRef.current === currentRequestId) {
             setIsLoading(false);
           }
-        });
+        }
+      })();
     }, 180);
 
-    return () => window.clearTimeout(timeoutId);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
   }, [isOpen, prefix, searchRepos]);
 
   useEffect(() => {
@@ -326,46 +366,50 @@ export function StartAgentModal({
             </div>
           ) : (
             <>
-              <div className="rounded-lg border border-(--card-border) bg-background px-3 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs text-(--muted)">Selected Repo</p>
-                    <p className="text-sm font-medium truncate">
-                      {selectedRepo?.fullName ?? selectedRepoFullName}
-                    </p>
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <label className="block text-xs font-medium text-(--muted) mb-1">Selected Repo</label>
+                  <div className="rounded-lg border border-(--card-border) bg-background px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                      {selectedRepo?.htmlUrl ? (
+                        <a
+                          href={selectedRepo.htmlUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block max-w-full truncate text-sm leading-5 font-medium text-accent hover:underline"
+                        >
+                          {selectedRepo.fullName}
+                        </a>
+                      ) : (
+                        <p className="block max-w-full truncate text-sm leading-5 font-medium">
+                          {selectedRepo?.fullName ?? selectedRepoFullName}
+                        </p>
+                      )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearRepoSelection}
+                        className="px-2 py-1 text-xs text-(--muted) hover:text-foreground rounded-md hover:bg-(--card-border) transition-colors shrink-0"
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleClearRepoSelection}
-                    className="px-2 py-1 text-xs text-(--muted) hover:text-foreground rounded-md hover:bg-(--card-border) transition-colors shrink-0"
-                  >
-                    Clear
-                  </button>
                 </div>
-                {selectedRepo?.htmlUrl ? (
-                  <a
-                    href={selectedRepo.htmlUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1 text-xs text-accent hover:underline truncate inline-block max-w-full"
-                  >
-                    {selectedRepo.htmlUrl}
-                  </a>
-                ) : null}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-(--muted) mb-1">Branch</label>
-                <input
-                  type="text"
-                  value={branch}
-                  onChange={(event) => {
-                    setBranch(event.target.value);
-                    setSubmitError(null);
-                  }}
-                  placeholder="main"
-                  className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
-                />
+                <div className="w-36 shrink-0">
+                  <label className="block text-xs font-medium text-(--muted) mb-1">Branch</label>
+                  <input
+                    type="text"
+                    value={branch}
+                    onChange={(event) => {
+                      setBranch(event.target.value);
+                      setSubmitError(null);
+                    }}
+                    placeholder="main"
+                    className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
+                  />
+                </div>
               </div>
 
               <div>
