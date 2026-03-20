@@ -4,6 +4,7 @@ import { useAction } from "convex/react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
+import { extractCursorAgentExternalId } from "../../../convex/cursorAgentUrl";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { TagSelector, Tag } from "../../components/TagSelector";
@@ -109,25 +110,6 @@ export type TaskSearchArgs = {
 };
 
 const LAST_SELECTED_TAG_KEY = "tasky-last-selected-tag";
-
-function extractExternalId(input: string): string | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  if (/^bc-[A-Za-z0-9.-]+$/.test(trimmed)) return trimmed;
-  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  try {
-    const url = new URL(candidate);
-    const hostname = url.hostname.toLowerCase();
-    if (hostname !== "cursor.com" && hostname !== "www.cursor.com") return null;
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length >= 2 && parts[0] === "agents" && /^bc-[A-Za-z0-9.-]+$/.test(parts[1])) {
-      return parts[1];
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
 
 function normalizePullRequestUrl(input: string): string {
   const trimmed = input.trim();
@@ -486,7 +468,7 @@ export function TaskModal({
 
   if (!isOpen) return null;
 
-  const parsedAgentExternalId = extractExternalId(agentInput);
+  const parsedAgentExternalId = extractCursorAgentExternalId(agentInput);
   const canAddPendingAgent =
     !isEditing &&
     !!parsedAgentExternalId &&

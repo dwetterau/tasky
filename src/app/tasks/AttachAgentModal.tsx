@@ -2,35 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
+import { extractCursorAgentExternalId } from "../../../convex/cursorAgentUrl";
 import { CURSOR_ICON_VIEWBOX, CURSOR_ICON_PATH } from "./constants";
 import { getAgentAttachmentErrorMessage } from "./attachmentErrors";
 import { StartAgentModal } from "./StartAgentModal";
-
-function extractExternalId(input: string): string | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-
-  if (/^bc-[A-Za-z0-9.-]+$/.test(trimmed)) {
-    return trimmed;
-  }
-
-  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  try {
-    const url = new URL(candidate);
-    const hostname = url.hostname.toLowerCase();
-    if (hostname !== "cursor.com" && hostname !== "www.cursor.com") {
-      return null;
-    }
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length >= 2 && parts[0] === "agents" && /^bc-[A-Za-z0-9.-]+$/.test(parts[1])) {
-      return parts[1];
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
 
 export function AttachAgentModal({
   isOpen,
@@ -103,7 +78,7 @@ export function AttachAgentModal({
     onClose();
   };
 
-  const parsedExternalId = extractExternalId(agentInput);
+  const parsedExternalId = extractCursorAgentExternalId(agentInput);
   const canSubmit = Boolean(parsedExternalId);
 
   const handleSubmit = async () => {
