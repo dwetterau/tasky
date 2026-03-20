@@ -5,6 +5,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { taskStatus, taskPriority, EventSource } from "./schema";
 import { insertEvent } from "./events";
 import { parseGitHubPullRequestUrl } from "./pullRequests";
+import { extractCursorAgentExternalId } from "./cursorAgentUrl";
 
 const CLOSED_TASK_RETENTION_MS = 32 * 24 * 60 * 60 * 1000;
 
@@ -159,25 +160,6 @@ function findClosestTagByName(tags: Doc<"tags">[], rawFilter: string): Doc<"tags
   return matched?.tag ?? null;
 }
 
-function extractAgentExternalId(input: string): string | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  if (/^bc-[A-Za-z0-9.-]+$/.test(trimmed)) return trimmed;
-  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  try {
-    const url = new URL(candidate);
-    const hostname = url.hostname.toLowerCase();
-    if (hostname !== "cursor.com" && hostname !== "www.cursor.com") return null;
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length >= 2 && parts[0] === "agents" && /^bc-[A-Za-z0-9.-]+$/.test(parts[1])) {
-      return parts[1];
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
 function getEventTagIds(tagIds: Id<"tags">[]): Id<"tags">[] | undefined {
   return tagIds.length > 0 ? tagIds : undefined;
 }
@@ -197,7 +179,7 @@ async function attachAgentToTaskIfMissing(args: {
     }
   | undefined
 > {
-  const externalId = extractAgentExternalId(args.addAgentInput);
+  const externalId = extractCursorAgentExternalId(args.addAgentInput);
   if (!externalId) {
     throw new Error("Invalid agent input. Use bc-... or cursor.com/agents/bc-...");
   }
@@ -749,7 +731,7 @@ export const create = mutation({
     });
 
     const agentExternalIds = Array.from(
-      new Set((args.agentExternalIds ?? []).map((value) => extractAgentExternalId(value)).filter((value): value is string => Boolean(value)))
+      new Set((args.agentExternalIds ?? []).map((value) => extractCursorAgentExternalId(value)).filter((value): value is string => Boolean(value)))
     );
     for (const externalId of agentExternalIds) {
       const agentId = await ctx.db.insert("agents", {
