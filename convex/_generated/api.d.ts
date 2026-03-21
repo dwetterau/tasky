@@ -12,6 +12,7 @@ import type * as agents from "../agents.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
 import type * as captures from "../captures.js";
+import type * as cursorAgentUrl from "../cursorAgentUrl.js";
 import type * as events from "../events.js";
 import type * as githubRepos from "../githubRepos.js";
 import type * as http from "../http.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   apiKeys: typeof apiKeys;
   auth: typeof auth;
   captures: typeof captures;
+  cursorAgentUrl: typeof cursorAgentUrl;
   events: typeof events;
   githubRepos: typeof githubRepos;
   http: typeof http;
