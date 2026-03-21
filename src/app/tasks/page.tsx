@@ -799,11 +799,15 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     }
   };
 
-  const handleCreateTaskFromExistingAgent = async (args: { externalId: string }) => {
+  const handleCreateTaskFromExistingAgent = async (args: {
+    externalId: string;
+    tagIds: Id<"tags">[];
+    priority: TaskPriority;
+  }) => {
     const result = await createTask({
       content: "",
-      tagIds: selectedTagId ? [selectedTagId] : undefined,
-      priority: "triage",
+      tagIds: args.tagIds.length > 0 ? args.tagIds : undefined,
+      priority: args.priority,
       agentExternalIds: [args.externalId],
     });
     await handleTaskCreated(result);
@@ -813,6 +817,8 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     repository: string;
     branch: string;
     prompt: string;
+    tagIds: Id<"tags">[];
+    priority: TaskPriority;
   }) => {
     const launchedAgent = await launchAgent({
       repository: args.repository,
@@ -822,8 +828,8 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
 
     const result = await createTask({
       content: launchedAgent.title.trim(),
-      tagIds: selectedTagId ? [selectedTagId] : undefined,
-      priority: "triage",
+      tagIds: args.tagIds.length > 0 ? args.tagIds : undefined,
+      priority: args.priority,
       agentExternalIds: [launchedAgent.externalId],
     });
     await handleTaskCreated(result);
@@ -1342,6 +1348,8 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         onCreateFromAgent={handleCreateTaskFromExistingAgent}
         onStartAgent={handleCreateTaskFromStartedAgent}
         storageKeySuffix={startAgentStorageKeySuffix}
+        allTags={allTags}
+        initialTagId={selectedTagId}
       />
 
       {editingTask && (

@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Id } from "../../../convex/_generated/dataModel";
+import { TagSelector, Tag } from "../../components/TagSelector";
+import { StyledSelect, type SelectOption } from "../../components/StyledSelect";
 import { CURSOR_ICON_PATH, CURSOR_ICON_VIEWBOX } from "./constants";
+import { PRIORITY_CONFIG, PRIORITY_ORDER, type TaskPriority } from "./constants";
 import { getAgentAttachmentErrorMessage } from "./attachmentErrors";
 import { StartAgentModal } from "./StartAgentModal";
 import { extractCursorAgentExternalId } from "../../../convex/cursorAgentUrl";
@@ -12,18 +16,30 @@ export function CreateTaskFromAgentModal({
   onCreateFromAgent,
   onStartAgent,
   storageKeySuffix,
+  allTags,
+  initialTagId,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onCreateFromAgent: (args: { externalId: string }) => Promise<void> | void;
+  onCreateFromAgent: (args: {
+    externalId: string;
+    tagIds: Id<"tags">[];
+    priority: TaskPriority;
+  }) => Promise<void> | void;
   onStartAgent: (args: {
     repository: string;
     branch: string;
     prompt: string;
+    tagIds: Id<"tags">[];
+    priority: TaskPriority;
   }) => Promise<void> | void;
   storageKeySuffix: string;
+  allTags: Tag[];
+  initialTagId?: Id<"tags"> | null;
 }) {
   const [agentInput, setAgentInput] = useState("");
+  const [tagIds, setTagIds] = useState<Id<"tags">[]>([]);
+  const [priority, setPriority] = useState<TaskPriority>("triage");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showStartAgentModal, setShowStartAgentModal] = useState(false);
@@ -32,11 +48,13 @@ export function CreateTaskFromAgentModal({
 
   const handleClose = useCallback(() => {
     setAgentInput("");
+    setTagIds(initialTagId ? [initialTagId] : []);
+    setPriority("triage");
     setSubmitError(null);
     setIsSubmitting(false);
     setShowStartAgentModal(false);
     onClose();
-  }, [onClose]);
+  }, [initialTagId, onClose]);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -65,10 +83,19 @@ export function CreateTaskFromAgentModal({
     return () => window.clearTimeout(timeoutId);
   }, [submitError]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    setTagIds(initialTagId ? [initialTagId] : []);
+    setPriority("triage");
+  }, [initialTagId, isOpen]);
+
   if (!isOpen) return null;
 
   const parsedExternalId = extractCursorAgentExternalId(agentInput);
   const canSubmit = Boolean(parsedExternalId);
+  const selectedTags = tagIds
+    .map((id) => allTags.find((tag) => tag._id === id))
+    .filter((tag): tag is Tag => tag !== undefined);
 
   const handleSubmit = async () => {
     if (!parsedExternalId) return;
@@ -77,6 +104,8 @@ export function CreateTaskFromAgentModal({
     try {
       await onCreateFromAgent({
         externalId: parsedExternalId,
+        tagIds,
+        priority,
       });
       handleClose();
     } catch (error) {
@@ -116,6 +145,27 @@ export function CreateTaskFromAgentModal({
         </p>
 
         <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Priority</label>
+            <StyledSelect
+              value={priority}
+              onChange={(value) => setPriority(value as TaskPriority)}
+              options={PRIORITY_ORDER.map((priorityValue): SelectOption => ({
+                value: priorityValue,
+                label: PRIORITY_CONFIG[priorityValue].label,
+                color: PRIORITY_CONFIG[priorityValue].color,
+              }))}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Tags</label>
+            <TagSelector
+              selectedTags={selectedTags}
+              onTagsChange={setTagIds}
+              allTags={allTags}
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-(--muted) mb-1">Agent Link or ID</label>
             <input
@@ -200,6 +250,8 @@ export function CreateTaskFromAgentModal({
               repository,
               branch,
               prompt,
+              tagIds,
+              priority,
             });
             handleClose();
           }}
