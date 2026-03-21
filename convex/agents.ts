@@ -22,6 +22,53 @@ export const list = query({
   },
 });
 
+export const listWithTasks = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return [];
+    }
+
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .order("desc")
+      .collect();
+
+    const allTags = await ctx.db
+      .query("tags")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const tagById = new Map(allTags.map((t) => [t._id, t]));
+
+    return await Promise.all(
+      agents.map(async (agent) => {
+        const task = await ctx.db.get(agent.taskId);
+        if (!task || task.userId !== userId) {
+          return { ...agent, task: null };
+        }
+        return {
+          ...agent,
+          task: {
+            _id: task._id,
+            _creationTime: task._creationTime,
+            content: task.content,
+            status: task.status,
+            priority: task.priority,
+            dueDate: task.dueDate,
+            tagIds: task.tagIds,
+            tags: task.tagIds
+              .map((id) => tagById.get(id))
+              .filter((t): t is NonNullable<typeof t> => t != null)
+              .map((t) => ({ _id: t._id, name: t.name, color: t.color })),
+          },
+        };
+      })
+    );
+  },
+});
+
 export const listByTask = query({
   args: { taskId: v.id("tasks") },
   handler: async (ctx, args) => {
@@ -595,5 +642,68 @@ export const syncAgentStates = action({
       updatedCount,
       results: [...invalidResults, ...perAgentResults],
     };
+  },
+});
+
+type CursorListAgent = {
+  id: string;
+  name?: string;
+  status?: string;
+  source?: {
+    repository?: string;
+    ref?: string;
+  };
+  target?: {
+    url?: string;
+    prUrl?: string;
+    branchName?: string;
+  };
+  summary?: string;
+  createdAt?: string;
+};
+
+type CursorListResponse = {
+  agents: CursorListAgent[];
+  nextCursor?: string;
+};
+
+export const listFromCursorApi = action({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const keyRow = await ctx.runQuery(internal.apiKeys.getLatestByTypeInternal, {
+      userId,
+      type: "cursor_agent_sdk",
+    });
+    if (!keyRow) {
+      return { status: "no_api_key" as const, agents: [] as CursorListAgent[] };
+    }
+
+    const token = await decryptApiKey(keyRow.encryptedValue, keyRow.iv);
+    if (!token.trim()) {
+      return { status: "no_api_key" as const, agents: [] as CursorListAgent[] };
+    }
+
+    const response = await fetch("https://api.cursor.com/v0/agents?limit=100", {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: buildBasicAuthHeader(token),
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { status: "auth_error" as const, agents: [] as CursorListAgent[] };
+      }
+      return { status: "api_error" as const, agents: [] as CursorListAgent[] };
+    }
+
+    const payload = (await response.json()) as CursorListResponse;
+    return { status: "ok" as const, agents: payload.agents ?? [] };
   },
 });

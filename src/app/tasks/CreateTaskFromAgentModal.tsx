@@ -18,6 +18,7 @@ export function CreateTaskFromAgentModal({
   storageKeySuffix,
   allTags,
   initialTagId,
+  initialAgentId,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -36,6 +37,7 @@ export function CreateTaskFromAgentModal({
   storageKeySuffix: string;
   allTags: Tag[];
   initialTagId?: Id<"tags"> | null;
+  initialAgentId?: string;
 }) {
   const [agentInput, setAgentInput] = useState("");
   const [tagIds, setTagIds] = useState<Id<"tags">[]>([]);
@@ -87,7 +89,10 @@ export function CreateTaskFromAgentModal({
     if (!isOpen) return;
     setTagIds(initialTagId ? [initialTagId] : []);
     setPriority("triage");
-  }, [initialTagId, isOpen]);
+    if (initialAgentId) {
+      setAgentInput(initialAgentId);
+    }
+  }, [initialTagId, initialAgentId, isOpen]);
 
   if (!isOpen) return null;
 
