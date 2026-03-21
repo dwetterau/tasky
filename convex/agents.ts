@@ -637,6 +637,18 @@ export const syncAgentStates = action({
       });
     }
 
+    const affectedTaskIds = Array.from(new Set(args.items.map((item) => item.taskId)));
+    if (affectedTaskIds.length > 0) {
+      await ctx.runMutation(internal.tasks.fillEmptyContentFromAgentTitleInternal, {
+        userId,
+        taskIds: affectedTaskIds,
+      });
+      await ctx.runMutation(internal.tasks.syncTaskStatusesFromAgentsInternal, {
+        userId,
+        taskIds: affectedTaskIds,
+      });
+    }
+
     return {
       status: "ok" as const,
       updatedCount,
