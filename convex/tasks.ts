@@ -796,40 +796,31 @@ export const create = mutation({
   },
 });
 
-export const fillEmptyContentFromAgentTitle = mutation({
+export const fillEmptyContentFromAgentTitleInternal = internalMutation({
   args: {
-    taskId: v.id("tasks"),
+    userId: v.string(),
+    taskIds: v.array(v.id("tasks")),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
+    for (const taskId of args.taskIds) {
+      const task = await ctx.db.get(taskId);
+      if (!task || task.userId !== args.userId) continue;
+      if (task.content.trim().length > 0) continue;
 
-    const task = await ctx.db.get(args.taskId);
-    if (!task || task.userId !== userId) {
-      throw new Error("Task not found or access denied");
-    }
+      const agents = await ctx.db
+        .query("agents")
+        .withIndex("by_user_task", (q) => q.eq("userId", args.userId).eq("taskId", taskId))
+        .order("desc")
+        .collect();
 
-    if (task.content.trim().length > 0) {
-      return { updated: false };
-    }
-
-    const agents = await ctx.db
-      .query("agents")
-      .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", args.taskId))
-      .order("desc")
-      .collect();
-
-    for (const agent of agents) {
-      const title = agent.title.trim();
-      if (title && title !== agent.externalId.trim()) {
-        await ctx.db.patch(args.taskId, { content: title });
-        return { updated: true, content: title };
+      for (const agent of agents) {
+        const title = agent.title.trim();
+        if (title && title !== agent.externalId.trim()) {
+          await ctx.db.patch(taskId, { content: title });
+          break;
+        }
       }
     }
-
-    return { updated: false };
   },
 });
 
@@ -1041,15 +1032,13 @@ export const updatePriority = mutation({
   },
 });
 
-export const reopenBlockedWithTerminalAgents = mutation({
+export const syncTaskStatusesFromAgentsInternal = internalMutation({
   args: {
+    userId: v.string(),
     taskIds: v.optional(v.array(v.id("tasks"))),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
+    const userId = args.userId;
 
     const candidateTaskIds = new Set(args.taskIds ?? []);
     const tasks = await ctx.db

@@ -226,8 +226,6 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
   const linkedAgents = useQuery(api.agents.listWithTasks);
   const listFromCursorApi = useAction(api.agents.listFromCursorApi);
   const syncAgentStates = useAction(api.agents.syncAgentStates);
-  const syncAgentRunningStatuses = useTrackedMutation(api.tasks.reopenBlockedWithTerminalAgents);
-  const fillEmptyContentFromAgentTitle = useTrackedMutation(api.tasks.fillEmptyContentFromAgentTitle);
   const createTask = useTrackedMutation(api.tasks.create);
   const createAgent = useTrackedMutation(api.agents.createForTask);
   const launchAgent = useAction(api.agents.launch);
@@ -354,10 +352,7 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
       }));
 
       const syncLinked = agentsToSync.length > 0
-        ? syncAgentStates({ items: agentsToSync }).then(() => {
-            const taskIds = Array.from(new Set(agentsToSync.map((a) => a.taskId)));
-            return syncAgentRunningStatuses({ taskIds });
-          })
+        ? syncAgentStates({ items: agentsToSync })
         : Promise.resolve();
 
       await Promise.all([syncLinked, fetchCursorAgents()]);
@@ -385,12 +380,6 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
             taskId: result.taskId,
           })),
         });
-      } catch { /* keep success */ }
-      try {
-        await fillEmptyContentFromAgentTitle({ taskId: result.taskId });
-      } catch { /* keep success */ }
-      try {
-        await syncAgentRunningStatuses({ taskIds: [result.taskId] });
       } catch { /* keep success */ }
     }
     void fetchCursorAgents();
@@ -423,12 +412,6 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
           })),
         });
       } catch { /* keep success */ }
-      try {
-        await fillEmptyContentFromAgentTitle({ taskId: result.taskId });
-      } catch { /* keep success */ }
-      try {
-        await syncAgentRunningStatuses({ taskIds: [result.taskId] });
-      } catch { /* keep success */ }
     }
     void fetchCursorAgents();
   };
@@ -457,7 +440,6 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
       await syncAgentStates({
         items: [{ agentId: result.agentId, externalId: args.externalId, taskId: args.taskId }],
       });
-      await syncAgentRunningStatuses({ taskIds: [args.taskId] });
     } catch { /* keep success */ }
   };
 
@@ -470,12 +452,6 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
       await syncAgentStates({
         items: result.createdAgents.map((agent) => ({ ...agent, taskId: result.taskId })),
       });
-    } catch { /* keep success */ }
-    try {
-      await fillEmptyContentFromAgentTitle({ taskId: result.taskId });
-    } catch { /* keep success */ }
-    try {
-      await syncAgentRunningStatuses({ taskIds: [result.taskId] });
     } catch { /* keep success */ }
   };
 

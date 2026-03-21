@@ -640,8 +640,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
   const syncAgentStates = useAction(api.agents.syncAgentStates);
   const launchAgent = useAction(api.agents.launch);
   const syncPullRequestsBatch = useAction(api.pullRequests.syncPullRequestsBatch);
-  const fillEmptyContentFromAgentTitle = useTrackedMutation(api.tasks.fillEmptyContentFromAgentTitle);
-  const syncAgentRunningStatuses = useTrackedMutation(api.tasks.reopenBlockedWithTerminalAgents);
+
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -727,9 +726,6 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
       await syncAgentStates({
         items: [{ agentId: result.agentId, externalId: args.externalId, taskId: args.taskId }],
       });
-      await syncAgentRunningStatuses({
-        taskIds: [args.taskId],
-      });
     } catch {
       // Keep attach success even if background metadata sync fails.
     }
@@ -782,20 +778,6 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
       });
     } catch {
       // Keep task creation success even if background metadata sync fails.
-    }
-    try {
-      await fillEmptyContentFromAgentTitle({
-        taskId: result.taskId,
-      });
-    } catch {
-      // Keep task creation success even if the empty-content backfill fails.
-    }
-    try {
-      await syncAgentRunningStatuses({
-        taskIds: [result.taskId],
-      });
-    } catch {
-      // Keep task creation success even if background status sync fails.
     }
   };
 
@@ -869,9 +851,6 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     } catch {
       // Keep attach success even if background metadata sync fails.
     }
-    await syncAgentRunningStatuses({
-      taskIds: [args.taskId],
-    });
   };
 
   // Helper to determine column from a target ID (could be column or task)
@@ -1058,9 +1037,6 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     if (visibleLinksCount === 0 || isRefreshingLinks) return;
     setIsRefreshingLinks(true);
     try {
-      const taskIdsForAgentRunningSync = Array.from(
-        new Set(visibleAgentsForSync.map((item) => item.taskId))
-      );
       if (visibleAgentsForSync.length > 0) {
         await syncAgentStates({
           items: visibleAgentsForSync.map((item) => ({
@@ -1085,11 +1061,6 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
             repo: item.repo,
             number: item.number,
           })),
-        });
-      }
-      if (taskIdsForAgentRunningSync.length > 0) {
-        await syncAgentRunningStatuses({
-          taskIds: taskIdsForAgentRunningSync,
         });
       }
     } finally {
