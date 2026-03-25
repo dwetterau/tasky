@@ -117,6 +117,12 @@ function normalizePullRequestUrl(input: string): string {
   return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
+const GITHUB_PR_URL_PATTERN = /(?:https?:\/\/)?(?:www\.)?github\.com\/[^/]+\/[^/]+\/pull\/\d+/i;
+
+function looksLikeGitHubPrUrl(input: string): boolean {
+  return GITHUB_PR_URL_PATTERN.test(input.trim());
+}
+
 export function TaskModal({
   isOpen,
   onClose,
@@ -124,6 +130,7 @@ export function TaskModal({
   allTags,
   initialTagId,
   initialContent,
+  initialPendingAgentIds,
   createdFromCaptureId,
   activeSearchArgs,
   onTaskCreated,
@@ -138,6 +145,7 @@ export function TaskModal({
   allTags: Tag[];
   initialTagId?: Id<"tags"> | null;
   initialContent?: string;
+  initialPendingAgentIds?: string[];
   createdFromCaptureId?: Id<"captures">;
   activeSearchArgs?: TaskSearchArgs;
   onTaskCreated?: (result: {
@@ -342,14 +350,14 @@ export function TaskModal({
       setPrAttachError(null);
       setIsAttachingAgent(false);
       setIsAttachingPr(false);
-      setPendingAgentExternalIds([]);
+      setPendingAgentExternalIds(initialPendingAgentIds ?? []);
       setPendingPullRequestUrls([]);
       setShowStartAgentModal(false);
       setIsLaunchingStartedAgent(false);
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [isOpen, task, initialTagId, initialContent]);
+  }, [isOpen, task, initialTagId, initialContent, initialPendingAgentIds]);
 
   // Check if there are unsaved changes (edit mode only)
   const hasUnsavedChanges = useMemo(() => {
@@ -765,8 +773,24 @@ export function TaskModal({
                             type="text"
                             value={agentInput}
                             onChange={(e) => {
-                              setAgentInput(e.target.value);
+                              const value = e.target.value;
+                              setAgentInput(value);
                               setAgentAttachError(null);
+                              const parsed = extractCursorAgentExternalId(value);
+                              if (parsed && !isAttachingAgent) {
+                                setAgentInput("");
+                                setIsAttachingAgent(true);
+                                void (async () => {
+                                  try {
+                                    await onAttachAgent({ taskId: task._id, externalId: parsed });
+                                  } catch (error) {
+                                    setAgentInput(value);
+                                    setAgentAttachError(getAgentAttachmentErrorMessage(error));
+                                  } finally {
+                                    setIsAttachingAgent(false);
+                                  }
+                                })();
+                              }
                             }}
                             placeholder="bc-... or agent URL"
                             disabled={isAttachingAgent}
@@ -851,7 +875,15 @@ export function TaskModal({
                           <input
                             type="text"
                             value={agentInput}
-                            onChange={(e) => setAgentInput(e.target.value)}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setAgentInput(value);
+                              const parsed = extractCursorAgentExternalId(value);
+                              if (parsed && !pendingAgentExternalIds.includes(parsed)) {
+                                setPendingAgentExternalIds((current) => [...current, parsed]);
+                                setAgentInput("");
+                              }
+                            }}
                             placeholder="bc-... or agent URL"
                             className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs"
                           />
@@ -927,8 +959,23 @@ export function TaskModal({
                             type="text"
                             value={prInput}
                             onChange={(e) => {
-                              setPrInput(e.target.value);
+                              const value = e.target.value;
+                              setPrInput(value);
                               setPrAttachError(null);
+                              if (looksLikeGitHubPrUrl(value) && !isAttachingPr) {
+                                setPrInput("");
+                                setIsAttachingPr(true);
+                                void (async () => {
+                                  try {
+                                    await onAttachPr({ taskId: task._id, url: value.trim() });
+                                  } catch (error) {
+                                    setPrInput(value);
+                                    setPrAttachError(getPullRequestAttachmentErrorMessage(error));
+                                  } finally {
+                                    setIsAttachingPr(false);
+                                  }
+                                })();
+                              }
                             }}
                             placeholder="github.com/owner/repo/pull/123"
                             disabled={isAttachingPr}
@@ -1014,7 +1061,17 @@ export function TaskModal({
                           <input
                             type="text"
                             value={prInput}
-                            onChange={(e) => setPrInput(e.target.value)}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setPrInput(value);
+                              if (looksLikeGitHubPrUrl(value)) {
+                                const normalized = normalizePullRequestUrl(value);
+                                if (normalized && !pendingPullRequestUrls.includes(normalized)) {
+                                  setPendingPullRequestUrls((current) => [...current, normalized]);
+                                  setPrInput("");
+                                }
+                              }
+                            }}
                             placeholder="github.com/owner/repo/pull/123"
                             className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs"
                           />

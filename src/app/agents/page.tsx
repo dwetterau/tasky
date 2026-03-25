@@ -12,6 +12,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { usePageTagFilter } from "@/lib/usePageTagFilter";
 import { TaskModal } from "../tasks/TaskModal";
 import { CreateTaskFromAgentModal } from "../tasks/CreateTaskFromAgentModal";
+import { LinkTaskModal } from "../tasks/LinkTaskModal";
 import {
   type TaskStatus,
   type TaskPriority,
@@ -51,10 +52,12 @@ function AgentRow({
   item,
   onEditTask,
   onCreateTask,
+  onLinkTask,
 }: {
   item: AgentListItem;
   onEditTask: (taskId: Id<"tasks">) => void;
   onCreateTask: (agent: CursorApiAgent) => void;
+  onLinkTask: (agent: CursorApiAgent) => void;
 }) {
   if (item.kind === "linked") {
     const { agent } = item;
@@ -206,13 +209,22 @@ function AgentRow({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => onCreateTask(agent)}
-            className="shrink-0 px-3 py-1.5 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium"
-          >
-            Create Task
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => onLinkTask(agent)}
+              className="px-3 py-1.5 text-sm text-accent border border-accent/30 hover:bg-accent hover:text-white rounded-lg transition-colors font-medium"
+            >
+              Link Task
+            </button>
+            <button
+              type="button"
+              onClick={() => onCreateTask(agent)}
+              className="px-3 py-1.5 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium"
+            >
+              Create Task
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -238,6 +250,9 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
   const [editingTaskId, setEditingTaskId] = useState<Id<"tasks"> | null>(null);
   const [createFromAgentId, setCreateFromAgentId] = useState<string | null>(null);
   const [showCreateFromAgentModal, setShowCreateFromAgentModal] = useState(false);
+  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [createTaskAgentExternalId, setCreateTaskAgentExternalId] = useState<string | null>(null);
+  const [linkTaskAgent, setLinkTaskAgent] = useState<CursorApiAgent | null>(null);
 
   const fetchCursorAgents = useCallback(async () => {
     setCursorApiStatus("loading");
@@ -456,9 +471,26 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
   };
 
   const handleOpenCreateFromAgent = (agent: CursorApiAgent) => {
-    setCreateFromAgentId(agent.id);
-    setShowCreateFromAgentModal(true);
+    setCreateTaskAgentExternalId(agent.id);
+    setShowCreateTaskModal(true);
   };
+
+  const handleOpenLinkTaskForAgent = (agent: CursorApiAgent) => {
+    setLinkTaskAgent(agent);
+  };
+
+  const handleLinkExistingTask = async (taskId: Id<"tasks">) => {
+    if (!linkTaskAgent) return;
+    const externalId = linkTaskAgent.id;
+    setLinkTaskAgent(null);
+    await handleAttachAgent({ taskId, externalId });
+    void fetchCursorAgents();
+  };
+
+  const linkedTaskIds = useMemo(
+    () => new Set((linkedAgents ?? []).filter((a) => a.task).map((a) => a.taskId)),
+    [linkedAgents]
+  );
 
   const totalCount = linkedAgents === undefined ? null : filteredItems.length;
 
@@ -519,7 +551,7 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
                 </button>
               </div>
 
-              <div className="flex items-center">
+              <div className="flex items-center gap-3">
                 <p className="text-(--muted) text-sm">
                   {totalCount === null
                     ? "Loading..."
@@ -527,6 +559,20 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
                     ? "No agents"
                     : `${totalCount} agent${totalCount === 1 ? "" : "s"}${linkedCount > 0 && unlinkedCount > 0 ? ` (${linkedCount} linked, ${unlinkedCount} unlinked)` : ""}`}
                 </p>
+                {cursorApiStatus === "loading" && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-(--muted)">
+                    <svg
+                      className="w-3 h-3 animate-spin"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Loading from Cursor...
+                  </span>
+                )}
               </div>
             </div>
 
@@ -552,6 +598,7 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
                     item={item}
                     onEditTask={setEditingTaskId}
                     onCreateTask={handleOpenCreateFromAgent}
+                    onLinkTask={handleOpenLinkTaskForAgent}
                   />
                 ))}
                 {cursorApiStatus === "error" && (
@@ -584,6 +631,32 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
         allTags={allTags}
         initialTagId={selectedTagId}
         initialAgentId={createFromAgentId ?? undefined}
+      />
+
+      {showCreateTaskModal && (
+        <TaskModal
+          isOpen={true}
+          onClose={() => {
+            setShowCreateTaskModal(false);
+            setCreateTaskAgentExternalId(null);
+          }}
+          allTags={allTags}
+          initialTagId={selectedTagId}
+          initialPendingAgentIds={createTaskAgentExternalId ? [createTaskAgentExternalId] : undefined}
+          onTaskCreated={async (result) => {
+            await handleTaskCreated(result);
+            void fetchCursorAgents();
+          }}
+        />
+      )}
+
+      <LinkTaskModal
+        isOpen={linkTaskAgent !== null}
+        onClose={() => setLinkTaskAgent(null)}
+        onSelect={(taskId) => void handleLinkExistingTask(taskId)}
+        tagId={selectedTagId}
+        noTag={selectedNoTag || undefined}
+        excludeTaskIds={linkedTaskIds}
       />
 
       {editingTask && (
