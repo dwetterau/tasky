@@ -1080,7 +1080,7 @@ export const syncTaskStatusesFromAgentsInternal = internalMutation({
         continue;
       }
 
-      if (task.status === "agent_running") {
+      if (task.status === "agent_running" || task.status === "not_started") {
         await ctx.db.patch(task._id, {
           status: "in_progress",
           statusUpdatedAt: Date.now(),
@@ -1088,7 +1088,7 @@ export const syncTaskStatusesFromAgentsInternal = internalMutation({
         await insertEvent(ctx, {
           userId,
           entityId: task._id,
-          action: { type: "task.status_changed", from: "agent_running", to: "in_progress" },
+          action: { type: "task.status_changed", from: task.status, to: "in_progress" },
           tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
         });
         updatedTaskIds.push(task._id);
