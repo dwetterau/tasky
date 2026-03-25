@@ -158,6 +158,8 @@ function TaskCard({
     }
   }, [task.content]);
 
+  const taskAgeDays = Math.floor((Date.now() - task._creationTime) / 86_400_000);
+
   const {
     attributes,
     listeners,
@@ -304,7 +306,7 @@ function TaskCard({
           )}
         </div>
 
-        {(task.dueDate || (kanbanMode === "status" && task.priority !== "triage") || (kanbanMode === "priority" && task.status !== "not_started")) && (
+        {(task.dueDate || taskAgeDays >= 7 || (kanbanMode === "status" && task.priority !== "triage") || (kanbanMode === "priority" && task.status !== "not_started")) && (
           <div className="flex items-center gap-3 mt-3 text-xs text-(--muted)">
             {task.dueDate && (
               <span className="flex items-center gap-1">
@@ -314,7 +316,17 @@ function TaskCard({
                 {formatDueDateForViewer(task.dueDate)}
               </span>
             )}
-            {/* In status mode, show priority badge. In priority mode, show status badge */}
+            {taskAgeDays >= 7 && (
+              <span
+                className="flex items-center gap-1"
+                style={{ color: taskAgeDays >= 21 ? "#f97316" : taskAgeDays >= 14 ? "#eab308" : "#9ca3af" }}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {taskAgeDays}d
+              </span>
+            )}
             {kanbanMode === "status" && task.priority !== "triage" && (
               <span
                 className="px-1.5 py-0.5 rounded text-xs font-medium"
