@@ -174,6 +174,15 @@ export function MarkdownEditor({
         <Separator />
 
         <ToolbarButton
+          active={editor.isActive("heading", { level: 1 })}
+          onClick={() =>
+            editor.chain().focus().toggleHeading({ level: 1 }).run()
+          }
+          title="Heading 1"
+        >
+          <IconH1 />
+        </ToolbarButton>
+        <ToolbarButton
           active={editor.isActive("heading", { level: 2 })}
           onClick={() =>
             editor.chain().focus().toggleHeading({ level: 2 }).run()
@@ -306,6 +315,17 @@ function IconCode() {
     <svg {...iconProps}>
       <polyline points="16 18 22 12 16 6" />
       <polyline points="8 6 2 12 8 18" />
+    </svg>
+  );
+}
+
+function IconH1() {
+  return (
+    <svg {...iconProps} strokeWidth={1.75}>
+      <path d="M4 12h8" />
+      <path d="M4 18V6" />
+      <path d="M12 18V6" />
+      <path d="M18 18V8l-2 2" />
     </svg>
   );
 }
