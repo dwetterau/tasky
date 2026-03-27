@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
@@ -28,6 +28,7 @@ export function NoteModal({
 }) {
   const [content, setContent] = useState("");
   const [tagIds, setTagIds] = useState<Id<"tags">[]>(initialTagId ? [initialTagId] : []);
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   const create = useTrackedMutation(api.notes.create).withOptimisticUpdate(
     (localStore, args) => {
@@ -109,8 +110,10 @@ export function NoteModal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-default"
+      onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
+      onClick={(e) => { if (e.target === mouseDownTargetRef.current) onClose(); }}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
