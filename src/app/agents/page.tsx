@@ -487,11 +487,6 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
     void fetchCursorAgents();
   };
 
-  const linkedTaskIds = useMemo(
-    () => new Set((linkedAgents ?? []).filter((a) => a.task).map((a) => a.taskId)),
-    [linkedAgents]
-  );
-
   const totalCount = linkedAgents === undefined ? null : filteredItems.length;
 
   return (
@@ -656,7 +651,6 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
         onSelect={(taskId) => void handleLinkExistingTask(taskId)}
         tagId={selectedTagId}
         noTag={selectedNoTag || undefined}
-        excludeTaskIds={linkedTaskIds}
       />
 
       {editingTask && (
