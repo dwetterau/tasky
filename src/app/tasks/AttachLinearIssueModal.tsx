@@ -1,0 +1,153 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Id } from "../../../convex/_generated/dataModel";
+import { LINEAR_ICON_PATH, LINEAR_ICON_VIEWBOX } from "./constants";
+import { getLinearIssueAttachmentErrorMessage } from "./attachmentErrors";
+
+export function AttachLinearIssueModal({
+  isOpen,
+  taskId,
+  onClose,
+  onAttach,
+}: {
+  isOpen: boolean;
+  taskId: Id<"tasks"> | null;
+  onClose: () => void;
+  onAttach: (args: { taskId: Id<"tasks">; url: string }) => Promise<void> | void;
+}) {
+  const [url, setUrl] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
+
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && isOpen) {
+        setUrl("");
+        setSubmitError(null);
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timeoutId = window.setTimeout(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus();
+      input.select();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!submitError) return;
+    const timeoutId = window.setTimeout(() => setSubmitError(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [submitError]);
+
+  if (!isOpen || !taskId) return null;
+
+  const handleClose = () => {
+    setUrl("");
+    setSubmitError(null);
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  const canSubmit = Boolean(url.trim());
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onAttach({
+        taskId,
+        url: url.trim(),
+      });
+      handleClose();
+    } catch (error) {
+      setSubmitError(getLinearIssueAttachmentErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onMouseDown={(e) => {
+        mouseDownTargetRef.current = e.target;
+      }}
+      onClick={(e) => {
+        if (e.target === mouseDownTargetRef.current) handleClose();
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className="relative bg-(--card-bg) border border-(--card-border) rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-full bg-(--accent)/10 flex items-center justify-center">
+            <svg className="w-5 h-5 text-accent" viewBox={LINEAR_ICON_VIEWBOX} fill="currentColor">
+              <path d={LINEAR_ICON_PATH} />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold">Attach Linear Issue</h3>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-(--muted) mb-1">Linear Issue URL</label>
+          <input
+            ref={inputRef}
+            type="url"
+            value={url}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setSubmitError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleSubmit();
+              }
+            }}
+            placeholder="https://linear.app/team/issue/ENG-123/fix-bug"
+            disabled={isSubmitting}
+            className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+          />
+        </div>
+        {(submitError || url.trim()) && (
+          <p className={`mt-3 text-xs ${submitError ? "text-red-400" : "text-(--muted)"}`}>
+            {submitError ?? "Enter a Linear issue URL like linear.app/team/issue/ENG-123."}
+          </p>
+        )}
+
+        <div className="flex items-center justify-end gap-3 pt-5">
+          <button
+            onClick={handleClose}
+            disabled={isSubmitting}
+            className="px-4 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit || isSubmitting}
+            className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? "Attaching..." : "Attach Linear"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

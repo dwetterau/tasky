@@ -2,6 +2,8 @@ export const AGENT_ALREADY_ATTACHED_TO_TASK_ERROR = "Agent is already linked to 
 export const AGENT_ALREADY_LINKED_ERROR = "Agent external ID already exists on another task";
 export const PULL_REQUEST_ALREADY_ATTACHED_TO_TASK_ERROR = "Pull request is already linked to this task";
 export const PULL_REQUEST_ALREADY_LINKED_ERROR = "Pull request is already linked to another task";
+export const LINEAR_ISSUE_ALREADY_ATTACHED_TO_TASK_ERROR = "Linear issue is already linked to this task";
+export const LINEAR_ISSUE_ALREADY_LINKED_ERROR = "Linear issue is already linked to another task";
 
 function getErrorMessage(error: unknown): string | null {
   if (error instanceof Error && error.message.trim()) {
@@ -44,6 +46,27 @@ export function getPullRequestAttachmentErrorMessage(error: unknown): string {
     message.includes("URL must match github.com/<owner>/<repo>/pull/<number>")
   ) {
     return "Enter a GitHub pull request URL like github.com/owner/repo/pull/123.";
+  }
+  return message;
+}
+
+export function getLinearIssueAttachmentErrorMessage(error: unknown): string {
+  const message = getErrorMessage(error);
+  if (!message) {
+    return "Couldn't attach this Linear issue. Try again.";
+  }
+  if (message.includes(LINEAR_ISSUE_ALREADY_ATTACHED_TO_TASK_ERROR)) {
+    return "This Linear issue is already linked to this task.";
+  }
+  if (message.includes(LINEAR_ISSUE_ALREADY_LINKED_ERROR)) {
+    return "This Linear issue is already linked to another task.";
+  }
+  if (
+    message.includes("Invalid Linear issue URL") ||
+    message.includes("Only linear.app issue URLs are supported") ||
+    message.includes("URL must match linear.app/<workspace>/issue/<identifier>")
+  ) {
+    return "Enter a Linear issue URL like linear.app/team/issue/ENG-123.";
   }
   return message;
 }

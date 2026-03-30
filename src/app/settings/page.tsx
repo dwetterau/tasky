@@ -33,10 +33,14 @@ function SettingsContent() {
 }`;
   const keys = useQuery(api.apiKeys.list, {});
   const [name, setName] = useState("");
-  const [type, setType] = useState<"github" | "cursor_agent_sdk">("github");
+  const [type, setType] = useState<"github" | "linear" | "cursor_agent_sdk">("github");
   const [value, setValue] = useState("");
   const namePlaceholder =
-    type === "github" ? "Production GitHub token" : "Production Cursor Agent SDK key";
+    type === "github"
+      ? "Production GitHub token"
+      : type === "linear"
+        ? "Production Linear API key"
+        : "Production Cursor Agent SDK key";
 
   const create = useTrackedMutation(api.apiKeys.create).withOptimisticUpdate((localStore, args) => {
     const current = localStore.getQuery(api.apiKeys.list, {});
@@ -103,10 +107,11 @@ function SettingsContent() {
               <label className="block text-xs font-medium text-(--muted) mb-1">Type</label>
               <select
                 value={type}
-                onChange={(e) => setType(e.target.value as "github" | "cursor_agent_sdk")}
+                onChange={(e) => setType(e.target.value as "github" | "linear" | "cursor_agent_sdk")}
                 className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
               >
                 <option value="github">GitHub</option>
+                <option value="linear">Linear</option>
                 <option value="cursor_agent_sdk">Cursor Agent SDK</option>
               </select>
             </div>
@@ -122,8 +127,21 @@ function SettingsContent() {
             />
             {type === "github" ? (
               <p className="mt-2 text-xs text-(--muted)">
-                Tip: You can use your GitHub CLI token. Run "<code>gh auth token</code>", then paste
-                the output here.
+                Tip: You can use your GitHub CLI token. Run <code>gh auth token</code>, then paste the
+                output here.
+              </p>
+            ) : type === "linear" ? (
+              <p className="mt-2 text-xs text-(--muted)">
+                Tip: Create a Personal API Key in{" "}
+                <a
+                  href="https://linear.app/settings/account/security"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-accent hover:underline"
+                >
+                  Linear security settings
+                </a>
+                .
               </p>
             ) : type === "cursor_agent_sdk" ? (
               <p className="mt-2 text-xs text-(--muted)">

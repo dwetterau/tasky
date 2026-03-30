@@ -353,6 +353,7 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
         lastSyncedAt: a.lastSyncedAt,
       })) as AgentAttachment[],
       pullRequests: [] as PullRequestAttachment[],
+      linearIssues: [],
     };
   }, [editingTaskId, linkedAgents]);
 
@@ -380,12 +381,14 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
     externalId: string;
     tagIds: Id<"tags">[];
     priority: TaskPriority;
+    linearIssueUrl?: string;
   }) => {
     const result = await createTask({
       content: "",
       tagIds: args.tagIds.length > 0 ? args.tagIds : undefined,
       priority: args.priority,
       agentExternalIds: [args.externalId],
+      linearIssueUrls: args.linearIssueUrl ? [args.linearIssueUrl] : undefined,
     });
     if (result.createdAgents.length > 0) {
       try {
@@ -406,6 +409,7 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
     prompt: string;
     tagIds: Id<"tags">[];
     priority: TaskPriority;
+    linearIssueUrl?: string;
   }) => {
     const launchedAgent = await launchAgent({
       repository: args.repository,
@@ -417,6 +421,7 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
       tagIds: args.tagIds.length > 0 ? args.tagIds : undefined,
       priority: args.priority,
       agentExternalIds: [launchedAgent.externalId],
+      linearIssueUrls: args.linearIssueUrl ? [args.linearIssueUrl] : undefined,
     });
     if (result.createdAgents.length > 0) {
       try {

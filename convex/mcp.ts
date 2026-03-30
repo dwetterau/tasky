@@ -87,6 +87,55 @@ type ParsedTaskMutationArgs = {
   removeAgentById?: Id<"agents">;
   addPullRequestByUrl?: string;
   removePullRequestByUrl?: string;
+  addLinearIssueByUrl?: string;
+  removeLinearIssueByUrl?: string;
+};
+
+type MappedLinearIssueResult = {
+  id: Id<"linearIssues">;
+  url: string;
+  identifier: string;
+};
+
+type UpdateTaskFromMcpResult = {
+  taskId: Id<"tasks">;
+  updatedFields: {
+    content: boolean;
+    status: boolean;
+    priority: boolean;
+    dueDate: boolean;
+  };
+  addedAgent?: {
+    id: Id<"agents">;
+    externalId: string;
+  };
+  removedAgent?: {
+    id: Id<"agents">;
+    externalId: string;
+  };
+  addedPullRequest?: {
+    id: Id<"pullRequests">;
+    url: string;
+  };
+  removedPullRequest?: {
+    id: Id<"pullRequests">;
+    url: string;
+  };
+  addedLinearIssue?: MappedLinearIssueResult;
+  removedLinearIssue?: MappedLinearIssueResult;
+};
+
+type CreateTaskFromMcpResult = {
+  taskId: Id<"tasks">;
+  addedAgent?: {
+    id: Id<"agents">;
+    externalId: string;
+  };
+  addedPullRequest?: {
+    id: Id<"pullRequests">;
+    url: string;
+  };
+  addedLinearIssue?: MappedLinearIssueResult;
 };
 
 function parseTaskStatus(input: unknown): TaskStatus | undefined {
@@ -137,13 +186,22 @@ function parseTaskMutationArgs(
     return { error: mcpError(rpcId, -32602, "Invalid arguments") };
   }
 
-  const allowedKeys = new Set(["content", "status", "priority", "dueDate", "addAgent", "addPullRequestByUrl"]);
+  const allowedKeys = new Set([
+    "content",
+    "status",
+    "priority",
+    "dueDate",
+    "addAgent",
+    "addPullRequestByUrl",
+    "addLinearIssueByUrl",
+  ]);
   if (options.requireTaskId) {
     allowedKeys.add("taskId");
   }
   if (options.allowRemoveFields) {
     allowedKeys.add("removeAgentById");
     allowedKeys.add("removePullRequestByUrl");
+    allowedKeys.add("removeLinearIssueByUrl");
   }
   for (const key of Object.keys((rawArgs ?? {}) as Record<string, unknown>)) {
     if (!allowedKeys.has(key)) {
@@ -161,6 +219,8 @@ function parseTaskMutationArgs(
     removeAgentById?: unknown;
     addPullRequestByUrl?: unknown;
     removePullRequestByUrl?: unknown;
+    addLinearIssueByUrl?: unknown;
+    removeLinearIssueByUrl?: unknown;
   };
 
   const taskId = typeof args.taskId === "string" ? (args.taskId as Id<"tasks">) : undefined;
@@ -209,12 +269,18 @@ function parseTaskMutationArgs(
   if (args.addPullRequestByUrl !== undefined && typeof args.addPullRequestByUrl !== "string") {
     return { error: mcpError(rpcId, -32602, "addPullRequestByUrl must be a string") };
   }
+  if (args.addLinearIssueByUrl !== undefined && typeof args.addLinearIssueByUrl !== "string") {
+    return { error: mcpError(rpcId, -32602, "addLinearIssueByUrl must be a string") };
+  }
   if (options.allowRemoveFields) {
     if (args.removeAgentById !== undefined && typeof args.removeAgentById !== "string") {
       return { error: mcpError(rpcId, -32602, "removeAgentById must be a string") };
     }
     if (args.removePullRequestByUrl !== undefined && typeof args.removePullRequestByUrl !== "string") {
       return { error: mcpError(rpcId, -32602, "removePullRequestByUrl must be a string") };
+    }
+    if (args.removeLinearIssueByUrl !== undefined && typeof args.removeLinearIssueByUrl !== "string") {
+      return { error: mcpError(rpcId, -32602, "removeLinearIssueByUrl must be a string") };
     }
   }
 
@@ -229,6 +295,8 @@ function parseTaskMutationArgs(
       removeAgentById: args.removeAgentById as Id<"agents"> | undefined,
       addPullRequestByUrl: args.addPullRequestByUrl as string | undefined,
       removePullRequestByUrl: args.removePullRequestByUrl as string | undefined,
+      addLinearIssueByUrl: args.addLinearIssueByUrl as string | undefined,
+      removeLinearIssueByUrl: args.removeLinearIssueByUrl as string | undefined,
     },
   };
 }
@@ -302,7 +370,10 @@ async function handleUpdateTaskTool(
     removeAgentById?: Id<"agents">;
     addPullRequestByUrl?: string;
     removePullRequestByUrl?: string;
-  }) => Promise<unknown>,
+    addLinearIssueByUrl?: string;
+    removeLinearIssueByUrl?: string;
+  }) => Promise<UpdateTaskFromMcpResult>,
+  syncLinearIssueAfterAttach: (args: { userId: string; linearIssue: MappedLinearIssueResult }) => Promise<void>,
   rpcId: unknown,
   sessionUserId: string,
   parsedScopes: ParsedScopes,
@@ -329,7 +400,9 @@ async function handleUpdateTaskTool(
     parsed.addAgent !== undefined ||
     parsed.removeAgentById !== undefined ||
     parsed.addPullRequestByUrl !== undefined ||
-    parsed.removePullRequestByUrl !== undefined;
+    parsed.removePullRequestByUrl !== undefined ||
+    parsed.addLinearIssueByUrl !== undefined ||
+    parsed.removeLinearIssueByUrl !== undefined;
   if (!hasAnyUpdate) {
     return mcpError(
       rpcId,
@@ -351,7 +424,15 @@ async function handleUpdateTaskTool(
       removeAgentById: parsed.removeAgentById,
       addPullRequestByUrl: parsed.addPullRequestByUrl,
       removePullRequestByUrl: parsed.removePullRequestByUrl,
+      addLinearIssueByUrl: parsed.addLinearIssueByUrl,
+      removeLinearIssueByUrl: parsed.removeLinearIssueByUrl,
     });
+    if (result.addedLinearIssue) {
+      await syncLinearIssueAfterAttach({
+        userId: sessionUserId,
+        linearIssue: result.addedLinearIssue,
+      });
+    }
     return mcpToolResult(rpcId, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Tool execution failed";
@@ -369,7 +450,9 @@ async function handleCreateTaskTool(
     dueDate?: string | null;
     addAgent?: string;
     addPullRequestByUrl?: string;
-  }) => Promise<unknown>,
+    addLinearIssueByUrl?: string;
+  }) => Promise<CreateTaskFromMcpResult>,
+  syncLinearIssueAfterAttach: (args: { userId: string; linearIssue: MappedLinearIssueResult }) => Promise<void>,
   rpcId: unknown,
   sessionUserId: string,
   parsedScopes: ParsedScopes,
@@ -397,7 +480,14 @@ async function handleCreateTaskTool(
       dueDate: parsed.dueDate,
       addAgent: parsed.addAgent,
       addPullRequestByUrl: parsed.addPullRequestByUrl,
+      addLinearIssueByUrl: parsed.addLinearIssueByUrl,
     });
+    if (result.addedLinearIssue) {
+      await syncLinearIssueAfterAttach({
+        userId: sessionUserId,
+        linearIssue: result.addedLinearIssue,
+      });
+    }
     return mcpToolResult(rpcId, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Tool execution failed";
@@ -588,6 +678,7 @@ function getToolsList() {
           },
           addAgent: { type: "string" },
           addPullRequestByUrl: { type: "string" },
+          addLinearIssueByUrl: { type: "string" },
         },
       },
     },
@@ -670,6 +761,8 @@ function getToolsList() {
           removeAgentById: { type: "string" },
           addPullRequestByUrl: { type: "string" },
           removePullRequestByUrl: { type: "string" },
+          addLinearIssueByUrl: { type: "string" },
+          removeLinearIssueByUrl: { type: "string" },
         },
       },
     },
@@ -762,8 +855,24 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           );
         }
         if (toolName === "createTask") {
+          const syncLinearIssueAfterAttach = async (args: {
+            userId: string;
+            linearIssue: MappedLinearIssueResult;
+          }) => {
+            await ctx.runAction(internal.linearIssues.syncLinearIssuesBatchInternal, {
+              userId: args.userId,
+              items: [
+                {
+                  linearIssueId: args.linearIssue.id,
+                  url: args.linearIssue.url,
+                  identifier: args.linearIssue.identifier,
+                },
+              ],
+            });
+          };
           return handleCreateTaskTool(
             (args) => ctx.runMutation(internal.tasks.createFromMcp, args),
+            syncLinearIssueAfterAttach,
             rpcId,
             sessionUserId,
             parsedScopes,
@@ -797,8 +906,24 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
             params.arguments
           );
         }
+        const syncLinearIssueAfterAttach = async (args: {
+          userId: string;
+          linearIssue: MappedLinearIssueResult;
+        }) => {
+          await ctx.runAction(internal.linearIssues.syncLinearIssuesBatchInternal, {
+            userId: args.userId,
+            items: [
+              {
+                linearIssueId: args.linearIssue.id,
+                url: args.linearIssue.url,
+                identifier: args.linearIssue.identifier,
+              },
+            ],
+          });
+        };
         return handleUpdateTaskTool(
           (args) => ctx.runMutation(internal.tasks.updateFromMcp, args),
+          syncLinearIssueAfterAttach,
           rpcId,
           sessionUserId,
           parsedScopes,

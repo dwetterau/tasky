@@ -20,7 +20,10 @@ import {
   PRIORITY_ORDER,
   CURSOR_ICON_VIEWBOX,
   CURSOR_ICON_PATH,
+  LINEAR_ICON_VIEWBOX,
+  LINEAR_ICON_PATH,
   getAgentStatusInfo,
+  getLinearIssueStatusInfo,
   getPullRequestStatusInfo,
   getPullRequestHref,
 } from "./constants";
@@ -28,6 +31,7 @@ import { ConfirmModal } from "../../components/ConfirmModal";
 import {
   AGENT_ALREADY_ATTACHED_TO_TASK_ERROR,
   AGENT_ALREADY_LINKED_ERROR,
+  getLinearIssueAttachmentErrorMessage,
   getAgentAttachmentErrorMessage,
   getPullRequestAttachmentErrorMessage,
 } from "./attachmentErrors";
@@ -117,10 +121,33 @@ function normalizePullRequestUrl(input: string): string {
   return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
+function normalizeLinearIssueUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return trimmed;
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function getLinearIssueIdentifierLabel(input: string): string {
+  const normalized = normalizeLinearIssueUrl(input);
+  try {
+    const parsed = new URL(normalized);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    const identifier = parts[2]?.toUpperCase();
+    return identifier || normalized;
+  } catch {
+    return normalized;
+  }
+}
+
 const GITHUB_PR_URL_PATTERN = /(?:https?:\/\/)?(?:www\.)?github\.com\/[^/]+\/[^/]+\/pull\/\d+/i;
+const LINEAR_ISSUE_URL_PATTERN = /(?:https?:\/\/)?(?:www\.)?linear\.app\/[^/]+\/issue\/[A-Z0-9]+-\d+/i;
 
 function looksLikeGitHubPrUrl(input: string): boolean {
   return GITHUB_PR_URL_PATTERN.test(input.trim());
+}
+
+function looksLikeLinearIssueUrl(input: string): boolean {
+  return LINEAR_ISSUE_URL_PATTERN.test(input.trim());
 }
 
 export function TaskModal({
@@ -138,6 +165,8 @@ export function TaskModal({
   onRemoveAgent,
   onAttachPr,
   onRemovePr,
+  onAttachLinearIssue,
+  onRemoveLinearIssue,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -159,6 +188,8 @@ export function TaskModal({
   onRemoveAgent?: (id: Id<"agents">) => void;
   onAttachPr?: (args: { taskId: Id<"tasks">; url: string }) => Promise<void> | void;
   onRemovePr?: (id: Id<"pullRequests">) => void;
+  onAttachLinearIssue?: (args: { taskId: Id<"tasks">; url: string }) => Promise<void> | void;
+  onRemoveLinearIssue?: (id: Id<"linearIssues">) => void;
 }) {
   const isEditing = !!task;
 
@@ -170,13 +201,17 @@ export function TaskModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
   const [prInput, setPrInput] = useState("");
+  const [linearIssueInput, setLinearIssueInput] = useState("");
   const [agentInput, setAgentInput] = useState("");
   const [agentAttachError, setAgentAttachError] = useState<string | null>(null);
   const [prAttachError, setPrAttachError] = useState<string | null>(null);
+  const [linearIssueAttachError, setLinearIssueAttachError] = useState<string | null>(null);
   const [isAttachingAgent, setIsAttachingAgent] = useState(false);
   const [isAttachingPr, setIsAttachingPr] = useState(false);
+  const [isAttachingLinearIssue, setIsAttachingLinearIssue] = useState(false);
   const [pendingAgentExternalIds, setPendingAgentExternalIds] = useState<string[]>([]);
   const [pendingPullRequestUrls, setPendingPullRequestUrls] = useState<string[]>([]);
+  const [pendingLinearIssueUrls, setPendingLinearIssueUrls] = useState<string[]>([]);
   const [showStartAgentModal, setShowStartAgentModal] = useState(false);
   const [isLaunchingStartedAgent, setIsLaunchingStartedAgent] = useState(false);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
@@ -217,6 +252,16 @@ export function TaskModal({
           userId: "",
           taskId: "" as Id<"tasks">,
           url: normalizePullRequestUrl(url),
+          normalized: null,
+          updatedAt: Date.now(),
+        })),
+        linearIssues: (args.linearIssueUrls ?? []).map((url) => ({
+          _id: crypto.randomUUID() as Id<"linearIssues">,
+          _creationTime: Number.MAX_SAFE_INTEGER,
+          userId: "",
+          taskId: "" as Id<"tasks">,
+          url: normalizeLinearIssueUrl(url),
+          identifier: getLinearIssueIdentifierLabel(url),
           normalized: null,
           updatedAt: Date.now(),
         })),
@@ -345,13 +390,17 @@ export function TaskModal({
       setShowDeleteConfirm(false);
       setShowUnsavedChanges(false);
       setPrInput("");
+      setLinearIssueInput("");
       setAgentInput("");
       setAgentAttachError(null);
       setPrAttachError(null);
+      setLinearIssueAttachError(null);
       setIsAttachingAgent(false);
       setIsAttachingPr(false);
+      setIsAttachingLinearIssue(false);
       setPendingAgentExternalIds(initialPendingAgentIds ?? []);
       setPendingPullRequestUrls([]);
+      setPendingLinearIssueUrls([]);
       setShowStartAgentModal(false);
       setIsLaunchingStartedAgent(false);
     }, 0);
@@ -446,6 +495,8 @@ export function TaskModal({
         pendingAgentExternalIds.length > 0 ? pendingAgentExternalIds : undefined;
       const pullRequestUrls =
         pendingPullRequestUrls.length > 0 ? pendingPullRequestUrls : undefined;
+      const linearIssueUrls =
+        pendingLinearIssueUrls.length > 0 ? pendingLinearIssueUrls : undefined;
 
       // Close immediately so optimistic create can continue in background.
       onClose();
@@ -459,6 +510,7 @@ export function TaskModal({
           createdFromCaptureId,
           agentExternalIds,
           pullRequestUrls,
+          linearIssueUrls,
         });
         await onTaskCreated?.(result);
       })();
@@ -486,6 +538,13 @@ export function TaskModal({
     !isEditing &&
     normalizedPendingPrInput.length > 0 &&
     !pendingPullRequestUrls.includes(normalizedPendingPrInput);
+  const normalizedPendingLinearIssueInput = linearIssueInput.trim()
+    ? normalizeLinearIssueUrl(linearIssueInput)
+    : "";
+  const canAddPendingLinearIssue =
+    !isEditing &&
+    normalizedPendingLinearIssueInput.length > 0 &&
+    !pendingLinearIssueUrls.includes(normalizedPendingLinearIssueInput);
 
   const handleAttachAgentSubmit = async () => {
     if (!isEditing || !task || !onAttachAgent || !parsedAgentExternalId) return;
@@ -512,6 +571,20 @@ export function TaskModal({
       setPrAttachError(getPullRequestAttachmentErrorMessage(error));
     } finally {
       setIsAttachingPr(false);
+    }
+  };
+
+  const handleAttachLinearIssueSubmit = async () => {
+    if (!isEditing || !task || !onAttachLinearIssue || !linearIssueInput.trim()) return;
+    setIsAttachingLinearIssue(true);
+    setLinearIssueAttachError(null);
+    try {
+      await onAttachLinearIssue({ taskId: task._id, url: linearIssueInput.trim() });
+      setLinearIssueInput("");
+    } catch (error) {
+      setLinearIssueAttachError(getLinearIssueAttachmentErrorMessage(error));
+    } finally {
+      setIsAttachingLinearIssue(false);
     }
   };
 
@@ -562,6 +635,7 @@ export function TaskModal({
         createdFromCaptureId,
         agentExternalIds: pendingAgentExternalIds.length > 0 ? pendingAgentExternalIds : undefined,
         pullRequestUrls: pendingPullRequestUrls.length > 0 ? pendingPullRequestUrls : undefined,
+        linearIssueUrls: pendingLinearIssueUrls.length > 0 ? pendingLinearIssueUrls : undefined,
       });
 
       const attachResult = await createAgentRecord({
@@ -900,6 +974,193 @@ export function TaskModal({
                         </form>
                       </>
                     )}
+                    {((task?.linearIssues.length ?? 0) > 0 || pendingLinearIssueUrls.length > 0 || !isEditing) && (
+                      <>
+                        <div className="pt-2">
+                          <label className="block text-xs font-medium text-(--muted) mb-1.5">
+                            Linear Issues
+                          </label>
+                        </div>
+                        {task?.linearIssues.map((linearIssue) => {
+                          const label = linearIssue.identifier;
+                          const status = getLinearIssueStatusInfo(linearIssue);
+                          const title = linearIssue.title?.trim();
+                          return (
+                            <div key={linearIssue._id} className="flex items-center gap-1.5 group">
+                              <a
+                                href={getPullRequestHref(linearIssue.url)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) hover:text-foreground transition-colors flex-1 min-w-0 bg-(--card-border)"
+                                title={title ? `${label} · ${status.label} · ${title}` : `${label} · ${status.label}`}
+                              >
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: status.color }}
+                                  title={status.label}
+                                />
+                                <svg
+                                  className="w-3.5 h-3.5 shrink-0 text-(--muted)"
+                                  viewBox={LINEAR_ICON_VIEWBOX}
+                                  fill="currentColor"
+                                >
+                                  <path d={LINEAR_ICON_PATH} />
+                                </svg>
+                                <span className="truncate">{title ? `${label} · ${title}` : label}</span>
+                              </a>
+                              {onRemoveLinearIssue && (
+                                <button
+                                  type="button"
+                                  onClick={() => onRemoveLinearIssue(linearIssue._id)}
+                                  className="p-0.5 rounded text-(--muted) opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
+                                  title="Remove Linear issue"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {isEditing && onAttachLinearIssue && task && (
+                          <form
+                            className="space-y-1.5"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              void handleAttachLinearIssueSubmit();
+                            }}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={linearIssueInput}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setLinearIssueInput(value);
+                                  setLinearIssueAttachError(null);
+                                  if (looksLikeLinearIssueUrl(value) && !isAttachingLinearIssue) {
+                                    setLinearIssueInput("");
+                                    setIsAttachingLinearIssue(true);
+                                    void (async () => {
+                                      try {
+                                        await onAttachLinearIssue({ taskId: task._id, url: value.trim() });
+                                      } catch (error) {
+                                        setLinearIssueInput(value);
+                                        setLinearIssueAttachError(getLinearIssueAttachmentErrorMessage(error));
+                                      } finally {
+                                        setIsAttachingLinearIssue(false);
+                                      }
+                                    })();
+                                  }
+                                }}
+                                placeholder="linear.app/team/issue/ENG-123"
+                                disabled={isAttachingLinearIssue}
+                                className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                              />
+                              <button
+                                type="submit"
+                                disabled={!linearIssueInput.trim() || isAttachingLinearIssue}
+                                className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                                title="Add Linear issue"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                              </button>
+                            </div>
+                            {(linearIssueAttachError || linearIssueInput.trim()) && (
+                              <p className={`text-xs ${linearIssueAttachError ? "text-red-400" : "text-(--muted)"}`}>
+                                {linearIssueAttachError ??
+                                  "Enter a Linear issue URL like linear.app/team/issue/ENG-123."}
+                              </p>
+                            )}
+                          </form>
+                        )}
+                        {!isEditing && (
+                          <>
+                            {pendingLinearIssueUrls.map((url) => (
+                              <div key={url} className="flex items-center gap-1.5 group">
+                                <span
+                                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0"
+                                  style={{ backgroundColor: "var(--card-border)" }}
+                                  title={url}
+                                >
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                                    style={{ backgroundColor: "#9ca3af" }}
+                                  />
+                                  <svg
+                                    className="w-3.5 h-3.5 shrink-0 text-(--muted)"
+                                    viewBox={LINEAR_ICON_VIEWBOX}
+                                    fill="currentColor"
+                                  >
+                                    <path d={LINEAR_ICON_PATH} />
+                                  </svg>
+                                  <span className="truncate">{url}</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPendingLinearIssueUrls((current) =>
+                                      current.filter((existingUrl) => existingUrl !== url)
+                                    )
+                                  }
+                                  className="p-0.5 rounded text-(--muted) hover:text-red-400 hover:bg-red-400/10 transition-all shrink-0"
+                                  title="Remove Linear issue"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ))}
+                            <form
+                              className="flex items-center gap-1.5"
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                if (
+                                  !normalizedPendingLinearIssueInput ||
+                                  pendingLinearIssueUrls.includes(normalizedPendingLinearIssueInput)
+                                ) {
+                                  return;
+                                }
+                                setPendingLinearIssueUrls((current) => [...current, normalizedPendingLinearIssueInput]);
+                                setLinearIssueInput("");
+                              }}
+                            >
+                              <input
+                                type="text"
+                                value={linearIssueInput}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setLinearIssueInput(value);
+                                  if (looksLikeLinearIssueUrl(value)) {
+                                    const normalized = normalizeLinearIssueUrl(value);
+                                    if (normalized && !pendingLinearIssueUrls.includes(normalized)) {
+                                      setPendingLinearIssueUrls((current) => [...current, normalized]);
+                                      setLinearIssueInput("");
+                                    }
+                                  }
+                                }}
+                                placeholder="linear.app/team/issue/ENG-123"
+                                className="flex-1 min-w-0 h-7 px-2 bg-background border border-(--card-border) rounded-md focus:outline-none focus:border-accent transition-colors text-xs"
+                              />
+                              <button
+                                type="submit"
+                                disabled={!canAddPendingLinearIssue}
+                                className="p-1 rounded-md text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                                title="Add Linear issue"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                              </button>
+                            </form>
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -909,7 +1170,7 @@ export function TaskModal({
                   <div className="space-y-1.5">
                     {(isEditing ? task!.pullRequests : []).map((pr) => {
                       const label = pr.normalized
-                        ? `${pr.normalized.owner}/${pr.normalized.repo}#${pr.normalized.number}`
+                        ? `#${pr.normalized.number} ${pr.normalized.owner}/${pr.normalized.repo}`
                         : pr.url;
                       const status = getPullRequestStatusInfo(pr);
                       return (

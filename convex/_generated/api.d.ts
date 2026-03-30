@@ -16,6 +16,7 @@ import type * as cursorAgentUrl from "../cursorAgentUrl.js";
 import type * as events from "../events.js";
 import type * as githubRepos from "../githubRepos.js";
 import type * as http from "../http.js";
+import type * as linearIssues from "../linearIssues.js";
 import type * as mcp from "../mcp.js";
 import type * as mcpScopes from "../mcpScopes.js";
 import type * as migrations from "../migrations.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   events: typeof events;
   githubRepos: typeof githubRepos;
   http: typeof http;
+  linearIssues: typeof linearIssues;
   mcp: typeof mcp;
   mcpScopes: typeof mcpScopes;
   migrations: typeof migrations;
