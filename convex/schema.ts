@@ -120,6 +120,7 @@ export default defineSchema({
     userId: v.string(),
     content: v.string(), // Task description (Markdown)
     tagIds: v.array(v.id("tags")),
+    hasTags: v.optional(v.boolean()),
     status: taskStatus,
     priority: taskPriority,
     dueDate: v.optional(v.string()), // ISO date string (YYYY-MM-DD)
@@ -128,11 +129,20 @@ export default defineSchema({
     statusUpdatedAt: v.optional(v.number()), // Unix timestamp (ms) of last status change
   })
     .index("by_user", ["userId"])
+    .index("by_user_has_tags", ["userId", "hasTags"])
     .index("by_user_status", ["userId", "status"])
     .searchIndex("search_content", {
       searchField: "content",
       filterFields: ["userId"],
     }),
+
+  taskTags: defineTable({
+    userId: v.string(),
+    taskId: v.id("tasks"),
+    tagId: v.id("tags"),
+  })
+    .index("by_user_task", ["userId", "taskId"])
+    .index("by_user_tag", ["userId", "tagId"]),
 
   agents: defineTable({
     userId: v.string(),
