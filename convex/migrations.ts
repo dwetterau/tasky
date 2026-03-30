@@ -4,6 +4,17 @@ import { DataModel } from "./_generated/dataModel";
 
 const migrations = new Migrations<DataModel>(components.migrations);
 
+export const backfillTaskStatusUpdatedAt = migrations.define({
+  table: "tasks",
+  batchSize: 50,
+  migrateOne: (ctx, task) => {
+    const nextStatusUpdatedAt = task.completedAt ?? task._creationTime;
+    if (task.statusUpdatedAt === undefined) {
+      return { statusUpdatedAt: nextStatusUpdatedAt };
+    }
+  },
+});
+
 export const backfillTaskTagLinksAndHasTags = migrations.define({
   table: "tasks",
   batchSize: 50,
@@ -59,5 +70,6 @@ export const run = migrations.runner();
 // Run all migrations in series
 // Usage: npx convex run migrations:runAll
 export const runAll = migrations.runner([
+  internal.migrations.backfillTaskStatusUpdatedAt,
   internal.migrations.backfillTaskTagLinksAndHasTags,
 ]);

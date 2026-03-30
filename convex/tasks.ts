@@ -229,113 +229,34 @@ async function hydrateTasksWithScopedRelations<T extends { _id: Id<"tasks">; tag
   );
 }
 
-async function hydrateTasksWithRelations<T extends { _id: Id<"tasks">; tagIds: Id<"tags">[] }>(
-  ctx: QueryCtx,
-  userId: string,
-  tasks: T[]
-): Promise<
-  Array<
-    T & {
-      tags: Doc<"tags">[];
-      agents: Doc<"agents">[];
-      pullRequests: Array<
-        Doc<"pullRequests"> & {
-          normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
-        }
-      >;
-      linearIssues: Array<
-        Doc<"linearIssues"> & {
-          normalized: ReturnType<typeof parseLinearIssueUrl> | null;
-        }
-      >;
-    }
-  >
-> {
-  const [allAgents, allPullRequests, allLinearIssues] = await Promise.all([
-    ctx.db.query("agents").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
-    ctx.db.query("pullRequests").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
-    ctx.db.query("linearIssues").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
-  ]);
-
-  const agentsByTaskId = new Map<Id<"tasks">, typeof allAgents>();
-  for (const agent of allAgents) {
-    const listForTask = agentsByTaskId.get(agent.taskId);
-    if (listForTask) {
-      listForTask.push(agent);
-    } else {
-      agentsByTaskId.set(agent.taskId, [agent]);
-    }
-  }
-
-  const pullRequestsByTaskId = new Map<
-    Id<"tasks">,
-    Array<
-      (typeof allPullRequests)[number] & {
-        normalized: {
-          url: string;
-          domain: string;
-          owner: string;
-          repo: string;
-          number: number;
-        } | null;
-      }
-    >
-  >();
-  for (const pullRequest of allPullRequests) {
-    const next = normalizePullRequestForTask(pullRequest);
-    const listForTask = pullRequestsByTaskId.get(pullRequest.taskId);
-    if (listForTask) {
-      listForTask.push(next);
-    } else {
-      pullRequestsByTaskId.set(pullRequest.taskId, [next]);
-    }
-  }
-
-  const linearIssuesByTaskId = new Map<
-    Id<"tasks">,
-    Array<
-      (typeof allLinearIssues)[number] & {
-        normalized: ReturnType<typeof parseLinearIssueUrl> | null;
-      }
-    >
-  >();
-  for (const linearIssue of allLinearIssues) {
-    const next = normalizeLinearIssueForTask(linearIssue);
-    const listForTask = linearIssuesByTaskId.get(linearIssue.taskId);
-    if (listForTask) {
-      listForTask.push(next);
-    } else {
-      linearIssuesByTaskId.set(linearIssue.taskId, [next]);
-    }
-  }
-
-  return await Promise.all(
-    tasks.map(async (task) => {
-      const tags = await Promise.all(task.tagIds.map((tagId) => ctx.db.get(tagId)));
-      return {
-        ...task,
-        tags: tags.filter((t) => t !== null),
-        agents: agentsByTaskId.get(task._id) ?? [],
-        pullRequests: pullRequestsByTaskId.get(task._id) ?? [],
-        linearIssues: linearIssuesByTaskId.get(task._id) ?? [],
-      };
-    })
-  );
-}
-
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    closedAfter: v.number(),
+  },
+  handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       return [];
     }
-    const tasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
 
-    return await hydrateTasksWithRelations(ctx, userId, filterStaleClosedTasks(tasks));
+    const [openTaskGroups, recentClosedTasks] = await Promise.all([
+      Promise.all(
+        openTaskStatuses.map((status) =>
+          ctx.db
+            .query("tasks")
+            .withIndex("by_user_status", (q) => q.eq("userId", userId).eq("status", status))
+            .collect()
+        )
+      ),
+      ctx.db
+        .query("tasks")
+        .withIndex("by_user_status_status_updated_at", (q) =>
+          q.eq("userId", userId).eq("status", "closed").gte("statusUpdatedAt", args.closedAfter)
+        )
+        .collect(),
+    ]);
+
+    return await hydrateTasksWithScopedRelations(ctx, userId, [...openTaskGroups.flat(), ...recentClosedTasks]);
   },
 });
 

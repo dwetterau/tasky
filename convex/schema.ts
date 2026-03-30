@@ -131,6 +131,7 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_has_tags", ["userId", "hasTags"])
     .index("by_user_status", ["userId", "status"])
+    .index("by_user_status_status_updated_at", ["userId", "status", "statusUpdatedAt"])
     .searchIndex("search_content", {
       searchField: "content",
       filterFields: ["userId"],

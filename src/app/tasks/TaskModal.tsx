@@ -13,7 +13,9 @@ import { MarkdownEditor } from "../../components/MarkdownEditor";
 import {
   type TaskStatus,
   type TaskPriority,
+  type TaskListArgs,
   type TaskForEdit,
+  createTaskListArgs,
   STATUS_CONFIG,
   STATUS_ORDER,
   PRIORITY_CONFIG,
@@ -160,6 +162,7 @@ export function TaskModal({
   initialPendingAgentIds,
   createdFromCaptureId,
   activeSearchArgs,
+  listArgs,
   onTaskCreated,
   onAttachAgent,
   onRemoveAgent,
@@ -177,6 +180,7 @@ export function TaskModal({
   initialPendingAgentIds?: string[];
   createdFromCaptureId?: Id<"captures">;
   activeSearchArgs?: TaskSearchArgs;
+  listArgs?: TaskListArgs;
   onTaskCreated?: (result: {
     taskId: Id<"tasks">;
     createdAgents: Array<{
@@ -192,6 +196,8 @@ export function TaskModal({
   onRemoveLinearIssue?: (id: Id<"linearIssues">) => void;
 }) {
   const isEditing = !!task;
+  const [defaultListArgs] = useState<TaskListArgs>(() => createTaskListArgs());
+  const effectiveListArgs = listArgs ?? defaultListArgs;
 
   const [content, setContent] = useState("");
   const [tagIds, setTagIds] = useState<Id<"tags">[]>([]);
@@ -267,9 +273,9 @@ export function TaskModal({
         })),
       };
 
-      const tasks = localStore.getQuery(api.tasks.list, {});
+      const tasks = localStore.getQuery(api.tasks.list, effectiveListArgs);
       if (tasks !== undefined) {
-        localStore.setQuery(api.tasks.list, {}, [tempTask, ...tasks]);
+        localStore.setQuery(api.tasks.list, effectiveListArgs, [tempTask, ...tasks]);
       }
 
       if (activeSearchArgs) {
@@ -338,9 +344,9 @@ export function TaskModal({
         };
       };
 
-      const tasks = localStore.getQuery(api.tasks.list, {});
+      const tasks = localStore.getQuery(api.tasks.list, effectiveListArgs);
       if (tasks !== undefined) {
-        localStore.setQuery(api.tasks.list, {}, tasks.map(applyUpdate));
+        localStore.setQuery(api.tasks.list, effectiveListArgs, tasks.map(applyUpdate));
       }
 
       if (activeSearchArgs) {
@@ -354,9 +360,9 @@ export function TaskModal({
 
   const remove = useTrackedMutation(api.tasks.remove).withOptimisticUpdate(
     (localStore, args) => {
-      const tasks = localStore.getQuery(api.tasks.list, {});
+      const tasks = localStore.getQuery(api.tasks.list, effectiveListArgs);
       if (tasks !== undefined) {
-        localStore.setQuery(api.tasks.list, {}, tasks.filter((t) => t._id !== args.id));
+        localStore.setQuery(api.tasks.list, effectiveListArgs, tasks.filter((t) => t._id !== args.id));
       }
 
       if (activeSearchArgs) {

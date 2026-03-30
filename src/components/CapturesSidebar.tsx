@@ -6,6 +6,7 @@ import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { useState, useSyncExternalStore, useCallback, useRef, useEffect } from "react";
 import { Id } from "../../convex/_generated/dataModel";
 import { CaptureItem } from "./CaptureItem";
+import type { TaskListArgs } from "../app/tasks/constants";
 
 const SIDEBAR_COLLAPSED_KEY = "tasky-captures-sidebar-collapsed";
 
@@ -35,9 +36,11 @@ function useSidebarCollapsed() {
 export function CapturesSidebar({
   pageSelectedTagId,
   pageTaskSearchArgs,
+  pageTaskListArgs,
 }: {
   pageSelectedTagId?: Id<"tags"> | null;
   pageTaskSearchArgs?: { searchText?: string; tagId?: Id<"tags">; noTag?: boolean };
+  pageTaskListArgs?: TaskListArgs;
 } = {}) {
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const [isCollapsed, setCollapsed] = useSidebarCollapsed();
@@ -202,6 +205,7 @@ export function CapturesSidebar({
               includeCompleted={includeCompleted}
               pageSelectedTagId={pageSelectedTagId}
               pageTaskSearchArgs={pageTaskSearchArgs}
+              pageTaskListArgs={pageTaskListArgs}
             />
           ))
         )}

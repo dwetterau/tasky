@@ -11,6 +11,18 @@ import type { Tag } from "../../components/TagSelector";
 export type { TaskStatus, TaskPriority };
 export { taskStatusValues, taskPriorityValues };
 
+export type TaskListArgs = {
+  closedAfter: number;
+};
+
+export const TASK_CLOSED_RETENTION_MS = 32 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function createTaskListArgs(now = Date.now()): TaskListArgs {
+  const roundedDayStart = Math.floor(now / DAY_MS) * DAY_MS;
+  return { closedAfter: roundedDayStart - TASK_CLOSED_RETENTION_MS };
+}
+
 export const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   not_started: { label: "Not Started", color: "#6b7280" },
   in_progress: { label: "In Progress", color: "#3b82f6" },
