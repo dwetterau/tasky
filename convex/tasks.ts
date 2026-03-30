@@ -28,6 +28,207 @@ function filterStaleClosedTasks<
   });
 }
 
+function normalizeTaskTagIds(tagIds: Id<"tags">[] | undefined): Id<"tags">[] {
+  return Array.from(new Set(tagIds ?? []));
+}
+
+async function assertOwnedTaskTagIds(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+  tagIds: Id<"tags">[] | undefined
+): Promise<Id<"tags">[]> {
+  const normalizedTagIds = normalizeTaskTagIds(tagIds);
+  if (normalizedTagIds.length === 0) {
+    return [];
+  }
+
+  const tags = await Promise.all(normalizedTagIds.map((tagId) => ctx.db.get(tagId)));
+  const hasInvalidTag = tags.some((tag) => !tag || tag.userId !== userId);
+  if (hasInvalidTag) {
+    throw new Error("One or more tags are invalid for this user");
+  }
+
+  return normalizedTagIds;
+}
+
+async function syncTaskTagLinks(
+  ctx: MutationCtx,
+  userId: string,
+  taskId: Id<"tasks">,
+  tagIds: Id<"tags">[]
+): Promise<void> {
+  const nextTagIds = new Set(normalizeTaskTagIds(tagIds));
+  const existingLinks = await ctx.db
+    .query("taskTags")
+    .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", taskId))
+    .collect();
+
+  const seenExistingTagIds = new Set<Id<"tags">>();
+  for (const link of existingLinks) {
+    if (!nextTagIds.has(link.tagId) || seenExistingTagIds.has(link.tagId)) {
+      await ctx.db.delete(link._id);
+      continue;
+    }
+    seenExistingTagIds.add(link.tagId);
+  }
+
+  for (const tagId of nextTagIds) {
+    if (!seenExistingTagIds.has(tagId)) {
+      await ctx.db.insert("taskTags", {
+        userId,
+        taskId,
+        tagId,
+      });
+    }
+  }
+}
+
+function normalizePullRequestForTask(
+  pullRequest: Doc<"pullRequests">
+): Doc<"pullRequests"> & {
+  normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
+} {
+  let normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null = null;
+  try {
+    normalized = parseGitHubPullRequestUrl(pullRequest.url);
+  } catch {
+    normalized = null;
+  }
+
+  return { ...pullRequest, normalized };
+}
+
+function normalizeLinearIssueForTask(
+  linearIssue: Doc<"linearIssues">
+): Doc<"linearIssues"> & {
+  normalized: ReturnType<typeof parseLinearIssueUrl> | null;
+} {
+  let normalized: ReturnType<typeof parseLinearIssueUrl> | null = null;
+  try {
+    normalized = parseLinearIssueUrl(linearIssue.url);
+  } catch {
+    normalized = null;
+  }
+
+  return { ...linearIssue, normalized };
+}
+
+async function loadTaskRelations(
+  ctx: QueryCtx,
+  userId: string,
+  taskId: Id<"tasks">
+): Promise<{
+  agents: Doc<"agents">[];
+  pullRequests: Array<
+    Doc<"pullRequests"> & {
+      normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
+    }
+  >;
+  linearIssues: Array<
+    Doc<"linearIssues"> & {
+      normalized: ReturnType<typeof parseLinearIssueUrl> | null;
+    }
+  >;
+}> {
+  const [agents, pullRequests, linearIssues] = await Promise.all([
+    ctx.db.query("agents").withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", taskId)).collect(),
+    ctx.db
+      .query("pullRequests")
+      .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", taskId))
+      .collect(),
+    ctx.db
+      .query("linearIssues")
+      .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", taskId))
+      .collect(),
+  ]);
+
+  return {
+    agents,
+    pullRequests: pullRequests.map(normalizePullRequestForTask),
+    linearIssues: linearIssues.map(normalizeLinearIssueForTask),
+  };
+}
+
+async function loadTasksByIds(
+  ctx: QueryCtx,
+  userId: string,
+  taskIds: Iterable<Id<"tasks">>
+): Promise<Doc<"tasks">[]> {
+  const uniqueTaskIds = Array.from(new Set(taskIds));
+  const tasks = await Promise.all(uniqueTaskIds.map((taskId) => ctx.db.get(taskId)));
+  return tasks.filter((task): task is Doc<"tasks"> => task !== null && task.userId === userId);
+}
+
+async function getTaskIdsForTagSubtree(
+  ctx: QueryCtx,
+  userId: string,
+  rootTagId: Id<"tags">,
+  invalidErrorMessage?: string
+): Promise<Set<Id<"tasks">>> {
+  const rootTag = await ctx.db.get(rootTagId);
+  if (!rootTag || rootTag.userId !== userId) {
+    throw new Error(invalidErrorMessage ?? "Tag not found or access denied");
+  }
+
+  const matchingTagIds = new Set<Id<"tags">>([rootTagId]);
+  for (const childId of rootTag.childrenRecursive ?? []) {
+    matchingTagIds.add(childId);
+  }
+
+  const taskIds = new Set<Id<"tasks">>();
+  for (const tagId of matchingTagIds) {
+    const links = await ctx.db
+      .query("taskTags")
+      .withIndex("by_user_tag", (q) => q.eq("userId", userId).eq("tagId", tagId))
+      .collect();
+    for (const link of links) {
+      taskIds.add(link.taskId);
+    }
+  }
+
+  return taskIds;
+}
+
+async function hydrateTasksWithScopedRelations<T extends { _id: Id<"tasks">; tagIds: Id<"tags">[] }>(
+  ctx: QueryCtx,
+  userId: string,
+  tasks: T[]
+): Promise<
+  Array<
+    T & {
+      tags: Doc<"tags">[];
+      agents: Doc<"agents">[];
+      pullRequests: Array<
+        Doc<"pullRequests"> & {
+          normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
+        }
+      >;
+      linearIssues: Array<
+        Doc<"linearIssues"> & {
+          normalized: ReturnType<typeof parseLinearIssueUrl> | null;
+        }
+      >;
+    }
+  >
+> {
+  return await Promise.all(
+    tasks.map(async (task) => {
+      const [tags, relations] = await Promise.all([
+        Promise.all(task.tagIds.map((tagId) => ctx.db.get(tagId))),
+        loadTaskRelations(ctx, userId, task._id),
+      ]);
+
+      return {
+        ...task,
+        tags: tags.filter((tag): tag is Doc<"tags"> => tag !== null),
+        agents: relations.agents,
+        pullRequests: relations.pullRequests,
+        linearIssues: relations.linearIssues,
+      };
+    })
+  );
+}
+
 async function hydrateTasksWithRelations<T extends { _id: Id<"tasks">; tagIds: Id<"tags">[] }>(
   ctx: QueryCtx,
   userId: string,
@@ -81,13 +282,7 @@ async function hydrateTasksWithRelations<T extends { _id: Id<"tasks">; tagIds: I
     >
   >();
   for (const pullRequest of allPullRequests) {
-    let normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null = null;
-    try {
-      normalized = parseGitHubPullRequestUrl(pullRequest.url);
-    } catch {
-      normalized = null;
-    }
-    const next = { ...pullRequest, normalized };
+    const next = normalizePullRequestForTask(pullRequest);
     const listForTask = pullRequestsByTaskId.get(pullRequest.taskId);
     if (listForTask) {
       listForTask.push(next);
@@ -105,13 +300,7 @@ async function hydrateTasksWithRelations<T extends { _id: Id<"tasks">; tagIds: I
     >
   >();
   for (const linearIssue of allLinearIssues) {
-    let normalized: ReturnType<typeof parseLinearIssueUrl> | null = null;
-    try {
-      normalized = parseLinearIssueUrl(linearIssue.url);
-    } catch {
-      normalized = null;
-    }
-    const next = { ...linearIssue, normalized };
+    const next = normalizeLinearIssueForTask(linearIssue);
     const listForTask = linearIssuesByTaskId.get(linearIssue.taskId);
     if (listForTask) {
       listForTask.push(next);
@@ -381,11 +570,41 @@ export const listForMcp = internalQuery({
         : args.includeClosed
           ? allTaskStatuses
           : openTaskStatuses;
+    const statusSet = new Set(statuses);
 
     const allTags = await ctx.db.query("tags").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect();
     const tagNameById = new Map(allTags.map((tag) => [tag._id, tag.name]));
 
     const normalizedSearchQuery = args.searchQuery?.trim();
+    const normalizedFilterTag = args.filterTag?.trim();
+    const matchedFilterTag =
+      normalizedFilterTag ? findClosestTagByName(allTags, normalizedFilterTag) : null;
+    if (normalizedFilterTag && !matchedFilterTag) {
+      return [];
+    }
+
+    let scopedTaskIds: Set<Id<"tasks">> | null = null;
+    if (args.tagRootId) {
+      scopedTaskIds = await getTaskIdsForTagSubtree(
+        ctx,
+        args.userId,
+        args.tagRootId,
+        "Tag scope is invalid for this user"
+      );
+    }
+    if (matchedFilterTag) {
+      const filterTaskIds = await getTaskIdsForTagSubtree(
+        ctx,
+        args.userId,
+        matchedFilterTag._id,
+        "filterTag is invalid for this user"
+      );
+      scopedTaskIds =
+        scopedTaskIds === null
+          ? filterTaskIds
+          : new Set(Array.from(scopedTaskIds).filter((taskId) => filterTaskIds.has(taskId)));
+    }
+
     let tasks: Doc<"tasks">[];
     if (normalizedSearchQuery) {
       tasks = await ctx.db
@@ -394,8 +613,13 @@ export const listForMcp = internalQuery({
           q.search("content", normalizedSearchQuery).eq("userId", args.userId)
         )
         .collect();
-      const statusSet = new Set(statuses);
       tasks = tasks.filter((task) => statusSet.has(task.status));
+      if (scopedTaskIds !== null) {
+        tasks = tasks.filter((task) => scopedTaskIds.has(task._id));
+      }
+    } else if (scopedTaskIds !== null) {
+      tasks = await loadTasksByIds(ctx, args.userId, scopedTaskIds);
+      tasks = filterStaleClosedTasks(tasks.filter((task) => statusSet.has(task.status)));
     } else {
       const taskGroups = await Promise.all(
         statuses.map((status) =>
@@ -405,124 +629,31 @@ export const listForMcp = internalQuery({
             .collect()
         )
       );
-      tasks = taskGroups.flat();
+      tasks = filterStaleClosedTasks(taskGroups.flat());
     }
-    if (!normalizedSearchQuery) {
-      tasks = filterStaleClosedTasks(tasks);
-    }
+    const sortedTasks = tasks.sort((a, b) => b._creationTime - a._creationTime);
 
-    const applyTagSubtreeFilter = async (rootTagId: Id<"tags">, invalidErrorMessage: string) => {
-      const rootTag = await ctx.db.get(rootTagId);
-      if (!rootTag || rootTag.userId !== args.userId) {
-        throw new Error(invalidErrorMessage);
-      }
-
-      const matchingTagIds = new Set<Id<"tags">>([rootTagId]);
-      for (const childId of rootTag.childrenRecursive ?? []) {
-        matchingTagIds.add(childId);
-      }
-      tasks = tasks.filter((task) => task.tagIds.some((tagId) => matchingTagIds.has(tagId)));
-    };
-
-    if (args.tagRootId) {
-      await applyTagSubtreeFilter(args.tagRootId, "Tag scope is invalid for this user");
-    }
-
-    const normalizedFilterTag = args.filterTag?.trim();
-    if (normalizedFilterTag) {
-      const matchedTag = findClosestTagByName(allTags, normalizedFilterTag);
-      if (!matchedTag) {
-        return [];
-      }
-      await applyTagSubtreeFilter(matchedTag._id, "filterTag is invalid for this user");
-    }
-
-    const taskIds = new Set(tasks.map((task) => task._id));
-    const [allAgents, allPullRequests, allLinearIssues] = await Promise.all([
-      ctx.db.query("agents").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect(),
-      ctx.db.query("pullRequests").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect(),
-      ctx.db.query("linearIssues").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect(),
-    ]);
-
-    const agentsByTaskId = new Map<Id<"tasks">, Doc<"agents">[]>();
-    for (const agent of allAgents) {
-      if (!taskIds.has(agent.taskId)) continue;
-      const listForTask = agentsByTaskId.get(agent.taskId);
-      if (listForTask) {
-        listForTask.push(agent);
-      } else {
-        agentsByTaskId.set(agent.taskId, [agent]);
-      }
-    }
-
-    const pullRequestsByTaskId = new Map<
-      Id<"tasks">,
-      Array<
-        Doc<"pullRequests"> & {
-          normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
-        }
-      >
-    >();
-    for (const pullRequest of allPullRequests) {
-      if (!taskIds.has(pullRequest.taskId)) continue;
-      let normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null = null;
-      try {
-        normalized = parseGitHubPullRequestUrl(pullRequest.url);
-      } catch {
-        normalized = null;
-      }
-      const next = { ...pullRequest, normalized };
-      const listForTask = pullRequestsByTaskId.get(pullRequest.taskId);
-      if (listForTask) {
-        listForTask.push(next);
-      } else {
-        pullRequestsByTaskId.set(pullRequest.taskId, [next]);
-      }
-    }
-
-    const linearIssuesByTaskId = new Map<
-      Id<"tasks">,
-      Array<
-        Doc<"linearIssues"> & {
-          normalized: ReturnType<typeof parseLinearIssueUrl> | null;
-        }
-      >
-    >();
-    for (const linearIssue of allLinearIssues) {
-      if (!taskIds.has(linearIssue.taskId)) continue;
-      let normalized: ReturnType<typeof parseLinearIssueUrl> | null = null;
-      try {
-        normalized = parseLinearIssueUrl(linearIssue.url);
-      } catch {
-        normalized = null;
-      }
-      const next = { ...linearIssue, normalized };
-      const listForTask = linearIssuesByTaskId.get(linearIssue.taskId);
-      if (listForTask) {
-        listForTask.push(next);
-      } else {
-        linearIssuesByTaskId.set(linearIssue.taskId, [next]);
-      }
-    }
-
-    return tasks
-      .sort((a, b) => b._creationTime - a._creationTime)
-      .map((task) => ({
-        _id: task._id,
-        _creationTime: task._creationTime,
-        content: task.content,
-        status: task.status,
-        priority: task.priority,
-        dueDate: task.dueDate,
-        completedAt: task.completedAt,
-        statusUpdatedAt: task.statusUpdatedAt,
-        tags: task.tagIds
-          .map((tagId) => tagNameById.get(tagId))
-          .filter((tagName): tagName is string => Boolean(tagName)),
-        agents: agentsByTaskId.get(task._id) ?? [],
-        pullRequests: pullRequestsByTaskId.get(task._id) ?? [],
-        linearIssues: linearIssuesByTaskId.get(task._id) ?? [],
-      }));
+    return await Promise.all(
+      sortedTasks.map(async (task) => {
+        const relations = await loadTaskRelations(ctx, args.userId, task._id);
+        return {
+          _id: task._id,
+          _creationTime: task._creationTime,
+          content: task.content,
+          status: task.status,
+          priority: task.priority,
+          dueDate: task.dueDate,
+          completedAt: task.completedAt,
+          statusUpdatedAt: task.statusUpdatedAt,
+          tags: task.tagIds
+            .map((tagId) => tagNameById.get(tagId))
+            .filter((tagName): tagName is string => Boolean(tagName)),
+          agents: relations.agents,
+          pullRequests: relations.pullRequests,
+          linearIssues: relations.linearIssues,
+        };
+      })
+    );
   },
 });
 
@@ -814,6 +945,7 @@ export const createFromMcp = internalMutation({
       userId: args.userId,
       content: args.content,
       tagIds: [],
+      hasTags: false,
       status,
       priority: args.priority ?? "triage",
       dueDate: args.dueDate ?? undefined,
@@ -893,12 +1025,14 @@ export const create = mutation({
     if (!userId) {
       throw new Error("Not authenticated");
     }
+    const tagIds = await assertOwnedTaskTagIds(ctx, userId, args.tagIds);
     const now = Date.now();
     const status = args.status ?? "not_started";
     const taskId = await ctx.db.insert("tasks", {
       userId,
       content: args.content,
-      tagIds: args.tagIds ?? [],
+      tagIds,
+      hasTags: tagIds.length > 0,
       status,
       priority: args.priority ?? "triage",
       dueDate: args.dueDate,
@@ -907,8 +1041,8 @@ export const create = mutation({
       completedAt: status === "closed" ? now : undefined,
     });
 
-    const tagIds = args.tagIds ?? [];
     const createdAgents: Array<{ agentId: Id<"agents">; externalId: string }> = [];
+    await syncTaskTagLinks(ctx, userId, taskId, tagIds);
     await insertEvent(ctx, {
       userId,
       entityId: taskId,
@@ -1050,6 +1184,7 @@ export const createFromCapture = mutation({
     if (!capture || capture.userId !== userId) {
       throw new Error("Capture not found or access denied");
     }
+    const tagIds = await assertOwnedTaskTagIds(ctx, userId, args.tagIds);
 
     const now = Date.now();
 
@@ -1057,14 +1192,15 @@ export const createFromCapture = mutation({
     const taskId = await ctx.db.insert("tasks", {
       userId,
       content: capture.text,
-      tagIds: args.tagIds ?? [],
+      tagIds,
+      hasTags: tagIds.length > 0,
       status: "not_started",
       priority: args.priority ?? "triage",
       createdFromCaptureId: args.captureId,
       statusUpdatedAt: now,
     });
 
-    const tagIds = args.tagIds ?? [];
+    await syncTaskTagLinks(ctx, userId, taskId, tagIds);
     await insertEvent(ctx, {
       userId,
       entityId: taskId,
@@ -1102,11 +1238,14 @@ export const update = mutation({
     if (!task || task.userId !== userId) {
       throw new Error("Task not found or access denied");
     }
+    const nextTagIds =
+      args.tagIds !== undefined ? await assertOwnedTaskTagIds(ctx, userId, args.tagIds) : undefined;
 
     const now = Date.now();
     const updates: {
       content?: string;
-      tagIds?: typeof args.tagIds;
+      tagIds?: Id<"tags">[];
+      hasTags?: boolean;
       status?: typeof args.status;
       priority?: typeof args.priority;
       dueDate?: string | undefined;
@@ -1114,7 +1253,10 @@ export const update = mutation({
       completedAt?: number | undefined;
     } = {};
     if (args.content !== undefined) updates.content = args.content;
-    if (args.tagIds !== undefined) updates.tagIds = args.tagIds;
+    if (nextTagIds !== undefined) {
+      updates.tagIds = nextTagIds;
+      updates.hasTags = nextTagIds.length > 0;
+    }
     if (args.status !== undefined && args.status !== task.status) {
       updates.status = args.status;
       updates.statusUpdatedAt = now;
@@ -1130,8 +1272,11 @@ export const update = mutation({
     if (args.dueDate !== undefined) updates.dueDate = args.dueDate ?? undefined;
 
     await ctx.db.patch(args.id, updates);
+    if (nextTagIds !== undefined) {
+      await syncTaskTagLinks(ctx, userId, args.id, nextTagIds);
+    }
 
-    const effectiveTagIds = args.tagIds ?? task.tagIds;
+    const effectiveTagIds = nextTagIds ?? task.tagIds;
     const eventTagIds = effectiveTagIds.length > 0 ? effectiveTagIds : undefined;
 
     await insertEvent(ctx, {
@@ -1327,7 +1472,7 @@ export const remove = mutation({
       tagIds: task.tagIds.length > 0 ? task.tagIds : undefined,
     });
 
-    const [linkedAgents, linkedPullRequests] = await Promise.all([
+    const [linkedAgents, linkedPullRequests, linkedLinearIssues, linkedTaskTags] = await Promise.all([
       ctx.db
         .query("agents")
         .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", args.id))
@@ -1336,11 +1481,21 @@ export const remove = mutation({
         .query("pullRequests")
         .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", args.id))
         .collect(),
+      ctx.db
+        .query("linearIssues")
+        .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", args.id))
+        .collect(),
+      ctx.db
+        .query("taskTags")
+        .withIndex("by_user_task", (q) => q.eq("userId", userId).eq("taskId", args.id))
+        .collect(),
     ]);
 
     await Promise.all([
       ...linkedAgents.map((agent) => ctx.db.delete(agent._id)),
       ...linkedPullRequests.map((pullRequest) => ctx.db.delete(pullRequest._id)),
+      ...linkedLinearIssues.map((linearIssue) => ctx.db.delete(linearIssue._id)),
+      ...linkedTaskTags.map((taskTag) => ctx.db.delete(taskTag._id)),
     ]);
 
     await ctx.db.delete(args.id);
@@ -1365,53 +1520,46 @@ export const search = query({
       return [];
     }
 
-    let tasks;
+    const normalizedSearchText = args.searchText?.trim();
+    let tasks: Doc<"tasks">[];
 
-    if (args.searchText && args.searchText.trim()) {
-      // Full-text search using Convex search index
+    if (normalizedSearchText) {
       tasks = await ctx.db
         .query("tasks")
         .withSearchIndex("search_content", (q) =>
-          q.search("content", args.searchText!).eq("userId", userId)
+          q.search("content", normalizedSearchText).eq("userId", userId)
         )
         .collect();
-    } else {
-      // No text search, get all user's tasks for tag filtering
+      if (args.noTag) {
+        tasks = tasks.filter((task) => !(task.hasTags ?? task.tagIds.length > 0));
+      } else if (args.tagId) {
+        let matchingTaskIds: Set<Id<"tasks">>;
+        try {
+          matchingTaskIds = await getTaskIdsForTagSubtree(ctx, userId, args.tagId);
+        } catch {
+          return [];
+        }
+        tasks = tasks.filter((task) => matchingTaskIds.has(task._id));
+      }
+    } else if (args.noTag) {
       tasks = await ctx.db
         .query("tasks")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .withIndex("by_user_has_tags", (q) => q.eq("userId", userId).eq("hasTags", false))
         .collect();
-    }
-    // Keep retention for filter-only views, but do not trim closed tasks for text searches.
-    if (!(args.searchText && args.searchText.trim())) {
       tasks = filterStaleClosedTasks(tasks);
-    }
-
-    // If filtering by "no tag", filter for tasks with empty tagIds
-    if (args.noTag) {
-      tasks = tasks.filter((task) => task.tagIds.length === 0);
-    }
-    // If tag filtering is requested, filter by tag and all its recursive children
-    else if (args.tagId) {
-      const tag = await ctx.db.get(args.tagId);
-      if (!tag || tag.userId !== userId) {
+    } else if (args.tagId) {
+      let matchingTaskIds: Set<Id<"tasks">>;
+      try {
+        matchingTaskIds = await getTaskIdsForTagSubtree(ctx, userId, args.tagId);
+      } catch {
         return [];
       }
-
-      // Get all tag IDs to match: the selected tag + all its recursive children
-      const matchingTagIds = new Set<Id<"tags">>([args.tagId]);
-      if (tag.childrenRecursive) {
-        for (const childId of tag.childrenRecursive) {
-          matchingTagIds.add(childId);
-        }
-      }
-
-      // Filter tasks that have at least one matching tag
-      tasks = tasks.filter((task) =>
-        task.tagIds.some((tagId) => matchingTagIds.has(tagId))
-      );
+      tasks = await loadTasksByIds(ctx, userId, matchingTaskIds);
+      tasks = filterStaleClosedTasks(tasks);
+    } else {
+      tasks = [];
     }
 
-    return await hydrateTasksWithRelations(ctx, userId, tasks);
+    return await hydrateTasksWithScopedRelations(ctx, userId, tasks);
   },
 });
