@@ -9,6 +9,7 @@ import { TaskModal } from "../app/tasks/TaskModal";
 import { NoteModal } from "../app/notes/NoteModal";
 import { ConfirmModal } from "./ConfirmModal";
 import { Tag } from "./TagSelector";
+import type { TaskListArgs } from "../app/tasks/constants";
 
 const LOCAL_STORAGE_KEY = "tasky-last-selected-tag";
 
@@ -19,6 +20,7 @@ export function CaptureItem({
   includeCompleted,
   pageSelectedTagId,
   pageTaskSearchArgs,
+  pageTaskListArgs,
 }: {
   id: Id<"captures">;
   text: string;
@@ -26,6 +28,7 @@ export function CaptureItem({
   includeCompleted: boolean;
   pageSelectedTagId?: Id<"tags"> | null;
   pageTaskSearchArgs?: { searchText?: string; tagId?: Id<"tags">; noTag?: boolean };
+  pageTaskListArgs?: TaskListArgs;
 }) {
   const queryArgs = { includeCompleted };
   const [showNoteModal, setShowNoteModal] = useState(false);
@@ -232,6 +235,7 @@ export function CaptureItem({
         isOpen={showTaskModal}
         onClose={() => setShowTaskModal(false)}
         allTags={allTags}
+        listArgs={pageTaskListArgs}
         initialTagId={initialTagId}
         initialContent={text}
         createdFromCaptureId={id}

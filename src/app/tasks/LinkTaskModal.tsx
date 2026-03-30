@@ -4,12 +4,13 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
-import { Tag } from "../../components/TagSelector";
 import {
   type TaskStatus,
   type TaskPriority,
+  type TaskListArgs,
   STATUS_CONFIG,
   PRIORITY_CONFIG,
+  createTaskListArgs,
 } from "./constants";
 
 type HydratedTask = {
@@ -41,6 +42,7 @@ export function LinkTaskModal({
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   const hasFilters = Boolean(tagId) || Boolean(noTag);
+  const [listArgs] = useState<TaskListArgs>(() => createTaskListArgs());
   const searchArgs = useMemo(() => {
     if (searchText.trim() || tagId || noTag) {
       return {
@@ -52,7 +54,7 @@ export function LinkTaskModal({
     return null;
   }, [searchText, tagId, noTag]);
 
-  const allTasks = useQuery(api.tasks.list, hasFilters ? "skip" : {});
+  const allTasks = useQuery(api.tasks.list, hasFilters ? "skip" : listArgs);
   const searchResults = useQuery(
     api.tasks.search,
     searchArgs ?? "skip"

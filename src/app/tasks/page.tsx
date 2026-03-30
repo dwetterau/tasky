@@ -32,6 +32,7 @@ import {
   type TaskStatus,
   type TaskPriority,
   type TaskForEdit,
+  type TaskListArgs,
   type AgentAttachment,
   type LinearIssueAttachment,
   type PullRequestAttachment,
@@ -47,6 +48,7 @@ import {
   LINEAR_ICON_VIEWBOX,
   LINEAR_ICON_PATH,
   PR_ICON_PATHS,
+  createTaskListArgs,
   getAgentStatusInfo,
   getLinearIssueStatusInfo,
   getPullRequestStatusInfo,
@@ -630,11 +632,11 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
       };
 
       // Update the main list query
-      const listTasks = localStore.getQuery(api.tasks.list, {});
+      const listTasks = localStore.getQuery(api.tasks.list, listArgs);
       if (listTasks !== undefined) {
         localStore.setQuery(
           api.tasks.list,
-          {},
+          listArgs,
           listTasks.map(applyStatusUpdate)
         );
       }
@@ -660,11 +662,11 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
   const updatePriority = useTrackedMutation(api.tasks.updatePriority).withOptimisticUpdate(
     (localStore, args) => {
       // Update the main list query
-      const listTasks = localStore.getQuery(api.tasks.list, {});
+      const listTasks = localStore.getQuery(api.tasks.list, listArgs);
       if (listTasks !== undefined) {
         localStore.setQuery(
           api.tasks.list,
-          {},
+          listArgs,
           listTasks.map((t) => {
             if (t._id !== args.id) return t;
             return { ...t, priority: args.priority };
@@ -703,9 +705,9 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         ...t,
         agents: (t.agents ?? []).filter((a) => a._id !== args.id),
       });
-      const listTasks = localStore.getQuery(api.tasks.list, {});
+      const listTasks = localStore.getQuery(api.tasks.list, listArgs);
       if (listTasks !== undefined) {
-        localStore.setQuery(api.tasks.list, {}, listTasks.map(removeFromTask));
+        localStore.setQuery(api.tasks.list, listArgs, listTasks.map(removeFromTask));
       }
       const currentSearchText = searchTextRef.current.trim() || undefined;
       const currentTagId = selectedTagIdRef.current ?? undefined;
@@ -725,9 +727,9 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         ...t,
         pullRequests: (t.pullRequests ?? []).filter((pr) => pr._id !== args.id),
       });
-      const listTasks = localStore.getQuery(api.tasks.list, {});
+      const listTasks = localStore.getQuery(api.tasks.list, listArgs);
       if (listTasks !== undefined) {
-        localStore.setQuery(api.tasks.list, {}, listTasks.map(removeFromTask));
+        localStore.setQuery(api.tasks.list, listArgs, listTasks.map(removeFromTask));
       }
       const currentSearchText = searchTextRef.current.trim() || undefined;
       const currentTagId = selectedTagIdRef.current ?? undefined;
@@ -747,9 +749,9 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         ...t,
         linearIssues: (t.linearIssues ?? []).filter((issue) => issue._id !== args.id),
       });
-      const listTasks = localStore.getQuery(api.tasks.list, {});
+      const listTasks = localStore.getQuery(api.tasks.list, listArgs);
       if (listTasks !== undefined) {
-        localStore.setQuery(api.tasks.list, {}, listTasks.map(removeFromTask));
+        localStore.setQuery(api.tasks.list, listArgs, listTasks.map(removeFromTask));
       }
       const currentSearchText = searchTextRef.current.trim() || undefined;
       const currentTagId = selectedTagIdRef.current ?? undefined;
@@ -790,6 +792,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
   }, [selectedNoTag]);
 
   const isSearching = debouncedSearchText.trim() !== "" || selectedTagId !== null || selectedNoTag;
+  const [listArgs] = useState<TaskListArgs>(() => createTaskListArgs());
 
   const activeSearchArgs: TaskSearchArgs | undefined = useMemo(() => {
     if (!isSearching) return undefined;
@@ -800,7 +803,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     };
   }, [isSearching, debouncedSearchText, selectedTagId, selectedNoTag]);
 
-  const allTasks = useQuery(api.tasks.list);
+  const allTasks = useQuery(api.tasks.list, listArgs);
   const searchResults = useQuery(
     api.tasks.search,
     isSearching
@@ -1488,13 +1491,18 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
           )}
           </div>
         </div>
-        <CapturesSidebar pageSelectedTagId={selectedTagId} pageTaskSearchArgs={activeSearchArgs} />
+        <CapturesSidebar
+          pageSelectedTagId={selectedTagId}
+          pageTaskSearchArgs={activeSearchArgs}
+          pageTaskListArgs={listArgs}
+        />
       </div>
 
       <TaskModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         allTags={allTags}
+        listArgs={listArgs}
         initialTagId={selectedTagId}
         activeSearchArgs={activeSearchArgs}
         onTaskCreated={handleTaskCreated}
@@ -1519,6 +1527,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
           onClose={() => setEditingTaskId(null)}
           task={editingTask}
           allTags={allTags}
+          listArgs={listArgs}
           activeSearchArgs={activeSearchArgs}
           onTaskCreated={handleTaskCreated}
           onAttachAgent={handleAttachAgent}
