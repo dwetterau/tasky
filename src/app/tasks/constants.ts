@@ -1,4 +1,10 @@
-import { type TaskStatus, type TaskPriority, taskStatusValues, taskPriorityValues } from "../../../convex/schema";
+import {
+  type TaskStatus,
+  type TaskPriority,
+  type LinearWorkflowStateType,
+  taskStatusValues,
+  taskPriorityValues,
+} from "../../../convex/schema";
 import type { Id } from "../../../convex/_generated/dataModel";
 import type { Tag } from "../../components/TagSelector";
 
@@ -70,6 +76,24 @@ export type PullRequestAttachment = {
   } | null;
 };
 
+export type LinearIssueAttachment = {
+  _id: Id<"linearIssues">;
+  taskId: Id<"tasks">;
+  url: string;
+  identifier: string;
+  title?: string;
+  linearStatus?: string;
+  linearStateType?: LinearWorkflowStateType;
+  lastSyncedAt?: number;
+  normalized?: {
+    domain: string;
+    workspace: string;
+    identifier: string;
+    team: string;
+    number: number;
+  } | null;
+};
+
 export type TaskForEdit = {
   _id: Id<"tasks">;
   content: string;
@@ -79,6 +103,7 @@ export type TaskForEdit = {
   tags: Tag[];
   agents: AgentAttachment[];
   pullRequests: PullRequestAttachment[];
+  linearIssues: LinearIssueAttachment[];
 };
 
 export const CURSOR_ICON_VIEWBOX = "0 0 466.73 532.09";
@@ -90,6 +115,10 @@ export const PR_ICON_PATHS = {
   closed: "M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z",
   draft: "M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z",
 } as const;
+
+export const LINEAR_ICON_VIEWBOX = "0 0 24 24";
+export const LINEAR_ICON_PATH =
+  "M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z";
 
 export function getAgentStatusInfo(status: string): { label: string; color: string } {
   const s = status.trim().toLowerCase();
@@ -122,6 +151,28 @@ export function getPullRequestStatusInfo(pullRequest: PullRequestAttachment): {
     return { label: "Closed", color: "#ef4444", iconPath: PR_ICON_PATHS.closed };
   }
   return { label: "Unknown", color: "#9ca3af", iconPath: PR_ICON_PATHS.open };
+}
+
+export function getLinearIssueStatusInfo(linearIssue: LinearIssueAttachment): {
+  label: string;
+  color: string;
+} {
+  switch (linearIssue.linearStateType) {
+    case "triage":
+      return { label: linearIssue.linearStatus ?? "Triage", color: "#6b7280" };
+    case "backlog":
+      return { label: linearIssue.linearStatus ?? "Backlog", color: "#9ca3af" };
+    case "unstarted":
+      return { label: linearIssue.linearStatus ?? "Unstarted", color: "#6b7280" };
+    case "started":
+      return { label: linearIssue.linearStatus ?? "In Progress", color: "#3b82f6" };
+    case "completed":
+      return { label: linearIssue.linearStatus ?? "Completed", color: "#22c55e" };
+    case "canceled":
+      return { label: linearIssue.linearStatus ?? "Canceled", color: "#ef4444" };
+    default:
+      return { label: linearIssue.linearStatus ?? "Unknown", color: "#9ca3af" };
+  }
 }
 
 export function getPullRequestHref(url: string): string {

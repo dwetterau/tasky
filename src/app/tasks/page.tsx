@@ -33,6 +33,7 @@ import {
   type TaskPriority,
   type TaskForEdit,
   type AgentAttachment,
+  type LinearIssueAttachment,
   type PullRequestAttachment,
   type KanbanMode,
   STATUS_CONFIG,
@@ -43,17 +44,23 @@ import {
   STATUS_WEIGHT,
   CURSOR_ICON_VIEWBOX,
   CURSOR_ICON_PATH,
+  LINEAR_ICON_VIEWBOX,
+  LINEAR_ICON_PATH,
   PR_ICON_PATHS,
   getAgentStatusInfo,
+  getLinearIssueStatusInfo,
   getPullRequestStatusInfo,
   getPullRequestHref,
 } from "./constants";
 import { AttachAgentModal } from "./AttachAgentModal";
+import { AttachLinearIssueModal } from "./AttachLinearIssueModal";
 import { AttachPrModal } from "./AttachPrModal";
 import { CreateTaskFromAgentModal } from "./CreateTaskFromAgentModal";
 import {
   AGENT_ALREADY_ATTACHED_TO_TASK_ERROR,
   AGENT_ALREADY_LINKED_ERROR,
+  LINEAR_ISSUE_ALREADY_ATTACHED_TO_TASK_ERROR,
+  LINEAR_ISSUE_ALREADY_LINKED_ERROR,
   PULL_REQUEST_ALREADY_ATTACHED_TO_TASK_ERROR,
   PULL_REQUEST_ALREADY_LINKED_ERROR,
 } from "./attachmentErrors";
@@ -96,6 +103,7 @@ type TaskView = {
   tags: Tag[];
   agents: AgentAttachment[];
   pullRequests: PullRequestAttachment[];
+  linearIssues: LinearIssueAttachment[];
 };
 
 function parseGitHubPrUrl(rawUrl: string): PullRequestAttachment["normalized"] {
@@ -128,6 +136,41 @@ function getCanonicalPullRequestUrl(
   return `github.com/${normalized.owner}/${normalized.repo}/pull/${normalized.number}`;
 }
 
+function parseLinearIssueUrl(rawUrl: string): LinearIssueAttachment["normalized"] {
+  try {
+    const parseInput = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawUrl.trim())
+      ? rawUrl.trim()
+      : `https://${rawUrl.trim()}`;
+    const parsed = new URL(parseInput);
+    const hostname = parsed.hostname.toLowerCase();
+    const domain = hostname === "www.linear.app" ? "linear.app" : hostname;
+    if (domain !== "linear.app") return null;
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length < 3 || parts[1].toLowerCase() !== "issue") return null;
+    const workspace = parts[0].toLowerCase();
+    const identifier = parts[2].toUpperCase();
+    const match = /^([A-Z0-9]+)-(\d+)$/.exec(identifier);
+    if (!workspace || !match) return null;
+    const number = Number(match[2]);
+    if (!Number.isInteger(number) || number <= 0) return null;
+    return {
+      domain,
+      workspace,
+      identifier,
+      team: match[1],
+      number,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getCanonicalLinearIssueUrl(
+  normalized: NonNullable<LinearIssueAttachment["normalized"]>
+): string {
+  return `linear.app/${normalized.workspace}/issue/${normalized.identifier}`;
+}
+
 
 function TaskCard({
   task,
@@ -136,6 +179,7 @@ function TaskCard({
   isColumnDropTarget,
   onOpenEditModal,
   onOpenAttachAgentModal,
+  onOpenAttachLinearIssueModal,
   onOpenAttachPrModal,
 }: {
   task: TaskView;
@@ -144,12 +188,14 @@ function TaskCard({
   isColumnDropTarget?: boolean;
   onOpenEditModal?: () => void;
   onOpenAttachAgentModal?: () => void;
+  onOpenAttachLinearIssueModal?: () => void;
   onOpenAttachPrModal?: () => void;
 }) {
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const [isOverflowing, setIsOverflowing] = useState(false);
+  const [mountedAt] = useState(() => Date.now());
 
   useEffect(() => {
     const el = contentRef.current;
@@ -158,7 +204,7 @@ function TaskCard({
     }
   }, [task.content]);
 
-  const taskAgeDays = Math.floor((Date.now() - task._creationTime) / 86_400_000);
+  const taskAgeDays = Math.floor((mountedAt - task._creationTime) / 86_400_000);
 
   const {
     attributes,
@@ -217,7 +263,7 @@ function TaskCard({
       {...listeners}
       onPointerDown={handlePointerDown}
       onClick={handleClick}
-      className={`group relative bg-(--card-bg) border border-(--card-border) rounded-xl overflow-hidden transition-all duration-200 [&:hover:not(:has(a:hover))]:border-(--accent)/30 flex cursor-grab active:cursor-grabbing ${isDraggingProp ? "ring-2 ring-accent shadow-lg" : ""}`}
+      className={`group relative bg-(--card-bg) border border-(--card-border) rounded-xl overflow-hidden transition-all duration-200 [&:hover:not(:has(a:hover))]:border-accent/30 flex cursor-grab active:cursor-grabbing ${isDraggingProp ? "ring-2 ring-accent shadow-lg" : ""}`}
     >
       {/* Accent bar */}
       <div
@@ -258,6 +304,20 @@ function TaskCard({
             >
               <svg className="w-3.5 h-4 shrink-0" viewBox={CURSOR_ICON_VIEWBOX} fill="currentColor">
                 <path d={CURSOR_ICON_PATH} />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAttachLinearIssueModal?.();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="p-1 rounded text-(--muted) opacity-40 hover:opacity-100 hover:text-foreground hover:bg-(--card-border) transition-all"
+              title="Attach Linear issue"
+            >
+              <svg className="w-3.5 h-3.5" viewBox={LINEAR_ICON_VIEWBOX} fill="currentColor">
+                <path d={LINEAR_ICON_PATH} />
               </svg>
             </button>
             <button
@@ -352,11 +412,11 @@ function TaskCard({
           </div>
         )}
 
-        {(task.pullRequests.length > 0 || task.agents.length > 0) && (
+        {(task.pullRequests.length > 0 || task.linearIssues.length > 0 || task.agents.length > 0) && (
           <div className="flex flex-wrap gap-1.5 mt-3">
             {task.pullRequests.map((pullRequest) => {
               const label = pullRequest.normalized
-                ? `${pullRequest.normalized.owner}/${pullRequest.normalized.repo}#${pullRequest.normalized.number}`
+                ? `#${pullRequest.normalized.number} ${pullRequest.normalized.owner}/${pullRequest.normalized.repo}`
                 : pullRequest.url;
               const status = getPullRequestStatusInfo(pullRequest);
               return (
@@ -378,7 +438,34 @@ function TaskCard({
                   <svg className="w-3.5 h-3.5 shrink-0 text-(--muted)" viewBox="0 0 16 16" fill="currentColor">
                     <path d={status.iconPath} />
                   </svg>
-                  {label}
+                  <span className="max-w-[220px] truncate">{label}</span>
+                </a>
+              );
+            })}
+            {task.linearIssues.map((linearIssue) => {
+              const label = linearIssue.identifier;
+              const status = getLinearIssueStatusInfo(linearIssue);
+              const title = linearIssue.title?.trim();
+              return (
+                <a
+                  key={linearIssue._id}
+                  href={getPullRequestHref(linearIssue.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs text-(--muted) hover:text-foreground transition-colors bg-(--card-border)"
+                  title={title ? `${label} · ${status.label} · ${title}` : `${label} · ${status.label}`}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: status.color }}
+                    title={status.label}
+                  />
+                  <svg className="w-3.5 h-3.5 shrink-0 text-(--muted)" viewBox={LINEAR_ICON_VIEWBOX} fill="currentColor">
+                    <path d={LINEAR_ICON_PATH} />
+                  </svg>
+                  <span className="max-w-[220px] truncate">{title ? `${label} · ${title}` : label}</span>
                 </a>
               );
             })}
@@ -422,6 +509,7 @@ function KanbanColumn({
   isDropTarget,
   onOpenEditModal,
   onOpenAttachAgentModal,
+  onOpenAttachLinearIssueModal,
   onOpenAttachPrModal,
 }: {
   columnId: string;
@@ -431,6 +519,7 @@ function KanbanColumn({
   isDropTarget?: boolean;
   onOpenEditModal: (task: TaskForEdit) => void;
   onOpenAttachAgentModal: (taskId: Id<"tasks">) => void;
+  onOpenAttachLinearIssueModal: (taskId: Id<"tasks">) => void;
   onOpenAttachPrModal: (taskId: Id<"tasks">) => void;
 }) {
   const { setNodeRef } = useDroppable({ id: columnId });
@@ -469,6 +558,7 @@ function KanbanColumn({
             isColumnDropTarget={isDropTarget}
             onOpenEditModal={() => onOpenEditModal(task)}
             onOpenAttachAgentModal={() => onOpenAttachAgentModal(task._id)}
+            onOpenAttachLinearIssueModal={() => onOpenAttachLinearIssueModal(task._id)}
             onOpenAttachPrModal={() => onOpenAttachPrModal(task._id)}
           />
         ))}
@@ -493,6 +583,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<Id<"tasks"> | null>(null);
   const [attachAgentTaskId, setAttachAgentTaskId] = useState<Id<"tasks"> | null>(null);
+  const [attachLinearIssueTaskId, setAttachLinearIssueTaskId] = useState<Id<"tasks"> | null>(null);
   const [attachPrTaskId, setAttachPrTaskId] = useState<Id<"tasks"> | null>(null);
   const [isRefreshingLinks, setIsRefreshingLinks] = useState(false);
 
@@ -604,6 +695,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
 
   const createTask = useTrackedMutation(api.tasks.create);
   const createAgent = useTrackedMutation(api.agents.createForTask);
+  const createLinearIssue = useTrackedMutation(api.linearIssues.createForTask);
   const createPullRequest = useTrackedMutation(api.pullRequests.createForTask);
   const removeAgent = useTrackedMutation(api.agents.remove).withOptimisticUpdate(
     (localStore, args) => {
@@ -649,8 +741,31 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
       }
     }
   );
+  const removeLinearIssue = useTrackedMutation(api.linearIssues.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const removeFromTask = <T extends { _id: Id<"tasks">; linearIssues?: LinearIssueAttachment[] }>(t: T): T => ({
+        ...t,
+        linearIssues: (t.linearIssues ?? []).filter((issue) => issue._id !== args.id),
+      });
+      const listTasks = localStore.getQuery(api.tasks.list, {});
+      if (listTasks !== undefined) {
+        localStore.setQuery(api.tasks.list, {}, listTasks.map(removeFromTask));
+      }
+      const currentSearchText = searchTextRef.current.trim() || undefined;
+      const currentTagId = selectedTagIdRef.current ?? undefined;
+      const currentNoTag = selectedNoTagRef.current || undefined;
+      if (currentSearchText !== undefined || currentTagId !== undefined || currentNoTag !== undefined) {
+        const searchArgs = { searchText: currentSearchText, tagId: currentTagId, noTag: currentNoTag };
+        const searchTasks = localStore.getQuery(api.tasks.search, searchArgs);
+        if (searchTasks !== undefined) {
+          localStore.setQuery(api.tasks.search, searchArgs, searchTasks.map(removeFromTask));
+        }
+      }
+    }
+  );
   const syncAgentStates = useAction(api.agents.syncAgentStates);
   const launchAgent = useAction(api.agents.launch);
+  const syncLinearIssuesBatch = useAction(api.linearIssues.syncLinearIssuesBatch);
   const syncPullRequestsBatch = useAction(api.pullRequests.syncPullRequestsBatch);
 
 
@@ -743,6 +858,34 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     }
   };
 
+  const handleAttachLinearIssue = async (args: { taskId: Id<"tasks">; url: string }) => {
+    const result = await createLinearIssue(args);
+    if (result.status === "already_attached_to_task") {
+      throw new Error(LINEAR_ISSUE_ALREADY_ATTACHED_TO_TASK_ERROR);
+    }
+    if (result.status === "linked_to_other_task") {
+      throw new Error(LINEAR_ISSUE_ALREADY_LINKED_ERROR);
+    }
+    if (result.status === "invalid_linear_issue_url") {
+      throw new Error(result.message);
+    }
+    const normalized = parseLinearIssueUrl(args.url);
+    if (!normalized) return;
+    try {
+      await syncLinearIssuesBatch({
+        items: [
+          {
+            linearIssueId: result.linearIssueId,
+            url: getCanonicalLinearIssueUrl(normalized),
+            identifier: normalized.identifier,
+          },
+        ],
+      });
+    } catch {
+      // Keep attach success even if background metadata sync fails.
+    }
+  };
+
   const handleAttachPr = async (args: { taskId: Id<"tasks">; url: string }) => {
     const result = await createPullRequest(args);
     if (result.status === "already_attached_to_task") {
@@ -797,12 +940,14 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     externalId: string;
     tagIds: Id<"tags">[];
     priority: TaskPriority;
+    linearIssueUrl?: string;
   }) => {
     const result = await createTask({
       content: "",
       tagIds: args.tagIds.length > 0 ? args.tagIds : undefined,
       priority: args.priority,
       agentExternalIds: [args.externalId],
+      linearIssueUrls: args.linearIssueUrl ? [args.linearIssueUrl] : undefined,
     });
     await handleTaskCreated(result);
   };
@@ -813,6 +958,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     prompt: string;
     tagIds: Id<"tags">[];
     priority: TaskPriority;
+    linearIssueUrl?: string;
   }) => {
     const launchedAgent = await launchAgent({
       repository: args.repository,
@@ -825,6 +971,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
       tagIds: args.tagIds.length > 0 ? args.tagIds : undefined,
       priority: args.priority,
       agentExternalIds: [launchedAgent.externalId],
+      linearIssueUrls: args.linearIssueUrl ? [args.linearIssueUrl] : undefined,
     });
     await handleTaskCreated(result);
   };
@@ -979,6 +1126,11 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     repo: string;
     number: number;
   }> = [];
+  const visibleLinearIssuesForSync: Array<{
+    linearIssueId: Id<"linearIssues">;
+    url: string;
+    identifier: string;
+  }> = [];
   const visibleAgentsForSync: Array<{
     agentId: Id<"agents">;
     externalId: string;
@@ -994,8 +1146,18 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
       tags: task.tags as Tag[],
       agents: (task.agents as AgentAttachment[] | undefined) ?? [],
       pullRequests: (task.pullRequests as PullRequestAttachment[] | undefined) ?? [],
+      linearIssues: (task.linearIssues as LinearIssueAttachment[] | undefined) ?? [],
     };
     if (task.status !== "closed") {
+      for (const linearIssue of taskWithRelations.linearIssues) {
+        const normalized = linearIssue.normalized ?? parseLinearIssueUrl(linearIssue.url);
+        if (!normalized) continue;
+        visibleLinearIssuesForSync.push({
+          linearIssueId: linearIssue._id,
+          url: getCanonicalLinearIssueUrl(normalized),
+          identifier: normalized.identifier,
+        });
+      }
       for (const pullRequest of taskWithRelations.pullRequests) {
         const normalized = pullRequest.normalized ?? parseGitHubPrUrl(pullRequest.url);
         if (!normalized) continue;
@@ -1043,7 +1205,8 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
     });
   }
 
-  const visibleLinksCount = visiblePullRequestsForSync.length + visibleAgentsForSync.length;
+  const visibleLinksCount =
+    visibleLinearIssuesForSync.length + visiblePullRequestsForSync.length + visibleAgentsForSync.length;
 
   const handleRefreshVisibleLinks = async () => {
     if (visibleLinksCount === 0 || isRefreshingLinks) return;
@@ -1064,7 +1227,17 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
             number: item.number,
           })),
         });
-      } else if (visiblePullRequestsForSync.length > 0) {
+      }
+      if (visibleLinearIssuesForSync.length > 0) {
+        await syncLinearIssuesBatch({
+          items: visibleLinearIssuesForSync.map((item) => ({
+            linearIssueId: item.linearIssueId,
+            url: item.url,
+            identifier: item.identifier,
+          })),
+        });
+      }
+      if (visibleAgentsForSync.length === 0 && visiblePullRequestsForSync.length > 0) {
         await syncPullRequestsBatch({
           items: visiblePullRequestsForSync.map((item) => ({
             pullRequestId: item.pullRequestId,
@@ -1270,6 +1443,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
                       isDropTarget={overColumnId === status}
                       onOpenEditModal={(t) => setEditingTaskId(t._id)}
                       onOpenAttachAgentModal={setAttachAgentTaskId}
+                      onOpenAttachLinearIssueModal={setAttachLinearIssueTaskId}
                       onOpenAttachPrModal={setAttachPrTaskId}
                     />
                   ))
@@ -1284,6 +1458,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
                       isDropTarget={overColumnId === priority}
                       onOpenEditModal={(t) => setEditingTaskId(t._id)}
                       onOpenAttachAgentModal={setAttachAgentTaskId}
+                      onOpenAttachLinearIssueModal={setAttachLinearIssueTaskId}
                       onOpenAttachPrModal={setAttachPrTaskId}
                     />
                   ))
@@ -1299,6 +1474,8 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
                         ...activeTask,
                         tags: activeTask.tags as Tag[],
                         agents: (activeTask.agents as AgentAttachment[] | undefined) ?? [],
+                        linearIssues:
+                          (activeTask.linearIssues as LinearIssueAttachment[] | undefined) ?? [],
                         pullRequests:
                           (activeTask.pullRequests as PullRequestAttachment[] | undefined) ?? [],
                       }}
@@ -1322,6 +1499,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         activeSearchArgs={activeSearchArgs}
         onTaskCreated={handleTaskCreated}
         onAttachAgent={handleAttachAgent}
+        onAttachLinearIssue={handleAttachLinearIssue}
         onAttachPr={handleAttachPr}
       />
 
@@ -1345,6 +1523,8 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
           onTaskCreated={handleTaskCreated}
           onAttachAgent={handleAttachAgent}
           onRemoveAgent={(id) => removeAgent({ id })}
+          onAttachLinearIssue={handleAttachLinearIssue}
+          onRemoveLinearIssue={(id) => removeLinearIssue({ id })}
           onAttachPr={handleAttachPr}
           onRemovePr={(id) => removePullRequest({ id })}
         />
@@ -1365,6 +1545,13 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
         taskId={attachPrTaskId}
         onClose={() => setAttachPrTaskId(null)}
         onAttach={handleAttachPr}
+      />
+
+      <AttachLinearIssueModal
+        isOpen={attachLinearIssueTaskId !== null}
+        taskId={attachLinearIssueTaskId}
+        onClose={() => setAttachLinearIssueTaskId(null)}
+        onAttach={handleAttachLinearIssue}
       />
     </div>
   );

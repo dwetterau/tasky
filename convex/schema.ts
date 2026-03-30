@@ -25,12 +25,32 @@ export const taskPriority = v.union(
   v.literal("urgent")
 );
 
-export const apiKeyTypeValues = ["github", "cursor_agent_sdk"] as const;
+export const apiKeyTypeValues = ["github", "linear", "cursor_agent_sdk"] as const;
 export type ApiKeyType = (typeof apiKeyTypeValues)[number];
 
 export const apiKeyType = v.union(
   v.literal("github"),
+  v.literal("linear"),
   v.literal("cursor_agent_sdk")
+);
+
+export const linearWorkflowStateTypeValues = [
+  "triage",
+  "backlog",
+  "unstarted",
+  "started",
+  "completed",
+  "canceled",
+] as const;
+export type LinearWorkflowStateType = (typeof linearWorkflowStateTypeValues)[number];
+
+export const linearWorkflowStateType = v.union(
+  v.literal("triage"),
+  v.literal("backlog"),
+  v.literal("unstarted"),
+  v.literal("started"),
+  v.literal("completed"),
+  v.literal("canceled")
 );
 
 // Event action discriminated union -- keyed by `type`, entity type encoded in prefix
@@ -59,6 +79,9 @@ export const eventAction = v.union(
   // Pull request actions
   v.object({ type: v.literal("pull_request.created") }),
   v.object({ type: v.literal("pull_request.deleted") }),
+  // Linear issue actions
+  v.object({ type: v.literal("linear_issue.created") }),
+  v.object({ type: v.literal("linear_issue.deleted") }),
   // API key actions
   v.object({ type: v.literal("api_key.created") }),
   v.object({ type: v.literal("api_key.deleted") }),
@@ -133,6 +156,22 @@ export default defineSchema({
     githubState: v.optional(v.union(v.literal("OPEN"), v.literal("CLOSED"), v.literal("MERGED"))),
     isDraft: v.optional(v.boolean()),
     isMerged: v.optional(v.boolean()),
+    lastSyncedAt: v.optional(v.number()),
+    updatedAt: v.number(), // Unix timestamp (ms)
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_task", ["userId", "taskId"])
+    .index("by_user_url", ["userId", "url"])
+    .index("by_user_task_url", ["userId", "taskId", "url"]),
+
+  linearIssues: defineTable({
+    userId: v.string(),
+    taskId: v.id("tasks"),
+    url: v.string(), // Canonical Linear issue URL; unique per user across all tasks
+    identifier: v.string(), // Team key + issue number, e.g. DWE-1
+    title: v.optional(v.string()),
+    linearStatus: v.optional(v.string()),
+    linearStateType: v.optional(linearWorkflowStateType),
     lastSyncedAt: v.optional(v.number()),
     updatedAt: v.number(), // Unix timestamp (ms)
   })

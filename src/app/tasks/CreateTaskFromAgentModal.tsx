@@ -4,11 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Id } from "../../../convex/_generated/dataModel";
 import { TagSelector, Tag } from "../../components/TagSelector";
 import { StyledSelect, type SelectOption } from "../../components/StyledSelect";
-import { CURSOR_ICON_PATH, CURSOR_ICON_VIEWBOX } from "./constants";
+import { CURSOR_ICON_PATH, CURSOR_ICON_VIEWBOX, LINEAR_ICON_PATH, LINEAR_ICON_VIEWBOX } from "./constants";
 import { PRIORITY_CONFIG, PRIORITY_ORDER, type TaskPriority } from "./constants";
-import { getAgentAttachmentErrorMessage } from "./attachmentErrors";
+import { getAgentAttachmentErrorMessage, getLinearIssueAttachmentErrorMessage } from "./attachmentErrors";
 import { StartAgentModal } from "./StartAgentModal";
 import { extractCursorAgentExternalId } from "../../../convex/cursorAgentUrl";
+
+function normalizeLinearIssueUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return trimmed;
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function looksLikeLinearIssueUrl(input: string): boolean {
+  return /(?:https?:\/\/)?(?:www\.)?linear\.app\/[^/]+\/issue\/[A-Z0-9]+-\d+/i.test(input.trim());
+}
 
 export function CreateTaskFromAgentModal({
   isOpen,
@@ -26,6 +36,7 @@ export function CreateTaskFromAgentModal({
     externalId: string;
     tagIds: Id<"tags">[];
     priority: TaskPriority;
+    linearIssueUrl?: string;
   }) => Promise<void> | void;
   onStartAgent: (args: {
     repository: string;
@@ -33,6 +44,7 @@ export function CreateTaskFromAgentModal({
     prompt: string;
     tagIds: Id<"tags">[];
     priority: TaskPriority;
+    linearIssueUrl?: string;
   }) => Promise<void> | void;
   storageKeySuffix: string;
   allTags: Tag[];
@@ -42,6 +54,8 @@ export function CreateTaskFromAgentModal({
   const [agentInput, setAgentInput] = useState("");
   const [tagIds, setTagIds] = useState<Id<"tags">[]>([]);
   const [priority, setPriority] = useState<TaskPriority>("triage");
+  const [linearIssueInput, setLinearIssueInput] = useState("");
+  const [linearIssueError, setLinearIssueError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showStartAgentModal, setShowStartAgentModal] = useState(false);
@@ -50,9 +64,11 @@ export function CreateTaskFromAgentModal({
 
   const handleClose = useCallback(() => {
     setAgentInput("");
+    setLinearIssueInput("");
     setTagIds(initialTagId ? [initialTagId] : []);
     setPriority("triage");
     setSubmitError(null);
+    setLinearIssueError(null);
     setIsSubmitting(false);
     setShowStartAgentModal(false);
     onClose();
@@ -111,10 +127,16 @@ export function CreateTaskFromAgentModal({
         externalId: parsedExternalId,
         tagIds,
         priority,
+        linearIssueUrl: linearIssueInput.trim() ? normalizeLinearIssueUrl(linearIssueInput) : undefined,
       });
       handleClose();
     } catch (error) {
-      setSubmitError(getAgentAttachmentErrorMessage(error));
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("Linear") || message.includes("linear.app")) {
+        setLinearIssueError(getLinearIssueAttachmentErrorMessage(error));
+      } else {
+        setSubmitError(getAgentAttachmentErrorMessage(error));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -204,6 +226,38 @@ export function CreateTaskFromAgentModal({
                   : "Enter a Cursor agent URL or a bc-... external ID")}
             </p>
           )}
+          <div>
+            <label className="block text-xs font-medium text-(--muted) mb-1">Linear Issue</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={linearIssueInput}
+                onChange={(e) => {
+                  setLinearIssueInput(e.target.value);
+                  setLinearIssueError(null);
+                }}
+                placeholder="linear.app/team/issue/ENG-123"
+                disabled={isSubmitting}
+                className="w-full h-[38px] pl-10 pr-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              />
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-(--muted)"
+                viewBox={LINEAR_ICON_VIEWBOX}
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d={LINEAR_ICON_PATH} />
+              </svg>
+            </div>
+          </div>
+          {(linearIssueError || linearIssueInput.trim()) && (
+            <p className={`text-xs ${linearIssueError || !looksLikeLinearIssueUrl(linearIssueInput) ? "text-red-400" : "text-(--muted)"}`}>
+              {linearIssueError ??
+                (looksLikeLinearIssueUrl(linearIssueInput)
+                  ? "Linear issue will be attached when the task is created."
+                  : "Enter a Linear issue URL like linear.app/team/issue/ENG-123.")}
+            </p>
+          )}
         </div>
 
         <div className="my-5 flex items-center gap-3">
@@ -257,6 +311,7 @@ export function CreateTaskFromAgentModal({
               prompt,
               tagIds,
               priority,
+              linearIssueUrl: linearIssueInput.trim() ? normalizeLinearIssueUrl(linearIssueInput) : undefined,
             });
             handleClose();
           }}

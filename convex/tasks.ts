@@ -5,6 +5,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { taskStatus, taskPriority, EventSource } from "./schema";
 import { insertEvent } from "./events";
 import { parseGitHubPullRequestUrl } from "./pullRequests";
+import { parseLinearIssueUrl } from "./linearIssues";
 import { extractCursorAgentExternalId } from "./cursorAgentUrl";
 
 const CLOSED_TASK_RETENTION_MS = 32 * 24 * 60 * 60 * 1000;
@@ -41,12 +42,18 @@ async function hydrateTasksWithRelations<T extends { _id: Id<"tasks">; tagIds: I
           normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
         }
       >;
+      linearIssues: Array<
+        Doc<"linearIssues"> & {
+          normalized: ReturnType<typeof parseLinearIssueUrl> | null;
+        }
+      >;
     }
   >
 > {
-  const [allAgents, allPullRequests] = await Promise.all([
+  const [allAgents, allPullRequests, allLinearIssues] = await Promise.all([
     ctx.db.query("agents").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
     ctx.db.query("pullRequests").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+    ctx.db.query("linearIssues").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
   ]);
 
   const agentsByTaskId = new Map<Id<"tasks">, typeof allAgents>();
@@ -89,6 +96,30 @@ async function hydrateTasksWithRelations<T extends { _id: Id<"tasks">; tagIds: I
     }
   }
 
+  const linearIssuesByTaskId = new Map<
+    Id<"tasks">,
+    Array<
+      (typeof allLinearIssues)[number] & {
+        normalized: ReturnType<typeof parseLinearIssueUrl> | null;
+      }
+    >
+  >();
+  for (const linearIssue of allLinearIssues) {
+    let normalized: ReturnType<typeof parseLinearIssueUrl> | null = null;
+    try {
+      normalized = parseLinearIssueUrl(linearIssue.url);
+    } catch {
+      normalized = null;
+    }
+    const next = { ...linearIssue, normalized };
+    const listForTask = linearIssuesByTaskId.get(linearIssue.taskId);
+    if (listForTask) {
+      listForTask.push(next);
+    } else {
+      linearIssuesByTaskId.set(linearIssue.taskId, [next]);
+    }
+  }
+
   return await Promise.all(
     tasks.map(async (task) => {
       const tags = await Promise.all(task.tagIds.map((tagId) => ctx.db.get(tagId)));
@@ -97,6 +128,7 @@ async function hydrateTasksWithRelations<T extends { _id: Id<"tasks">; tagIds: I
         tags: tags.filter((t) => t !== null),
         agents: agentsByTaskId.get(task._id) ?? [],
         pullRequests: pullRequestsByTaskId.get(task._id) ?? [],
+        linearIssues: linearIssuesByTaskId.get(task._id) ?? [],
       };
     })
   );
@@ -278,6 +310,61 @@ async function attachPullRequestToTaskIfMissing(args: {
   return { id: pullRequestId, url: normalized.url };
 }
 
+async function attachLinearIssueToTaskIfMissing(args: {
+  ctx: MutationCtx;
+  userId: string;
+  taskId: Id<"tasks">;
+  addLinearIssueByUrl: string;
+  now: number;
+  source?: EventSource;
+  eventTagIds?: Id<"tags">[];
+}): Promise<
+  | {
+      id: Id<"linearIssues">;
+      url: string;
+      identifier: string;
+    }
+  | undefined
+> {
+  const normalized = parseLinearIssueUrl(args.addLinearIssueByUrl);
+  const existingForTask = await args.ctx.db
+    .query("linearIssues")
+    .withIndex("by_user_task_url", (q) =>
+      q.eq("userId", args.userId).eq("taskId", args.taskId).eq("url", normalized.url)
+    )
+    .first();
+  if (existingForTask) {
+    return undefined;
+  }
+
+  const existingForUser = await args.ctx.db
+    .query("linearIssues")
+    .withIndex("by_user_url", (q) => q.eq("userId", args.userId).eq("url", normalized.url))
+    .first();
+  if (existingForUser && existingForUser.taskId !== args.taskId) {
+    throw new Error("Linear issue is already linked to another task");
+  }
+  if (existingForUser) {
+    return undefined;
+  }
+
+  const linearIssueId = await args.ctx.db.insert("linearIssues", {
+    userId: args.userId,
+    taskId: args.taskId,
+    url: normalized.url,
+    identifier: normalized.identifier,
+    updatedAt: args.now,
+  });
+  await insertEvent(args.ctx, {
+    userId: args.userId,
+    entityId: linearIssueId,
+    action: { type: "linear_issue.created" },
+    source: args.source,
+    tagIds: args.eventTagIds,
+  });
+  return { id: linearIssueId, url: normalized.url, identifier: normalized.identifier };
+}
+
 export const listForMcp = internalQuery({
   args: {
     userId: v.string(),
@@ -351,9 +438,10 @@ export const listForMcp = internalQuery({
     }
 
     const taskIds = new Set(tasks.map((task) => task._id));
-    const [allAgents, allPullRequests] = await Promise.all([
+    const [allAgents, allPullRequests, allLinearIssues] = await Promise.all([
       ctx.db.query("agents").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect(),
       ctx.db.query("pullRequests").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect(),
+      ctx.db.query("linearIssues").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect(),
     ]);
 
     const agentsByTaskId = new Map<Id<"tasks">, Doc<"agents">[]>();
@@ -392,6 +480,31 @@ export const listForMcp = internalQuery({
       }
     }
 
+    const linearIssuesByTaskId = new Map<
+      Id<"tasks">,
+      Array<
+        Doc<"linearIssues"> & {
+          normalized: ReturnType<typeof parseLinearIssueUrl> | null;
+        }
+      >
+    >();
+    for (const linearIssue of allLinearIssues) {
+      if (!taskIds.has(linearIssue.taskId)) continue;
+      let normalized: ReturnType<typeof parseLinearIssueUrl> | null = null;
+      try {
+        normalized = parseLinearIssueUrl(linearIssue.url);
+      } catch {
+        normalized = null;
+      }
+      const next = { ...linearIssue, normalized };
+      const listForTask = linearIssuesByTaskId.get(linearIssue.taskId);
+      if (listForTask) {
+        listForTask.push(next);
+      } else {
+        linearIssuesByTaskId.set(linearIssue.taskId, [next]);
+      }
+    }
+
     return tasks
       .sort((a, b) => b._creationTime - a._creationTime)
       .map((task) => ({
@@ -408,6 +521,7 @@ export const listForMcp = internalQuery({
           .filter((tagName): tagName is string => Boolean(tagName)),
         agents: agentsByTaskId.get(task._id) ?? [],
         pullRequests: pullRequestsByTaskId.get(task._id) ?? [],
+        linearIssues: linearIssuesByTaskId.get(task._id) ?? [],
       }));
   },
 });
@@ -425,6 +539,8 @@ export const updateFromMcp = internalMutation({
     removeAgentById: v.optional(v.id("agents")),
     addPullRequestByUrl: v.optional(v.string()),
     removePullRequestByUrl: v.optional(v.string()),
+    addLinearIssueByUrl: v.optional(v.string()),
+    removeLinearIssueByUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.id);
@@ -602,6 +718,58 @@ export const updateFromMcp = internalMutation({
       }
     }
 
+    let addedLinearIssue:
+      | {
+          id: Id<"linearIssues">;
+          url: string;
+          identifier: string;
+        }
+      | undefined;
+    let removedLinearIssue:
+      | {
+          id: Id<"linearIssues">;
+          url: string;
+          identifier: string;
+        }
+      | undefined;
+
+    if (args.addLinearIssueByUrl !== undefined) {
+      addedLinearIssue = await attachLinearIssueToTaskIfMissing({
+        ctx,
+        userId: args.userId,
+        taskId: args.id,
+        addLinearIssueByUrl: args.addLinearIssueByUrl,
+        now,
+        source: "MCP",
+        eventTagIds: getEventTagIds(task.tagIds),
+      });
+    }
+
+    if (args.removeLinearIssueByUrl !== undefined) {
+      const normalized = parseLinearIssueUrl(args.removeLinearIssueByUrl);
+      const existingForTask = await ctx.db
+        .query("linearIssues")
+        .withIndex("by_user_task_url", (q) =>
+          q.eq("userId", args.userId).eq("taskId", args.id).eq("url", normalized.url)
+        )
+        .first();
+      if (existingForTask) {
+        await insertEvent(ctx, {
+          userId: args.userId,
+          entityId: existingForTask._id,
+          action: { type: "linear_issue.deleted" },
+          source: "MCP",
+          tagIds: getEventTagIds(task.tagIds),
+        });
+        await ctx.db.delete(existingForTask._id);
+        removedLinearIssue = {
+          id: existingForTask._id,
+          url: normalized.url,
+          identifier: existingForTask.identifier,
+        };
+      }
+    }
+
     return {
       taskId: args.id,
       updatedFields: {
@@ -614,6 +782,8 @@ export const updateFromMcp = internalMutation({
       removedAgent,
       addedPullRequest,
       removedPullRequest,
+      addedLinearIssue,
+      removedLinearIssue,
     };
   },
 });
@@ -628,6 +798,7 @@ export const createFromMcp = internalMutation({
     dueDate: v.optional(v.union(v.string(), v.null())),
     addAgent: v.optional(v.string()),
     addPullRequestByUrl: v.optional(v.string()),
+    addLinearIssueByUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     if (args.tagRootId) {
@@ -683,10 +854,24 @@ export const createFromMcp = internalMutation({
             eventTagIds: undefined,
           });
 
+    const addedLinearIssue =
+      args.addLinearIssueByUrl === undefined
+        ? undefined
+        : await attachLinearIssueToTaskIfMissing({
+            ctx,
+            userId: args.userId,
+            taskId,
+            addLinearIssueByUrl: args.addLinearIssueByUrl,
+            now,
+            source: "MCP",
+            eventTagIds: undefined,
+          });
+
     return {
       taskId,
       addedAgent,
       addedPullRequest,
+      addedLinearIssue,
     };
   },
 });
@@ -701,6 +886,7 @@ export const create = mutation({
     createdFromCaptureId: v.optional(v.id("captures")),
     agentExternalIds: v.optional(v.array(v.string())),
     pullRequestUrls: v.optional(v.array(v.string())),
+    linearIssueUrls: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -772,6 +958,30 @@ export const create = mutation({
         userId,
         entityId: pullRequestId,
         action: { type: "pull_request.created" },
+        tagIds: tagIds.length > 0 ? tagIds : undefined,
+      });
+    }
+
+    const linearIssueUrls = Array.from(
+      new Set(
+        (args.linearIssueUrls ?? [])
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      )
+    );
+    for (const linearIssueUrl of linearIssueUrls) {
+      const normalized = parseLinearIssueUrl(linearIssueUrl);
+      const linearIssueId = await ctx.db.insert("linearIssues", {
+        userId,
+        taskId,
+        url: normalized.url,
+        identifier: normalized.identifier,
+        updatedAt: now,
+      });
+      await insertEvent(ctx, {
+        userId,
+        entityId: linearIssueId,
+        action: { type: "linear_issue.created" },
         tagIds: tagIds.length > 0 ? tagIds : undefined,
       });
     }
