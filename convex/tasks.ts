@@ -196,30 +196,39 @@ async function hydrateTasksWithScopedRelationsBatched<T extends { _id: Id<"tasks
 ): Promise<
   Array<
     T & {
-      tags: Doc<"tags">[];
-      agents: Doc<"agents">[];
+      tags: Array<Pick<Doc<"tags">, "_id" | "name" | "color">>;
+      agents: Array<
+        Pick<Doc<"agents">, "_id" | "taskId" | "externalId" | "link" | "title" | "status" | "lastSyncedAt">
+      >;
       pullRequests: Array<
-        Doc<"pullRequests"> & {
-          normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
-        }
+        Pick<
+          Doc<"pullRequests">,
+          "_id" | "taskId" | "url" | "githubState" | "isDraft" | "isMerged" | "lastSyncedAt"
+        >
       >;
       linearIssues: Array<
-        Doc<"linearIssues"> & {
-          normalized: ReturnType<typeof parseLinearIssueUrl> | null;
-        }
+        Pick<
+          Doc<"linearIssues">,
+          "_id" | "taskId" | "url" | "identifier" | "title" | "linearStatus" | "linearStateType" | "lastSyncedAt"
+        >
       >;
     }
   >
 > {
   const taskIdSet = new Set(tasks.map((task) => task._id));
-  const [allTags, allAgents, allPullRequests, allLinearIssues] = await Promise.all([
-    ctx.db.query("tags").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+  const uniqueTagIds = Array.from(new Set(tasks.flatMap((task) => task.tagIds)));
+  const [taskTags, allAgents, allPullRequests, allLinearIssues] = await Promise.all([
+    Promise.all(uniqueTagIds.map((tagId) => ctx.db.get(tagId))),
     ctx.db.query("agents").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
     ctx.db.query("pullRequests").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
     ctx.db.query("linearIssues").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
   ]);
 
-  const tagById = new Map(allTags.map((tag) => [tag._id, tag]));
+  const tagById = new Map(
+    taskTags
+      .filter((tag): tag is Doc<"tags"> => tag !== null && tag.userId === userId)
+      .map((tag) => [tag._id, tag])
+  );
 
   const agentsByTaskId = new Map<Id<"tasks">, Doc<"agents">[]>();
   for (const agent of allAgents) {
@@ -265,10 +274,36 @@ async function hydrateTasksWithScopedRelationsBatched<T extends { _id: Id<"tasks
     ...task,
     tags: task.tagIds
       .map((tagId) => tagById.get(tagId))
-      .filter((tag): tag is Doc<"tags"> => tag !== undefined),
-    agents: agentsByTaskId.get(task._id) ?? [],
-    pullRequests: pullRequestsByTaskId.get(task._id) ?? [],
-    linearIssues: linearIssuesByTaskId.get(task._id) ?? [],
+      .filter((tag): tag is Doc<"tags"> => tag !== undefined)
+      .map((tag) => ({ _id: tag._id, name: tag.name, color: tag.color })),
+    agents: (agentsByTaskId.get(task._id) ?? []).map((agent) => ({
+      _id: agent._id,
+      taskId: agent.taskId,
+      externalId: agent.externalId,
+      link: agent.link,
+      title: agent.title,
+      status: agent.status,
+      lastSyncedAt: agent.lastSyncedAt,
+    })),
+    pullRequests: (pullRequestsByTaskId.get(task._id) ?? []).map((pullRequest) => ({
+      _id: pullRequest._id,
+      taskId: pullRequest.taskId,
+      url: pullRequest.url,
+      githubState: pullRequest.githubState,
+      isDraft: pullRequest.isDraft,
+      isMerged: pullRequest.isMerged,
+      lastSyncedAt: pullRequest.lastSyncedAt,
+    })),
+    linearIssues: (linearIssuesByTaskId.get(task._id) ?? []).map((linearIssue) => ({
+      _id: linearIssue._id,
+      taskId: linearIssue.taskId,
+      url: linearIssue.url,
+      identifier: linearIssue.identifier,
+      title: linearIssue.title,
+      linearStatus: linearIssue.linearStatus,
+      linearStateType: linearIssue.linearStateType,
+      lastSyncedAt: linearIssue.lastSyncedAt,
+    })),
   }));
 }
 
