@@ -189,7 +189,7 @@ async function getTaskIdsForTagSubtree(
   return taskIds;
 }
 
-async function hydrateTasksWithScopedRelations<T extends { _id: Id<"tasks">; tagIds: Id<"tags">[] }>(
+async function hydrateTasksWithScopedRelationsBatched<T extends { _id: Id<"tasks">; tagIds: Id<"tags">[] }>(
   ctx: QueryCtx,
   userId: string,
   tasks: T[]
@@ -211,22 +211,65 @@ async function hydrateTasksWithScopedRelations<T extends { _id: Id<"tasks">; tag
     }
   >
 > {
-  return await Promise.all(
-    tasks.map(async (task) => {
-      const [tags, relations] = await Promise.all([
-        Promise.all(task.tagIds.map((tagId) => ctx.db.get(tagId))),
-        loadTaskRelations(ctx, userId, task._id),
-      ]);
+  const taskIdSet = new Set(tasks.map((task) => task._id));
+  const [allTags, allAgents, allPullRequests, allLinearIssues] = await Promise.all([
+    ctx.db.query("tags").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+    ctx.db.query("agents").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+    ctx.db.query("pullRequests").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+    ctx.db.query("linearIssues").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+  ]);
 
-      return {
-        ...task,
-        tags: tags.filter((tag): tag is Doc<"tags"> => tag !== null),
-        agents: relations.agents,
-        pullRequests: relations.pullRequests,
-        linearIssues: relations.linearIssues,
-      };
-    })
-  );
+  const tagById = new Map(allTags.map((tag) => [tag._id, tag]));
+
+  const agentsByTaskId = new Map<Id<"tasks">, Doc<"agents">[]>();
+  for (const agent of allAgents) {
+    if (!taskIdSet.has(agent.taskId)) continue;
+    const grouped = agentsByTaskId.get(agent.taskId);
+    if (grouped) grouped.push(agent);
+    else agentsByTaskId.set(agent.taskId, [agent]);
+  }
+
+  const pullRequestsByTaskId = new Map<
+    Id<"tasks">,
+    Array<
+      Doc<"pullRequests"> & {
+        normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
+      }
+    >
+  >();
+  for (const pullRequest of allPullRequests) {
+    if (!taskIdSet.has(pullRequest.taskId)) continue;
+    const normalized = normalizePullRequestForTask(pullRequest);
+    const grouped = pullRequestsByTaskId.get(pullRequest.taskId);
+    if (grouped) grouped.push(normalized);
+    else pullRequestsByTaskId.set(pullRequest.taskId, [normalized]);
+  }
+
+  const linearIssuesByTaskId = new Map<
+    Id<"tasks">,
+    Array<
+      Doc<"linearIssues"> & {
+        normalized: ReturnType<typeof parseLinearIssueUrl> | null;
+      }
+    >
+  >();
+  for (const linearIssue of allLinearIssues) {
+    if (!taskIdSet.has(linearIssue.taskId)) continue;
+    const normalized = normalizeLinearIssueForTask(linearIssue);
+    const grouped = linearIssuesByTaskId.get(linearIssue.taskId);
+    if (grouped) grouped.push(normalized);
+    else linearIssuesByTaskId.set(linearIssue.taskId, [normalized]);
+  }
+
+  return tasks.map((task) => ({
+    ...task,
+    tags: task.tagIds
+      .map((tagId) => tagById.get(tagId))
+      .filter((tag): tag is Doc<"tags"> => tag !== undefined),
+    agents: agentsByTaskId.get(task._id) ?? [],
+    pullRequests: pullRequestsByTaskId.get(task._id) ?? [],
+    linearIssues: linearIssuesByTaskId.get(task._id) ?? [],
+  }));
 }
 
 export const list = query({
@@ -256,7 +299,8 @@ export const list = query({
         .collect(),
     ]);
 
-    return await hydrateTasksWithScopedRelations(ctx, userId, [...openTaskGroups.flat(), ...recentClosedTasks]);
+    const tasks = [...openTaskGroups.flat(), ...recentClosedTasks];
+    return await hydrateTasksWithScopedRelationsBatched(ctx, userId, tasks);
   },
 });
 
@@ -1481,6 +1525,6 @@ export const search = query({
       tasks = [];
     }
 
-    return await hydrateTasksWithScopedRelations(ctx, userId, tasks);
+    return await hydrateTasksWithScopedRelationsBatched(ctx, userId, tasks);
   },
 });
