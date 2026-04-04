@@ -551,6 +551,11 @@ export function TaskModal({
     !isEditing &&
     normalizedPendingLinearIssueInput.length > 0 &&
     !pendingLinearIssueUrls.includes(normalizedPendingLinearIssueInput);
+  const shouldShowLinearIssuesSection =
+    !isEditing ||
+    (task?.linearIssues.length ?? 0) > 0 ||
+    pendingLinearIssueUrls.length > 0 ||
+    (isEditing && !!onAttachLinearIssue);
 
   const handleAttachAgentSubmit = async () => {
     if (!isEditing || !task || !onAttachAgent || !parsedAgentExternalId) return;
@@ -980,7 +985,7 @@ export function TaskModal({
                         </form>
                       </>
                     )}
-                    {((task?.linearIssues.length ?? 0) > 0 || pendingLinearIssueUrls.length > 0 || !isEditing) && (
+                    {shouldShowLinearIssuesSection && (
                       <>
                         <div className="pt-2">
                           <label className="block text-xs font-medium text-(--muted) mb-1.5">

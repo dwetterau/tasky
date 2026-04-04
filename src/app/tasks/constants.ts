@@ -25,8 +25,8 @@ export function createTaskListArgs(now = Date.now()): TaskListArgs {
 
 export const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   not_started: { label: "Not Started", color: "#6b7280" },
-  in_progress: { label: "In Progress", color: "#3b82f6" },
-  agent_running: { label: "Agent Running", color: "#8b5cf6" },
+  in_progress: { label: "In Progress", color: "#f59e0b" },
+  agent_running: { label: "Agent Running", color: "#3b82f6" },
   blocked: { label: "Blocked", color: "#ef4444" },
   closed: { label: "Closed", color: "#22c55e" },
 };
@@ -151,10 +151,10 @@ export function getPullRequestStatusInfo(pullRequest: PullRequestAttachment): {
 } {
   const githubState = String((pullRequest as { githubState?: unknown }).githubState ?? "").toUpperCase();
   if (pullRequest.isMerged || githubState === "MERGED") {
-    return { label: "Merged", color: "#a78bfa", iconPath: PR_ICON_PATHS.merged };
+    return { label: "Merged", color: "#22c55e", iconPath: PR_ICON_PATHS.merged };
   }
   if (githubState === "OPEN") {
-    return { label: "Open", color: "#22c55e", iconPath: PR_ICON_PATHS.open };
+    return { label: "Open", color: "#eab308", iconPath: PR_ICON_PATHS.open };
   }
   if (pullRequest.isDraft) {
     return { label: "Draft", color: "#9ca3af", iconPath: PR_ICON_PATHS.draft };
@@ -177,7 +177,7 @@ export function getLinearIssueStatusInfo(linearIssue: LinearIssueAttachment): {
     case "unstarted":
       return { label: linearIssue.linearStatus ?? "Unstarted", color: "#6b7280" };
     case "started":
-      return { label: linearIssue.linearStatus ?? "In Progress", color: "#3b82f6" };
+      return { label: linearIssue.linearStatus ?? "In Progress", color: "#f59e0b" };
     case "completed":
       return { label: linearIssue.linearStatus ?? "Completed", color: "#22c55e" };
     case "canceled":
