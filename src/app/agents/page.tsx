@@ -28,6 +28,8 @@ import {
 import {
   AGENT_ALREADY_ATTACHED_TO_TASK_ERROR,
   AGENT_ALREADY_LINKED_ERROR,
+  LINEAR_ISSUE_ALREADY_ATTACHED_TO_TASK_ERROR,
+  LINEAR_ISSUE_ALREADY_LINKED_ERROR,
 } from "../tasks/attachmentErrors";
 
 type LinkedAgent = NonNullable<
@@ -240,9 +242,12 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
   const syncAgentStates = useAction(api.agents.syncAgentStates);
   const createTask = useTrackedMutation(api.tasks.create);
   const createAgent = useTrackedMutation(api.agents.createForTask);
+  const createLinearIssue = useTrackedMutation(api.linearIssues.createForTask);
   const launchAgent = useAction(api.agents.launch);
   const removeAgent = useTrackedMutation(api.agents.remove);
+  const removeLinearIssue = useTrackedMutation(api.linearIssues.remove);
   const removePullRequest = useTrackedMutation(api.pullRequests.remove);
+  const allTasks = useQuery(api.tasks.list, {});
 
   const [cursorAgents, setCursorAgents] = useState<CursorApiAgent[]>([]);
   const [cursorApiStatus, setCursorApiStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
@@ -331,11 +336,9 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
   const unlinkedCount = filteredItems.filter((i) => i.kind === "unlinked").length;
 
   const editingTask = useMemo((): TaskForEdit | null => {
-    if (!editingTaskId || !linkedAgents) return null;
-    const agentsForTask = linkedAgents.filter((a) => a.task?._id === editingTaskId);
-    const firstWithTask = agentsForTask.find((a) => a.task);
-    if (!firstWithTask?.task) return null;
-    const task = firstWithTask.task;
+    if (!editingTaskId || !allTasks) return null;
+    const task = allTasks.find((candidate) => candidate._id === editingTaskId);
+    if (!task) return null;
     return {
       _id: task._id,
       content: task.content,
@@ -343,19 +346,11 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
       priority: task.priority as TaskPriority,
       dueDate: task.dueDate,
       tags: task.tags as Tag[],
-      agents: agentsForTask.map((a) => ({
-        _id: a._id,
-        taskId: a.taskId,
-        externalId: a.externalId,
-        link: a.link,
-        title: a.title,
-        status: a.status,
-        lastSyncedAt: a.lastSyncedAt,
-      })) as AgentAttachment[],
-      pullRequests: [] as PullRequestAttachment[],
-      linearIssues: [],
+      agents: task.agents as AgentAttachment[],
+      pullRequests: task.pullRequests as PullRequestAttachment[],
+      linearIssues: task.linearIssues,
     };
-  }, [editingTaskId, linkedAgents]);
+  }, [editingTaskId, allTasks]);
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
@@ -461,6 +456,19 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
         items: [{ agentId: result.agentId, externalId: args.externalId, taskId: args.taskId }],
       });
     } catch { /* keep success */ }
+  };
+
+  const handleAttachLinearIssue = async (args: { taskId: Id<"tasks">; url: string }) => {
+    const result = await createLinearIssue(args);
+    if (result.status === "already_attached_to_task") {
+      throw new Error(LINEAR_ISSUE_ALREADY_ATTACHED_TO_TASK_ERROR);
+    }
+    if (result.status === "linked_to_other_task") {
+      throw new Error(LINEAR_ISSUE_ALREADY_LINKED_ERROR);
+    }
+    if (result.status === "invalid_linear_issue_url") {
+      throw new Error(result.message);
+    }
   };
 
   const handleTaskCreated = async (result: {
@@ -667,6 +675,8 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
           onTaskCreated={handleTaskCreated}
           onAttachAgent={handleAttachAgent}
           onRemoveAgent={(id) => removeAgent({ id })}
+          onAttachLinearIssue={handleAttachLinearIssue}
+          onRemoveLinearIssue={(id) => removeLinearIssue({ id })}
           onRemovePr={(id) => removePullRequest({ id })}
         />
       )}
