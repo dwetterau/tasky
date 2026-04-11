@@ -24,7 +24,7 @@ if (typeof urlWithCanParse.canParse !== "function") {
 }
 
 // SITE_URL is the frontend URL (Next.js app) - where users get redirected after auth
-const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
+export const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
 // CONVEX_SITE_URL is where Better Auth is hosted (Convex HTTP endpoints)
 const convexSiteUrl = process.env.CONVEX_SITE_URL!;
 const mcpResourceUrl = `${convexSiteUrl}/api/mcp`;
