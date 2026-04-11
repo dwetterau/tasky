@@ -19,6 +19,7 @@ import {
   type TaskForEdit,
   type AgentAttachment,
   type PullRequestAttachment,
+  createTaskListArgs,
   STATUS_CONFIG,
   PRIORITY_CONFIG,
   CURSOR_ICON_VIEWBOX,
@@ -247,7 +248,8 @@ function AgentsList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix
   const removeAgent = useTrackedMutation(api.agents.remove);
   const removeLinearIssue = useTrackedMutation(api.linearIssues.remove);
   const removePullRequest = useTrackedMutation(api.pullRequests.remove);
-  const allTasks = useQuery(api.tasks.list, {});
+  const listArgs = useMemo(() => createTaskListArgs(), []);
+  const allTasks = useQuery(api.tasks.list, listArgs);
 
   const [cursorAgents, setCursorAgents] = useState<CursorApiAgent[]>([]);
   const [cursorApiStatus, setCursorApiStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
