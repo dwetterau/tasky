@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
-import { authComponent, createAuth } from "./auth";
+import { authComponent, createAuth, siteUrl } from "./auth";
+import { httpAction } from "./_generated/server";
 import {
   mcpDeleteHandler,
   mcpGetHandler,
@@ -18,6 +19,23 @@ const http = httpRouter();
 
 // Enable CORS since frontend (Next.js) is on a different domain
 authComponent.registerRoutes(http, createAuth, { cors: true });
+
+http.route({
+  path: "/",
+  method: "GET",
+  handler: httpAction(async (_ctx, req) => {
+    const requestUrl = new URL(req.url);
+    const redirectUrl = new URL(siteUrl);
+    for (const [key, value] of requestUrl.searchParams.entries()) {
+      redirectUrl.searchParams.set(key, value);
+    }
+    const authError = requestUrl.searchParams.get("error");
+    if (authError && !redirectUrl.searchParams.has("authError")) {
+      redirectUrl.searchParams.set("authError", authError);
+    }
+    return Response.redirect(redirectUrl.toString(), 302);
+  }),
+});
 
 http.route({
   path: "/api/mcp",
