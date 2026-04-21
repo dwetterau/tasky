@@ -204,7 +204,9 @@ async function hydrateTasksWithScopedRelationsBatched<T extends { _id: Id<"tasks
         Pick<
           Doc<"pullRequests">,
           "_id" | "taskId" | "url" | "githubState" | "isDraft" | "isMerged" | "lastSyncedAt"
-        >
+        > & {
+          normalized: ReturnType<typeof parseGitHubPullRequestUrl> | null;
+        }
       >;
       linearIssues: Array<
         Pick<
@@ -293,6 +295,7 @@ async function hydrateTasksWithScopedRelationsBatched<T extends { _id: Id<"tasks
       isDraft: pullRequest.isDraft,
       isMerged: pullRequest.isMerged,
       lastSyncedAt: pullRequest.lastSyncedAt,
+      normalized: pullRequest.normalized,
     })),
     linearIssues: (linearIssuesByTaskId.get(task._id) ?? []).map((linearIssue) => ({
       _id: linearIssue._id,
