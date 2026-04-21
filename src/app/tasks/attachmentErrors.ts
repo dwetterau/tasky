@@ -43,9 +43,10 @@ export function getPullRequestAttachmentErrorMessage(error: unknown): string {
   if (
     message.includes("Invalid pull request URL") ||
     message.includes("Only github.com pull request URLs are supported") ||
+    message.includes("Only github.com pull request URLs and review.cursor.com/github/pr links are supported") ||
     message.includes("URL must match github.com/<owner>/<repo>/pull/<number>")
   ) {
-    return "Enter a GitHub pull request URL like github.com/owner/repo/pull/123.";
+    return "Enter a GitHub PR URL like github.com/owner/repo/pull/123 or review.cursor.com/github/pr/owner/repo/123.";
   }
   return message;
 }

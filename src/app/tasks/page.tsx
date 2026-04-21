@@ -11,6 +11,7 @@ import { SignIn } from "@/components/SignIn";
 import ReactMarkdown from "react-markdown";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { usePageTagFilter } from "@/lib/usePageTagFilter";
+import { tryParseGitHubPullRequestReference } from "@/lib/githubPullRequestUrls";
 import { CapturesSidebar } from "@/components/CapturesSidebar";
 import {
   DndContext,
@@ -109,27 +110,15 @@ type TaskView = {
 };
 
 function parseGitHubPrUrl(rawUrl: string): PullRequestAttachment["normalized"] {
-  try {
-    const parseInput = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawUrl.trim())
-      ? rawUrl.trim()
-      : `https://${rawUrl.trim()}`;
-    const parsed = new URL(parseInput);
-    const hostname = parsed.hostname.toLowerCase();
-    const domain = hostname === "www.github.com" ? "github.com" : hostname;
-    if (domain !== "github.com") return null;
-    const parts = parsed.pathname.split("/").filter(Boolean);
-    if (parts.length < 4 || parts[2].toLowerCase() !== "pull") return null;
-    const number = Number(parts[3]);
-    if (!Number.isInteger(number) || number <= 0) return null;
-    return {
-      domain,
-      owner: parts[0].toLowerCase(),
-      repo: parts[1].toLowerCase(),
-      number,
-    };
-  } catch {
-    return null;
-  }
+  const parsed = tryParseGitHubPullRequestReference(rawUrl);
+  if (!parsed) return null;
+  return {
+    url: parsed.url,
+    domain: parsed.domain,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    number: parsed.number,
+  };
 }
 
 function getCanonicalPullRequestUrl(

@@ -123,7 +123,8 @@ export function AttachPrModal({
         </div>
         {(submitError || url.trim()) && (
           <p className={`mt-3 text-xs ${submitError ? "text-red-400" : "text-(--muted)"}`}>
-            {submitError ?? "Enter a GitHub pull request URL like github.com/owner/repo/pull/123."}
+            {submitError ??
+              "Enter a GitHub PR URL like github.com/owner/repo/pull/123 or review.cursor.com/github/pr/owner/repo/123."}
           </p>
         )}
 
