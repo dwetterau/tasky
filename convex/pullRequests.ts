@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
 import { decryptApiKey } from "./apiKeys";
 import { insertEvent } from "./events";
+import { parseGitHubPullRequestReference } from "../src/lib/githubPullRequestUrls";
 
 export function parseGitHubPullRequestUrl(rawUrl: string): {
   url: string;
@@ -13,47 +14,8 @@ export function parseGitHubPullRequestUrl(rawUrl: string): {
   repo: string;
   number: number;
 } {
-  const trimmed = rawUrl.trim();
-  const parseInput = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)
-    ? trimmed
-    : `https://${trimmed}`;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(parseInput);
-  } catch {
-    throw new Error("Invalid pull request URL");
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-  const domain = hostname === "www.github.com" ? "github.com" : hostname;
-  if (domain !== "github.com") {
-    throw new Error("Only github.com pull request URLs are supported");
-  }
-
-  const parts = parsed.pathname.split("/").filter(Boolean);
-  if (parts.length < 4 || parts[2].toLowerCase() !== "pull") {
-    throw new Error("URL must match github.com/<owner>/<repo>/pull/<number>");
-  }
-
-  const owner = parts[0].toLowerCase();
-  const repo = parts[1].toLowerCase();
-  const number = Number(parts[3]);
-  if (!owner || !repo || !Number.isInteger(number) || number <= 0) {
-    throw new Error("Invalid pull request URL");
-  }
-
-  return {
-    // Canonical storage form is protocol-less and normalized for dedupe/display.
-    url: `github.com/${owner}/${repo}/pull/${number}`,
-    domain,
-    owner,
-    repo,
-    number,
-  };
+  return parseGitHubPullRequestReference(rawUrl);
 }
-
-const PULL_REQUEST_ALREADY_LINKED_ERROR = "Pull request is already linked to another task";
 
 export const listByTask = query({
   args: { taskId: v.id("tasks") },

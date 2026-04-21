@@ -7,6 +7,11 @@ import { Id } from "../../../convex/_generated/dataModel";
 import { extractCursorAgentExternalId } from "../../../convex/cursorAgentUrl";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 import { useAuthSession } from "@/lib/useAuthSession";
+import {
+  looksLikeGitHubPullRequestInput,
+  normalizeGitHubPullRequestInput,
+  tryParseGitHubPullRequestReference,
+} from "@/lib/githubPullRequestUrls";
 import { TagSelector, Tag } from "../../components/TagSelector";
 import { StyledSelect, type SelectOption } from "../../components/StyledSelect";
 import { MarkdownEditor } from "../../components/MarkdownEditor";
@@ -118,9 +123,7 @@ export type TaskSearchArgs = {
 const LAST_SELECTED_TAG_KEY = "tasky-last-selected-tag";
 
 function normalizePullRequestUrl(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) return trimmed;
-  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return normalizeGitHubPullRequestInput(input);
 }
 
 function normalizeLinearIssueUrl(input: string): string {
@@ -141,11 +144,10 @@ function getLinearIssueIdentifierLabel(input: string): string {
   }
 }
 
-const GITHUB_PR_URL_PATTERN = /(?:https?:\/\/)?(?:www\.)?github\.com\/[^/]+\/[^/]+\/pull\/\d+/i;
 const LINEAR_ISSUE_URL_PATTERN = /(?:https?:\/\/)?(?:www\.)?linear\.app\/[^/]+\/issue\/[A-Z0-9]+-\d+/i;
 
 function looksLikeGitHubPrUrl(input: string): boolean {
-  return GITHUB_PR_URL_PATTERN.test(input.trim());
+  return looksLikeGitHubPullRequestInput(input);
 }
 
 function looksLikeLinearIssueUrl(input: string): boolean {
@@ -252,15 +254,26 @@ export function TaskModal({
           status: "",
           updatedAt: Date.now(),
         })),
-        pullRequests: (args.pullRequestUrls ?? []).map((url) => ({
-          _id: crypto.randomUUID() as Id<"pullRequests">,
-          _creationTime: Number.MAX_SAFE_INTEGER,
-          userId: "",
-          taskId: "" as Id<"tasks">,
-          url: normalizePullRequestUrl(url),
-          normalized: null,
-          updatedAt: Date.now(),
-        })),
+        pullRequests: (args.pullRequestUrls ?? []).map((url) => {
+          const parsed = tryParseGitHubPullRequestReference(url);
+          return {
+            _id: crypto.randomUUID() as Id<"pullRequests">,
+            _creationTime: Number.MAX_SAFE_INTEGER,
+            userId: "",
+            taskId: "" as Id<"tasks">,
+            url: normalizePullRequestUrl(url),
+            normalized: parsed
+              ? {
+                  url: parsed.url,
+                  domain: parsed.domain,
+                  owner: parsed.owner,
+                  repo: parsed.repo,
+                  number: parsed.number,
+                }
+              : null,
+            updatedAt: Date.now(),
+          };
+        }),
         linearIssues: (args.linearIssueUrls ?? []).map((url) => ({
           _id: crypto.randomUUID() as Id<"linearIssues">,
           _creationTime: Number.MAX_SAFE_INTEGER,
@@ -1267,7 +1280,7 @@ export function TaskModal({
                         {(prAttachError || prInput.trim()) && (
                           <p className={`text-xs ${prAttachError ? "text-red-400" : "text-(--muted)"}`}>
                             {prAttachError ??
-                              "Enter a GitHub pull request URL like github.com/owner/repo/pull/123."}
+                              "Enter a GitHub PR URL like github.com/owner/repo/pull/123 or review.cursor.com/github/pr/owner/repo/123."}
                           </p>
                         )}
                       </form>
@@ -1277,6 +1290,8 @@ export function TaskModal({
                         {pendingPullRequestUrls.map((url) => (
                           <div key={url} className="flex items-center gap-1.5 group">
                             {(() => {
+                              const parsed = tryParseGitHubPullRequestReference(url);
+                              const label = parsed ? `#${parsed.number} ${parsed.owner}/${parsed.repo}` : url;
                               const pendingPrStatus = getPullRequestStatusInfo({
                                 _id: "" as Id<"pullRequests">,
                                 taskId: "" as Id<"tasks">,
@@ -1286,7 +1301,7 @@ export function TaskModal({
                             <span
                               className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-(--muted) flex-1 min-w-0"
                               style={{ backgroundColor: "var(--card-border)" }}
-                              title={url}
+                              title={label}
                             >
                               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: pendingPrStatus.color }} />
                               <svg
@@ -1296,7 +1311,7 @@ export function TaskModal({
                               >
                                 <path d={pendingPrStatus.iconPath} />
                               </svg>
-                              <span className="truncate">{url}</span>
+                              <span className="truncate">{label}</span>
                             </span>
                               );
                             })()}

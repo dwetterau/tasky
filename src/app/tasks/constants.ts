@@ -6,6 +6,7 @@ import {
   taskPriorityValues,
 } from "../../../convex/schema";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { getGitHubPullRequestHref } from "@/lib/githubPullRequestUrls";
 import type { Tag } from "../../components/TagSelector";
 
 export type { TaskStatus, TaskPriority };
@@ -81,6 +82,7 @@ export type PullRequestAttachment = {
   isMerged?: boolean;
   lastSyncedAt?: number;
   normalized?: {
+    url: string;
     domain: string;
     owner: string;
     repo: string;
@@ -188,5 +190,5 @@ export function getLinearIssueStatusInfo(linearIssue: LinearIssueAttachment): {
 }
 
 export function getPullRequestHref(url: string): string {
-  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url) ? url : `https://${url}`;
+  return getGitHubPullRequestHref(url);
 }
