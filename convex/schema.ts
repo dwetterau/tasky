@@ -2,8 +2,20 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 // Task status and priority literals
-export const taskStatusValues = ["not_started", "in_progress", "agent_running", "blocked", "closed"] as const;
-export const taskPriorityValues = ["triage", "low", "medium", "high", "urgent"] as const;
+export const taskStatusValues = [
+  "not_started",
+  "in_progress",
+  "agent_running",
+  "blocked",
+  "closed",
+] as const;
+export const taskPriorityValues = [
+  "triage",
+  "low",
+  "medium",
+  "high",
+  "urgent",
+] as const;
 
 // TypeScript types derived from the arrays
 export type TaskStatus = (typeof taskStatusValues)[number];
@@ -14,7 +26,7 @@ export const taskStatus = v.union(
   v.literal("in_progress"),
   v.literal("agent_running"),
   v.literal("blocked"),
-  v.literal("closed")
+  v.literal("closed"),
 );
 
 export const taskPriority = v.union(
@@ -22,7 +34,7 @@ export const taskPriority = v.union(
   v.literal("low"),
   v.literal("medium"),
   v.literal("high"),
-  v.literal("urgent")
+  v.literal("urgent"),
 );
 
 export const apiKeyTypeValues = [
@@ -33,8 +45,6 @@ export const apiKeyTypeValues = [
   "portfolio_airtable_base_id",
   "portfolio_schwab_positions_view_id",
   "portfolio_schwab_brokerage_account_record_id",
-  "portfolio_alpaca_api_key",
-  "portfolio_alpaca_secret_key",
 ] as const;
 export type ApiKeyType = (typeof apiKeyTypeValues)[number];
 
@@ -46,8 +56,6 @@ export const apiKeyType = v.union(
   v.literal("portfolio_airtable_base_id"),
   v.literal("portfolio_schwab_positions_view_id"),
   v.literal("portfolio_schwab_brokerage_account_record_id"),
-  v.literal("portfolio_alpaca_api_key"),
-  v.literal("portfolio_alpaca_secret_key")
 );
 
 export const linearWorkflowStateTypeValues = [
@@ -58,7 +66,8 @@ export const linearWorkflowStateTypeValues = [
   "completed",
   "canceled",
 ] as const;
-export type LinearWorkflowStateType = (typeof linearWorkflowStateTypeValues)[number];
+export type LinearWorkflowStateType =
+  (typeof linearWorkflowStateTypeValues)[number];
 
 export const linearWorkflowStateType = v.union(
   v.literal("triage"),
@@ -66,7 +75,7 @@ export const linearWorkflowStateType = v.union(
   v.literal("unstarted"),
   v.literal("started"),
   v.literal("completed"),
-  v.literal("canceled")
+  v.literal("canceled"),
 );
 
 // Event action discriminated union -- keyed by `type`, entity type encoded in prefix
@@ -81,8 +90,16 @@ export const eventAction = v.union(
   v.object({ type: v.literal("capture.deleted") }),
   // Task actions
   v.object({ type: v.literal("task.created") }),
-  v.object({ type: v.literal("task.status_changed"), from: taskStatus, to: taskStatus }),
-  v.object({ type: v.literal("task.priority_changed"), from: taskPriority, to: taskPriority }),
+  v.object({
+    type: v.literal("task.status_changed"),
+    from: taskStatus,
+    to: taskStatus,
+  }),
+  v.object({
+    type: v.literal("task.priority_changed"),
+    from: taskPriority,
+    to: taskPriority,
+  }),
   v.object({ type: v.literal("task.edited") }),
   v.object({ type: v.literal("task.deleted") }),
   // Note actions
@@ -147,7 +164,11 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_has_tags", ["userId", "hasTags"])
     .index("by_user_status", ["userId", "status"])
-    .index("by_user_status_status_updated_at", ["userId", "status", "statusUpdatedAt"])
+    .index("by_user_status_status_updated_at", [
+      "userId",
+      "status",
+      "statusUpdatedAt",
+    ])
     .searchIndex("search_content", {
       searchField: "content",
       filterFields: ["userId"],
@@ -180,7 +201,9 @@ export default defineSchema({
     userId: v.string(),
     taskId: v.id("tasks"),
     url: v.string(), // Canonical GitHub PR URL; must be unique per user across all tasks
-    githubState: v.optional(v.union(v.literal("OPEN"), v.literal("CLOSED"), v.literal("MERGED"))),
+    githubState: v.optional(
+      v.union(v.literal("OPEN"), v.literal("CLOSED"), v.literal("MERGED")),
+    ),
     isDraft: v.optional(v.boolean()),
     isMerged: v.optional(v.boolean()),
     lastSyncedAt: v.optional(v.number()),
@@ -226,8 +249,7 @@ export default defineSchema({
     action: eventAction,
     source: v.optional(eventSource),
     tagIds: v.optional(v.array(v.id("tags"))), // snapshot of entity tags at event time
-  })
-    .index("by_user_timestamp", ["userId", "timestamp"]),
+  }).index("by_user_timestamp", ["userId", "timestamp"]),
 
   tags: defineTable({
     userId: v.string(),
