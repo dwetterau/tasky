@@ -9,9 +9,43 @@ import { SignIn } from "../../components/SignIn";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
 
+type ApiKeyType =
+  | "github"
+  | "linear"
+  | "cursor_agent_sdk"
+  | "portfolio_airtable_api_key"
+  | "portfolio_airtable_base_id"
+  | "portfolio_schwab_positions_view_id"
+  | "portfolio_schwab_brokerage_account_record_id"
+  | "portfolio_alpaca_api_key"
+  | "portfolio_alpaca_secret_key";
+
 function formatTimestamp(timestamp: number): string {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
+}
+
+function getApiKeyTypeLabel(type: ApiKeyType): string {
+  switch (type) {
+    case "github":
+      return "GitHub";
+    case "linear":
+      return "Linear";
+    case "cursor_agent_sdk":
+      return "Cursor Agent SDK";
+    case "portfolio_airtable_api_key":
+      return "Portfolio Airtable API Key";
+    case "portfolio_airtable_base_id":
+      return "Portfolio Airtable Base ID";
+    case "portfolio_schwab_positions_view_id":
+      return "Portfolio Schwab Positions View ID";
+    case "portfolio_schwab_brokerage_account_record_id":
+      return "Portfolio Schwab Account Record ID";
+    case "portfolio_alpaca_api_key":
+      return "Portfolio Alpaca API Key";
+    case "portfolio_alpaca_secret_key":
+      return "Portfolio Alpaca Secret Key";
+  }
 }
 
 function SettingsContent() {
@@ -33,14 +67,16 @@ function SettingsContent() {
 }`;
   const keys = useQuery(api.apiKeys.list, {});
   const [name, setName] = useState("");
-  const [type, setType] = useState<"github" | "linear" | "cursor_agent_sdk">("github");
+  const [type, setType] = useState<ApiKeyType>("github");
   const [value, setValue] = useState("");
   const namePlaceholder =
     type === "github"
       ? "Production GitHub token"
       : type === "linear"
         ? "Production Linear API key"
-        : "Production Cursor Agent SDK key";
+        : type === "cursor_agent_sdk"
+          ? "Production Cursor Agent SDK key"
+          : getApiKeyTypeLabel(type);
 
   const create = useTrackedMutation(api.apiKeys.create).withOptimisticUpdate((localStore, args) => {
     const current = localStore.getQuery(api.apiKeys.list, {});
@@ -107,12 +143,20 @@ function SettingsContent() {
               <label className="block text-xs font-medium text-(--muted) mb-1">Type</label>
               <select
                 value={type}
-                onChange={(e) => setType(e.target.value as "github" | "linear" | "cursor_agent_sdk")}
+                onChange={(e) => setType(e.target.value as ApiKeyType)}
                 className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
               >
                 <option value="github">GitHub</option>
                 <option value="linear">Linear</option>
                 <option value="cursor_agent_sdk">Cursor Agent SDK</option>
+                <option value="portfolio_airtable_api_key">Portfolio Airtable API Key</option>
+                <option value="portfolio_airtable_base_id">Portfolio Airtable Base ID</option>
+                <option value="portfolio_schwab_positions_view_id">Portfolio Schwab Positions View ID</option>
+                <option value="portfolio_schwab_brokerage_account_record_id">
+                  Portfolio Schwab Account Record ID
+                </option>
+                <option value="portfolio_alpaca_api_key">Portfolio Alpaca API Key</option>
+                <option value="portfolio_alpaca_secret_key">Portfolio Alpaca Secret Key</option>
               </select>
             </div>
           </div>
@@ -156,6 +200,11 @@ function SettingsContent() {
                 </a>
                 .
               </p>
+            ) : type.startsWith("portfolio_") ? (
+              <p className="mt-2 text-xs text-(--muted)">
+                Portfolio values are used server-side by Tasky to read Airtable/market data. They are
+                encrypted at rest and are never sent to the mobile app.
+              </p>
             ) : null}
           </div>
           <div className="flex justify-end">
@@ -186,7 +235,7 @@ function SettingsContent() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{key.name}</p>
                     <p className="text-xs text-(--muted)">
-                      {key.type} · saved {formatTimestamp(key._creationTime)}
+                      {getApiKeyTypeLabel(key.type as ApiKeyType)} · saved {formatTimestamp(key._creationTime)}
                     </p>
                   </div>
                   <button

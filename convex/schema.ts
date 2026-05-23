@@ -25,13 +25,29 @@ export const taskPriority = v.union(
   v.literal("urgent")
 );
 
-export const apiKeyTypeValues = ["github", "linear", "cursor_agent_sdk"] as const;
+export const apiKeyTypeValues = [
+  "github",
+  "linear",
+  "cursor_agent_sdk",
+  "portfolio_airtable_api_key",
+  "portfolio_airtable_base_id",
+  "portfolio_schwab_positions_view_id",
+  "portfolio_schwab_brokerage_account_record_id",
+  "portfolio_alpaca_api_key",
+  "portfolio_alpaca_secret_key",
+] as const;
 export type ApiKeyType = (typeof apiKeyTypeValues)[number];
 
 export const apiKeyType = v.union(
   v.literal("github"),
   v.literal("linear"),
-  v.literal("cursor_agent_sdk")
+  v.literal("cursor_agent_sdk"),
+  v.literal("portfolio_airtable_api_key"),
+  v.literal("portfolio_airtable_base_id"),
+  v.literal("portfolio_schwab_positions_view_id"),
+  v.literal("portfolio_schwab_brokerage_account_record_id"),
+  v.literal("portfolio_alpaca_api_key"),
+  v.literal("portfolio_alpaca_secret_key")
 );
 
 export const linearWorkflowStateTypeValues = [
