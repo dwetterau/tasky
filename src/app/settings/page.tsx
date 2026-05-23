@@ -16,9 +16,7 @@ type ApiKeyType =
   | "portfolio_airtable_api_key"
   | "portfolio_airtable_base_id"
   | "portfolio_schwab_positions_view_id"
-  | "portfolio_schwab_brokerage_account_record_id"
-  | "portfolio_alpaca_api_key"
-  | "portfolio_alpaca_secret_key";
+  | "portfolio_schwab_brokerage_account_record_id";
 
 function formatTimestamp(timestamp: number): string {
   const date = new Date(timestamp);
@@ -41,10 +39,6 @@ function getApiKeyTypeLabel(type: ApiKeyType): string {
       return "Portfolio Schwab Positions View ID";
     case "portfolio_schwab_brokerage_account_record_id":
       return "Portfolio Schwab Account Record ID";
-    case "portfolio_alpaca_api_key":
-      return "Portfolio Alpaca API Key";
-    case "portfolio_alpaca_secret_key":
-      return "Portfolio Alpaca Secret Key";
   }
 }
 
@@ -78,30 +72,34 @@ function SettingsContent() {
           ? "Production Cursor Agent SDK key"
           : getApiKeyTypeLabel(type);
 
-  const create = useTrackedMutation(api.apiKeys.create).withOptimisticUpdate((localStore, args) => {
-    const current = localStore.getQuery(api.apiKeys.list, {});
-    if (current === undefined) return;
-    const tempKey = {
-      _id: crypto.randomUUID() as Id<"apiKeys">,
-      _creationTime: Number.MAX_SAFE_INTEGER,
-      userId: "",
-      name: args.name,
-      type: args.type,
-      keyVersion: 1,
-      updatedAt: 0,
-    };
-    localStore.setQuery(api.apiKeys.list, {}, [tempKey, ...current]);
-  });
+  const create = useTrackedMutation(api.apiKeys.create).withOptimisticUpdate(
+    (localStore, args) => {
+      const current = localStore.getQuery(api.apiKeys.list, {});
+      if (current === undefined) return;
+      const tempKey = {
+        _id: crypto.randomUUID() as Id<"apiKeys">,
+        _creationTime: Number.MAX_SAFE_INTEGER,
+        userId: "",
+        name: args.name,
+        type: args.type,
+        keyVersion: 1,
+        updatedAt: 0,
+      };
+      localStore.setQuery(api.apiKeys.list, {}, [tempKey, ...current]);
+    },
+  );
 
-  const remove = useTrackedMutation(api.apiKeys.remove).withOptimisticUpdate((localStore, args) => {
-    const current = localStore.getQuery(api.apiKeys.list, {});
-    if (current === undefined) return;
-    localStore.setQuery(
-      api.apiKeys.list,
-      {},
-      current.filter((key) => key._id !== args.id)
-    );
-  });
+  const remove = useTrackedMutation(api.apiKeys.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      const current = localStore.getQuery(api.apiKeys.list, {});
+      if (current === undefined) return;
+      localStore.setQuery(
+        api.apiKeys.list,
+        {},
+        current.filter((key) => key._id !== args.id),
+      );
+    },
+  );
 
   const canCreate = name.trim() && value.trim();
 
@@ -121,8 +119,8 @@ function SettingsContent() {
         <div className="mb-8">
           <h1 className="text-2xl font-semibold mb-2">Settings</h1>
           <p className="text-sm text-(--muted)">
-            Manage user-scoped API keys used by integrations. Keys are encrypted at rest and never shown
-            again after saving.
+            Manage user-scoped API keys used by integrations. Keys are encrypted
+            at rest and never shown again after saving.
           </p>
         </div>
 
@@ -130,7 +128,9 @@ function SettingsContent() {
           <h2 className="text-base font-medium mb-4">Add API Key</h2>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="block text-xs font-medium text-(--muted) mb-1">Name</label>
+              <label className="block text-xs font-medium text-(--muted) mb-1">
+                Name
+              </label>
               <input
                 type="text"
                 value={name}
@@ -140,7 +140,9 @@ function SettingsContent() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-(--muted) mb-1">Type</label>
+              <label className="block text-xs font-medium text-(--muted) mb-1">
+                Type
+              </label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as ApiKeyType)}
@@ -149,19 +151,25 @@ function SettingsContent() {
                 <option value="github">GitHub</option>
                 <option value="linear">Linear</option>
                 <option value="cursor_agent_sdk">Cursor Agent SDK</option>
-                <option value="portfolio_airtable_api_key">Portfolio Airtable API Key</option>
-                <option value="portfolio_airtable_base_id">Portfolio Airtable Base ID</option>
-                <option value="portfolio_schwab_positions_view_id">Portfolio Schwab Positions View ID</option>
+                <option value="portfolio_airtable_api_key">
+                  Portfolio Airtable API Key
+                </option>
+                <option value="portfolio_airtable_base_id">
+                  Portfolio Airtable Base ID
+                </option>
+                <option value="portfolio_schwab_positions_view_id">
+                  Portfolio Schwab Positions View ID
+                </option>
                 <option value="portfolio_schwab_brokerage_account_record_id">
                   Portfolio Schwab Account Record ID
                 </option>
-                <option value="portfolio_alpaca_api_key">Portfolio Alpaca API Key</option>
-                <option value="portfolio_alpaca_secret_key">Portfolio Alpaca Secret Key</option>
               </select>
             </div>
           </div>
           <div className="mb-4">
-            <label className="block text-xs font-medium text-(--muted) mb-1">Key Value</label>
+            <label className="block text-xs font-medium text-(--muted) mb-1">
+              Key Value
+            </label>
             <input
               type="password"
               value={value}
@@ -171,8 +179,8 @@ function SettingsContent() {
             />
             {type === "github" ? (
               <p className="mt-2 text-xs text-(--muted)">
-                Tip: You can use your GitHub CLI token. Run <code>gh auth token</code>, then paste the
-                output here.
+                Tip: You can use your GitHub CLI token. Run{" "}
+                <code>gh auth token</code>, then paste the output here.
               </p>
             ) : type === "linear" ? (
               <p className="mt-2 text-xs text-(--muted)">
@@ -202,8 +210,9 @@ function SettingsContent() {
               </p>
             ) : type.startsWith("portfolio_") ? (
               <p className="mt-2 text-xs text-(--muted)">
-                Portfolio values are used server-side by Tasky to read Airtable/market data. They are
-                encrypted at rest and are never sent to the mobile app.
+                Portfolio values are used server-side by Tasky to read
+                Airtable/market data. They are encrypted at rest and are never
+                sent to the mobile app.
               </p>
             ) : null}
           </div>
@@ -235,7 +244,8 @@ function SettingsContent() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{key.name}</p>
                     <p className="text-xs text-(--muted)">
-                      {getApiKeyTypeLabel(key.type as ApiKeyType)} · saved {formatTimestamp(key._creationTime)}
+                      {getApiKeyTypeLabel(key.type as ApiKeyType)} · saved{" "}
+                      {formatTimestamp(key._creationTime)}
                     </p>
                   </div>
                   <button
@@ -254,7 +264,8 @@ function SettingsContent() {
         <div className="bg-(--card-bg) border border-(--card-border) rounded-xl p-5 mt-6">
           <h2 className="text-base font-medium mb-2">Cursor MCP Config</h2>
           <p className="text-sm text-(--muted) mb-3">
-            Add this to your Cursor MCP config file (typically <code>~/.cursor/mcp.json</code>).
+            Add this to your Cursor MCP config file (typically{" "}
+            <code>~/.cursor/mcp.json</code>).
           </p>
           <pre className="overflow-x-auto rounded-lg border border-(--card-border) bg-background p-3 text-xs leading-relaxed">
             <code>{mcpConfig}</code>

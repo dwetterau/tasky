@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
+import { expo } from "@better-auth/expo";
 import { jwt } from "better-auth/plugins/jwt";
 import { mcp } from "better-auth/plugins";
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
@@ -79,6 +80,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
           },
         },
       }),
+      expo(),
       // crossDomain redirects users back to the frontend after OAuth
       crossDomain({ siteUrl }),
       convex({ authConfig }),

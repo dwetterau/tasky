@@ -35,6 +35,15 @@ type PortfolioCredentials = {
   positionsViewId: string;
 };
 
+type RecentPriceStatus = {
+  latestPriceDate: string | null;
+  previousPriceDate: string | null;
+  dayReturn: number | null;
+  dayReturnPercent: number | null;
+  latestValue: number | null;
+  previousValue: number | null;
+};
+
 function asNumber(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -49,16 +58,30 @@ function formatAirtableDate(value: unknown): string | null {
   return asString(value).split("T")[0] ?? null;
 }
 
+function maxIsoDate(dates: string[]): string | null {
+  if (dates.length === 0) return null;
+  return dates.reduce((max, current) => (current > max ? current : max));
+}
+
 function targetPercentFromAirtable(value: unknown): number | null {
   if (value === undefined || value === null) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n * 100 : null;
 }
 
-function currentPriceFromValueAndQuantity(value: unknown, quantity: unknown): number | null {
+function currentPriceFromValueAndQuantity(
+  value: unknown,
+  quantity: unknown,
+): number | null {
   const q = Number(quantity);
   const v = Number(value);
-  if (!q || !Number.isFinite(q) || value === undefined || value === null || !Number.isFinite(v)) {
+  if (
+    !q ||
+    !Number.isFinite(q) ||
+    value === undefined ||
+    value === null ||
+    !Number.isFinite(v)
+  ) {
     return null;
   }
   return v / q;
@@ -67,7 +90,10 @@ function currentPriceFromValueAndQuantity(value: unknown, quantity: unknown): nu
 function calculateHolding(record: AirtableRecord) {
   const shares = asNumber(record.fields.Quantity);
   const costBasis = asNumber(record.fields["Cost Basis"]);
-  const currentPrice = currentPriceFromValueAndQuantity(record.fields.Value, shares);
+  const currentPrice = currentPriceFromValueAndQuantity(
+    record.fields.Value,
+    shares,
+  );
   const currentValue = currentPrice === null ? 0 : currentPrice * shares;
   const gainLoss = currentValue - costBasis;
 
@@ -87,7 +113,10 @@ function calculateHolding(record: AirtableRecord) {
 }
 
 function tickerHistoryNamePrefixFormula(ticker: string): string {
-  const escaped = ticker.toUpperCase().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const escaped = ticker
+    .toUpperCase()
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'");
   return `FIND('${escaped}-', {Name}) = 1`;
 }
 
@@ -118,7 +147,9 @@ async function fetchAirtableRecords({
     });
     const data = (await response.json()) as AirtableListResponse;
     if (!response.ok) {
-      const message = data.error?.message ?? `Airtable request failed with ${response.status}`;
+      const message =
+        data.error?.message ??
+        `Airtable request failed with ${response.status}`;
       throw new Error(message);
     }
     records.push(...(data.records ?? []));
@@ -128,15 +159,32 @@ async function fetchAirtableRecords({
   return records;
 }
 
-async function getLatestPriceDate(
+function mapPriceHistoryPoint(record: AirtableRecord): {
+  date: string | null;
+  close: number;
+  quantity: number;
+  value: number;
+} {
+  const date = formatAirtableDate(record.fields.Date);
+  const close = asNumber(record.fields["Close Price"]);
+  const quantity = asNumber(record.fields.Quantity);
+  return {
+    date,
+    close,
+    quantity,
+    value: close * quantity,
+  };
+}
+
+async function getRecentPriceStatus(
   credentials: PortfolioCredentials,
-  ticker: string
-): Promise<string | null> {
+  ticker: string,
+): Promise<RecentPriceStatus> {
   const params = new URLSearchParams();
   params.set("filterByFormula", tickerHistoryNamePrefixFormula(ticker));
   params.set("sort[0][field]", "Date");
   params.set("sort[0][direction]", "desc");
-  params.set("maxRecords", "1");
+  params.set("maxRecords", "2");
 
   const records = await fetchAirtableRecords({
     apiKey: credentials.apiKey,
@@ -144,13 +192,34 @@ async function getLatestPriceDate(
     table: PRICE_HISTORY_TABLE,
     params,
   });
-  return formatAirtableDate(records[0]?.fields.Date);
+  const latest = records[0] ? mapPriceHistoryPoint(records[0]) : null;
+  const previous = records[1] ? mapPriceHistoryPoint(records[1]) : null;
+
+  if (!latest || !previous || previous.value === 0) {
+    return {
+      latestPriceDate: latest?.date ?? null,
+      previousPriceDate: previous?.date ?? null,
+      dayReturn: null,
+      dayReturnPercent: null,
+      latestValue: latest?.value ?? null,
+      previousValue: previous?.value ?? null,
+    };
+  }
+  const dayReturn = latest.value - previous.value;
+  return {
+    latestPriceDate: latest.date,
+    previousPriceDate: previous.date,
+    dayReturn,
+    dayReturnPercent: (dayReturn / previous.value) * 100,
+    latestValue: latest.value,
+    previousValue: previous.value,
+  };
 }
 
 async function getCredential(
   ctx: ActionCtx,
   userId: string,
-  type: ApiKeyType
+  type: ApiKeyType,
 ): Promise<string | null> {
   const row = await ctx.runQuery(internal.apiKeys.getLatestByTypeInternal, {
     userId,
@@ -169,7 +238,7 @@ export const getSnapshot = action({
     status: v.union(
       v.literal("ok"),
       v.literal("no_credentials"),
-      v.literal("airtable_error")
+      v.literal("airtable_error"),
     ),
     message: v.optional(v.string()),
     holdings: v.array(
@@ -186,7 +255,10 @@ export const getSnapshot = action({
         targetAllocation: v.union(v.number(), v.null()),
         createdAt: v.string(),
         latestPriceDate: v.optional(v.union(v.string(), v.null())),
-      })
+        previousPriceDate: v.optional(v.union(v.string(), v.null())),
+        dayReturn: v.optional(v.union(v.number(), v.null())),
+        dayReturnPercent: v.optional(v.union(v.number(), v.null())),
+      }),
     ),
     summary: v.object({
       totalCost: v.number(),
@@ -195,6 +267,9 @@ export const getSnapshot = action({
       gainLossPercent: v.number(),
       holdingsCount: v.number(),
       latestPriceDate: v.union(v.string(), v.null()),
+      dayReturnDate: v.union(v.string(), v.null()),
+      dayReturn: v.union(v.number(), v.null()),
+      dayReturnPercent: v.union(v.number(), v.null()),
     }),
   }),
   handler: async (ctx, args) => {
@@ -206,7 +281,11 @@ export const getSnapshot = action({
     const [apiKey, baseId, positionsViewId] = await Promise.all([
       getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
       getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
-      getCredential(ctx, userId, portfolioCredentialTypes.schwabPositionsViewId),
+      getCredential(
+        ctx,
+        userId,
+        portfolioCredentialTypes.schwabPositionsViewId,
+      ),
     ]);
 
     if (!apiKey || !baseId || !positionsViewId) {
@@ -222,6 +301,9 @@ export const getSnapshot = action({
           gainLossPercent: 0,
           holdingsCount: 0,
           latestPriceDate: null,
+          dayReturnDate: null,
+          dayReturn: null,
+          dayReturnPercent: null,
         },
       };
     }
@@ -241,28 +323,76 @@ export const getSnapshot = action({
 
       const holdings = records.map(calculateHolding);
       const includePriceStatus = args.includePriceStatus ?? true;
-      const latestDates = includePriceStatus
+      const recentPriceStatuses = includePriceStatus
         ? await Promise.all(
             holdings.map(async (holding) => ({
               ticker: holding.ticker,
-              latestPriceDate: await getLatestPriceDate(credentials, holding.ticker),
-            }))
+              ...(await getRecentPriceStatus(credentials, holding.ticker)),
+            })),
           )
         : [];
-      const latestDateByTicker = new Map(
-        latestDates.map((entry) => [entry.ticker, entry.latestPriceDate])
+      const recentPriceStatusByTicker = new Map(
+        recentPriceStatuses.map((entry) => [entry.ticker, entry]),
       );
       const holdingsWithPriceStatus = holdings.map((holding) => ({
         ...holding,
-        latestPriceDate: includePriceStatus ? latestDateByTicker.get(holding.ticker) ?? null : null,
+        latestPriceDate: includePriceStatus
+          ? (recentPriceStatusByTicker.get(holding.ticker)?.latestPriceDate ??
+            null)
+          : null,
+        previousPriceDate: includePriceStatus
+          ? (recentPriceStatusByTicker.get(holding.ticker)?.previousPriceDate ??
+            null)
+          : null,
+        dayReturn: includePriceStatus
+          ? (recentPriceStatusByTicker.get(holding.ticker)?.dayReturn ?? null)
+          : null,
+        dayReturnPercent: includePriceStatus
+          ? (recentPriceStatusByTicker.get(holding.ticker)?.dayReturnPercent ??
+            null)
+          : null,
       }));
-      const totalCost = holdings.reduce((sum, holding) => sum + holding.costBasis, 0);
-      const totalCurrentValue = holdings.reduce((sum, holding) => sum + holding.currentValue, 0);
+      const totalCost = holdings.reduce(
+        (sum, holding) => sum + holding.costBasis,
+        0,
+      );
+      const totalCurrentValue = holdings.reduce(
+        (sum, holding) => sum + holding.currentValue,
+        0,
+      );
       const gainLoss = totalCurrentValue - totalCost;
-      const allLatestDates = latestDates
+      const allLatestDates = recentPriceStatuses
         .map((entry) => entry.latestPriceDate)
-        .filter((date): date is string => Boolean(date))
-        .sort();
+        .filter((date): date is string => Boolean(date));
+      const dayReturnStatuses = recentPriceStatuses.filter(
+        (
+          entry,
+        ): entry is typeof entry & {
+          latestValue: number;
+          previousValue: number;
+          dayReturn: number;
+        } =>
+          entry.latestValue !== null &&
+          entry.previousValue !== null &&
+          entry.dayReturn !== null,
+      );
+      const latestDayReturnDates = dayReturnStatuses
+        .map((entry) => entry.latestPriceDate)
+        .filter((date): date is string => Boolean(date));
+      const totalLatestHistoryValue = dayReturnStatuses.reduce(
+        (sum, entry) => sum + entry.latestValue,
+        0,
+      );
+      const totalPreviousHistoryValue = dayReturnStatuses.reduce(
+        (sum, entry) => sum + entry.previousValue,
+        0,
+      );
+      const dayReturn = dayReturnStatuses.reduce(
+        (sum, entry) => sum + entry.dayReturn,
+        0,
+      );
+      const hasDayReturn =
+        dayReturnStatuses.length > 0 && totalPreviousHistoryValue > 0;
 
       return {
         status: "ok" as const,
@@ -273,13 +403,23 @@ export const getSnapshot = action({
           gainLoss,
           gainLossPercent: totalCost > 0 ? (gainLoss / totalCost) * 100 : 0,
           holdingsCount: holdings.length,
-          latestPriceDate: allLatestDates[0] ?? null,
+          latestPriceDate: maxIsoDate(allLatestDates),
+          dayReturnDate: maxIsoDate(latestDayReturnDates),
+          dayReturn: hasDayReturn ? dayReturn : null,
+          dayReturnPercent: hasDayReturn
+            ? ((totalLatestHistoryValue - totalPreviousHistoryValue) /
+                totalPreviousHistoryValue) *
+              100
+            : null,
         },
       };
     } catch (error) {
       return {
         status: "airtable_error" as const,
-        message: error instanceof Error ? error.message : "Failed to fetch portfolio data.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch portfolio data.",
         holdings: [],
         summary: {
           totalCost: 0,
@@ -288,6 +428,9 @@ export const getSnapshot = action({
           gainLossPercent: 0,
           holdingsCount: 0,
           latestPriceDate: null,
+          dayReturnDate: null,
+          dayReturn: null,
+          dayReturnPercent: null,
         },
       };
     }
