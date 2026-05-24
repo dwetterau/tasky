@@ -16,7 +16,8 @@ type ApiKeyType =
   | "portfolio_airtable_api_key"
   | "portfolio_airtable_base_id"
   | "portfolio_schwab_positions_view_id"
-  | "portfolio_schwab_brokerage_account_record_id";
+  | "portfolio_schwab_brokerage_account_record_id"
+  | "portfolio_reset_date";
 
 function formatTimestamp(timestamp: number): string {
   const date = new Date(timestamp);
@@ -39,6 +40,8 @@ function getApiKeyTypeLabel(type: ApiKeyType): string {
       return "Portfolio Schwab Positions View ID";
     case "portfolio_schwab_brokerage_account_record_id":
       return "Portfolio Schwab Account Record ID";
+    case "portfolio_reset_date":
+      return "Portfolio Reset Date";
   }
 }
 
@@ -163,6 +166,9 @@ function SettingsContent() {
                 <option value="portfolio_schwab_brokerage_account_record_id">
                   Portfolio Schwab Account Record ID
                 </option>
+                <option value="portfolio_reset_date">
+                  Portfolio Reset Date
+                </option>
               </select>
             </div>
           </div>
@@ -212,7 +218,7 @@ function SettingsContent() {
               <p className="mt-2 text-xs text-(--muted)">
                 Portfolio values are used server-side by Tasky to read
                 Airtable/market data. They are encrypted at rest and are never
-                sent to the mobile app.
+                sent to the mobile app. Use YYYY-MM-DD for the reset date.
               </p>
             ) : null}
           </div>
