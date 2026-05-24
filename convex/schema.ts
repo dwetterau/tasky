@@ -45,6 +45,7 @@ export const apiKeyTypeValues = [
   "portfolio_airtable_base_id",
   "portfolio_schwab_positions_view_id",
   "portfolio_schwab_brokerage_account_record_id",
+  "portfolio_reset_date",
 ] as const;
 export type ApiKeyType = (typeof apiKeyTypeValues)[number];
 
@@ -56,6 +57,7 @@ export const apiKeyType = v.union(
   v.literal("portfolio_airtable_base_id"),
   v.literal("portfolio_schwab_positions_view_id"),
   v.literal("portfolio_schwab_brokerage_account_record_id"),
+  v.literal("portfolio_reset_date"),
 );
 
 export const linearWorkflowStateTypeValues = [
