@@ -81,6 +81,7 @@ type YahooChartResponse = {
 type RecentPriceStatus = {
   latestPriceDate: string | null;
   previousPriceDate: string | null;
+  latestClose: number | null;
   dayReturn: number | null;
   dayReturnPercent: number | null;
   latestValue: number | null;
@@ -290,10 +291,53 @@ async function createAirtableRecords({
   return created;
 }
 
-async function getLatestPriceDate(
+async function updateAirtableRecords({
+  apiKey,
+  baseId,
+  table,
+  records,
+}: {
+  apiKey: string;
+  baseId: string;
+  table: string;
+  records: Array<{ id: string; fields: Record<string, unknown> }>;
+}): Promise<number> {
+  let updated = 0;
+
+  for (let i = 0; i < records.length; i += AIRTABLE_BATCH_SIZE) {
+    const chunk = records.slice(i, i + AIRTABLE_BATCH_SIZE);
+    const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`;
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ records: chunk, typecast: true }),
+    });
+    const data = (await response.json()) as AirtableListResponse;
+    if (!response.ok) {
+      const message =
+        data.error?.message ??
+        `Airtable update request failed with ${response.status}`;
+      throw new Error(message);
+    }
+    updated += chunk.length;
+
+    if (i + AIRTABLE_BATCH_SIZE < records.length) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, AIRTABLE_THROTTLE_MS),
+      );
+    }
+  }
+
+  return updated;
+}
+
+async function getLatestPricePoint(
   credentials: PortfolioCredentials,
   ticker: string,
-): Promise<string | null> {
+): Promise<{ date: string; close: number } | null> {
   const params = new URLSearchParams();
   params.set("filterByFormula", tickerHistoryNamePrefixFormula(ticker));
   params.set("sort[0][field]", "Date");
@@ -307,7 +351,11 @@ async function getLatestPriceDate(
     params,
   });
 
-  return records[0] ? formatAirtableDate(records[0].fields.Date) : null;
+  if (!records[0]) return null;
+  const date = formatAirtableDate(records[0].fields.Date);
+  const close = Number(records[0].fields["Close Price"]);
+  if (!date || !Number.isFinite(close)) return null;
+  return { date, close };
 }
 
 async function fetchBarsFromAlpaca(
@@ -455,6 +503,29 @@ async function insertPriceHistoryBatch(
   });
 }
 
+async function updatePositionValues(
+  credentials: PortfolioCredentials,
+  positions: Array<{
+    positionRecordId: string;
+    shares: number;
+    closePrice: number;
+  }>,
+): Promise<number> {
+  if (positions.length === 0) return 0;
+
+  return await updateAirtableRecords({
+    apiKey: credentials.apiKey,
+    baseId: credentials.baseId,
+    table: POSITIONS_TABLE,
+    records: positions.map((position) => ({
+      id: position.positionRecordId,
+      fields: {
+        Value: position.closePrice * position.shares,
+      },
+    })),
+  });
+}
+
 function mapPriceHistoryPoint(record: AirtableRecord): {
   date: string | null;
   close: number;
@@ -495,6 +566,7 @@ async function getRecentPriceStatus(
     return {
       latestPriceDate: latest?.date ?? null,
       previousPriceDate: previous?.date ?? null,
+      latestClose: latest?.close ?? null,
       dayReturn: null,
       dayReturnPercent: null,
       latestValue: latest?.value ?? null,
@@ -505,6 +577,7 @@ async function getRecentPriceStatus(
   return {
     latestPriceDate: latest.date,
     previousPriceDate: previous.date,
+    latestClose: latest.close,
     dayReturn,
     dayReturnPercent: (dayReturn / previous.value) * 100,
     latestValue: latest.value,
@@ -630,29 +703,43 @@ export const getSnapshot = action({
       const recentPriceStatusByTicker = new Map(
         recentPriceStatuses.map((entry) => [entry.ticker, entry]),
       );
-      const holdingsWithPriceStatus = holdings.map((holding) => ({
-        ...holding,
-        latestPriceDate: includePriceStatus
-          ? (recentPriceStatusByTicker.get(holding.ticker)?.latestPriceDate ??
-            null)
-          : null,
-        previousPriceDate: includePriceStatus
-          ? (recentPriceStatusByTicker.get(holding.ticker)?.previousPriceDate ??
-            null)
-          : null,
-        dayReturn: includePriceStatus
-          ? (recentPriceStatusByTicker.get(holding.ticker)?.dayReturn ?? null)
-          : null,
-        dayReturnPercent: includePriceStatus
-          ? (recentPriceStatusByTicker.get(holding.ticker)?.dayReturnPercent ??
-            null)
-          : null,
-      }));
-      const totalCost = holdings.reduce(
+      const holdingsWithPriceStatus = holdings.map((holding) => {
+        const priceStatus = recentPriceStatusByTicker.get(holding.ticker);
+        const currentPrice =
+          includePriceStatus && priceStatus?.latestClose != null
+            ? priceStatus.latestClose
+            : holding.currentPrice;
+        const currentValue =
+          currentPrice === null
+            ? holding.currentValue
+            : currentPrice * holding.shares;
+        const gainLoss = currentValue - holding.costBasis;
+        return {
+          ...holding,
+          currentPrice,
+          currentValue,
+          gainLoss,
+          gainLossPercent:
+            holding.costBasis > 0 ? (gainLoss / holding.costBasis) * 100 : 0,
+          latestPriceDate: includePriceStatus
+            ? (priceStatus?.latestPriceDate ?? null)
+            : null,
+          previousPriceDate: includePriceStatus
+            ? (priceStatus?.previousPriceDate ?? null)
+            : null,
+          dayReturn: includePriceStatus
+            ? (priceStatus?.dayReturn ?? null)
+            : null,
+          dayReturnPercent: includePriceStatus
+            ? (priceStatus?.dayReturnPercent ?? null)
+            : null,
+        };
+      });
+      const totalCost = holdingsWithPriceStatus.reduce(
         (sum, holding) => sum + holding.costBasis,
         0,
       );
-      const totalCurrentValue = holdings.reduce(
+      const totalCurrentValue = holdingsWithPriceStatus.reduce(
         (sum, holding) => sum + holding.currentValue,
         0,
       );
@@ -743,6 +830,7 @@ export const syncPriceHistory = action({
       tickersProcessed: v.number(),
       recordsFound: v.number(),
       recordsInserted: v.number(),
+      positionsUpdated: v.number(),
       yahooTickers: v.array(v.string()),
     }),
   }),
@@ -772,6 +860,7 @@ export const syncPriceHistory = action({
           tickersProcessed: 0,
           recordsFound: 0,
           recordsInserted: 0,
+          positionsUpdated: 0,
           yahooTickers: [],
         },
       };
@@ -785,6 +874,7 @@ export const syncPriceHistory = action({
           tickersProcessed: 0,
           recordsFound: 0,
           recordsInserted: 0,
+          positionsUpdated: 0,
           yahooTickers: [],
         },
       };
@@ -801,6 +891,7 @@ export const syncPriceHistory = action({
           tickersProcessed: 0,
           recordsFound: 0,
           recordsInserted: 0,
+          positionsUpdated: 0,
           yahooTickers: [],
         },
       };
@@ -828,6 +919,7 @@ export const syncPriceHistory = action({
           tickersProcessed: 0,
           recordsFound: 0,
           recordsInserted: 0,
+          positionsUpdated: 0,
           yahooTickers: [],
         },
       };
@@ -837,10 +929,17 @@ export const syncPriceHistory = action({
     const endDate = getTodayDate();
     const allTradingDays = getTradingDays(startDate, endDate);
     const positionsToSync: PositionSyncPlan[] = [];
+    const latestPriceByPosition = new Map<
+      string,
+      { date: string; close: number }
+    >();
 
     for (const holding of holdings) {
-      const latest = await getLatestPriceDate(credentials, holding.ticker);
-      let start = latest ? addOneDay(latest) : startDate;
+      const latest = await getLatestPricePoint(credentials, holding.ticker);
+      if (latest) {
+        latestPriceByPosition.set(holding.id, latest);
+      }
+      let start = latest ? addOneDay(latest.date) : startDate;
       if (start < startDate) {
         start = startDate;
       }
@@ -858,14 +957,30 @@ export const syncPriceHistory = action({
     }
 
     if (positionsToSync.length === 0) {
+      const positionsUpdated = await updatePositionValues(
+        credentials,
+        holdings.flatMap((holding) => {
+          const latest = latestPriceByPosition.get(holding.id);
+          return latest
+            ? [
+                {
+                  positionRecordId: holding.id,
+                  shares: holding.shares,
+                  closePrice: latest.close,
+                },
+              ]
+            : [];
+        }),
+      );
       return {
         success: true,
-        message: "All price data is up to date.",
+        message: `Price history is up to date. Refreshed ${positionsUpdated} position values.`,
         synced: 0,
         details: {
           tickersProcessed: 0,
           recordsFound: 0,
           recordsInserted: 0,
+          positionsUpdated,
           yahooTickers: [],
         },
       };
@@ -934,17 +1049,48 @@ export const syncPriceHistory = action({
           });
         }
       }
+      const latestFetchedBar = tickerBars.reduce<AlpacaBar | null>(
+        (latest, bar) =>
+          !latest || datePart(bar.t) > datePart(latest.t) ? bar : latest,
+        null,
+      );
+      const latestStored = latestPriceByPosition.get(plan.positionRecordId);
+      if (
+        latestFetchedBar &&
+        (!latestStored || datePart(latestFetchedBar.t) >= latestStored.date)
+      ) {
+        latestPriceByPosition.set(plan.positionRecordId, {
+          date: datePart(latestFetchedBar.t),
+          close: latestFetchedBar.c,
+        });
+      }
     }
 
     const insertedCount = await insertPriceHistoryBatch(credentials, priceRows);
+    const positionsUpdated = await updatePositionValues(
+      credentials,
+      holdings.flatMap((holding) => {
+        const latest = latestPriceByPosition.get(holding.id);
+        return latest
+          ? [
+              {
+                positionRecordId: holding.id,
+                shares: holding.shares,
+                closePrice: latest.close,
+              },
+            ]
+          : [];
+      }),
+    );
     return {
       success: true,
-      message: `Successfully synced ${insertedCount} price records.`,
+      message: `Synced ${insertedCount} price records and refreshed ${positionsUpdated} position values.`,
       synced: insertedCount,
       details: {
         tickersProcessed: tickersNeedingData.length,
         recordsFound: priceRows.length,
         recordsInserted: insertedCount,
+        positionsUpdated,
         yahooTickers,
       },
     };
