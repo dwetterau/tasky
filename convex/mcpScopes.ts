@@ -2,6 +2,8 @@ import { Id } from "./_generated/dataModel";
 
 export const TASKS_READ_SCOPE = "tasks:read";
 export const TASKS_WRITE_SCOPE = "tasks:write";
+export const SIGNALS_READ_SCOPE = "signals:read";
+export const SIGNALS_WRITE_SCOPE = "signals:write";
 export const TAG_ROOT_PREFIX = "tag:root=";
 
 export type ParsedMcpScopes = {
