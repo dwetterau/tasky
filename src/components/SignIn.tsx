@@ -19,6 +19,9 @@ export function SignIn() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const authErrorParam = searchParams.get("authError") ?? searchParams.get("error");
+  const authErrorDescription = searchParams.get("error_description");
+  const authFlow =
+    searchParams.get("authFlow") ?? (pathname.startsWith("/oauth/") ? "mcp" : "app");
 
   // Check if we're in the middle of an OAuth callback
   // The crossDomain plugin uses /ott route with a token parameter
@@ -28,7 +31,13 @@ export function SignIn() {
     searchParams.has("code");
 
   const authError = authErrorParam
-    ? `Sign in failed (${authErrorParam}). Please try again.`
+    ? authErrorDescription
+      ? `${authFlow === "mcp" ? "MCP authorization" : "Sign in"} failed (${authErrorParam}): ${authErrorDescription}`
+      : `${authFlow === "mcp" ? "MCP authorization" : "Sign in"} failed (${authErrorParam}). ${
+          authErrorParam === "UNKNOWN"
+            ? "Check the Convex auth logs for the provider error."
+            : "Please try again."
+        }`
     : hasTimedOut
       ? "Sign in timed out. Please try again."
       : signInError;
@@ -67,12 +76,23 @@ export function SignIn() {
     // Set a flag so we know to show loading after redirect
     sessionStorage.setItem(AUTH_PENDING_KEY, "true");
     const callbackURL = `${window.location.origin}${window.location.pathname}`;
+    const errorCallbackURL = new URL(callbackURL);
+    errorCallbackURL.searchParams.set(
+      "authFlow",
+      window.location.pathname.startsWith("/oauth/") ? "mcp" : "app"
+    );
     try {
       await authClient.signIn.social({
         provider: "github",
         callbackURL,
+        errorCallbackURL: errorCallbackURL.toString(),
       });
-    } catch {
+    } catch (error) {
+      console.error("[auth.sign-in] Failed to start GitHub sign in", {
+        flow: window.location.pathname.startsWith("/oauth/") ? "mcp" : "app",
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       sessionStorage.removeItem(AUTH_PENDING_KEY);
       setHasPendingAuth(false);
       setIsSigningIn(false);
