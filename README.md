@@ -71,10 +71,14 @@ These are exposed from Convex HTTP routes:
 Supported capability scopes:
 
 - `tasks:read` (required for `readTasks`)
-- `tasks:write` (reserved for future tool mutations)
+- `tasks:write` (required for task/capture mutation tools)
+- `signals:read` (required for `readSignals`)
+- `signals:write` (required for `recordSignal` and `manageSignal`)
 
 Supported resource scope:
 
 - `tag:root=<tagId>` (optional, single-root tag filter)
 
 `readTasks` defaults to returning non-closed tasks (`not_started`, `in_progress`, `blocked`).
+Signal tools expose the activity/inventory attention dashboard and idempotent
+recording operations through the same MCP endpoint.

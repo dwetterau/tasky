@@ -8,41 +8,20 @@ import {
   TAG_ROOT_PREFIX,
   TASKS_READ_SCOPE,
   TASKS_WRITE_SCOPE,
+  type ParsedMcpScopes,
 } from "./mcpScopes";
 import type { Id } from "./_generated/dataModel";
+import {
+  jsonResponse,
+  mcpError,
+  mcpToolResult,
+} from "./mcpTools/common";
+import {
+  createSignalToolHandlers,
+  signalToolDescriptors,
+} from "./mcpTools/signals";
 
-const jsonHeaders = {
-  "content-type": "application/json",
-} as const;
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
-}
-
-function mcpError(id: unknown, code: number, message: string): Response {
-  return jsonResponse({
-    jsonrpc: "2.0",
-    id,
-    error: { code, message },
-  });
-}
-
-type ParsedScopes = {
-  scopes: Set<string>;
-  tagRootId?: Id<"tags">;
-};
-
-function mcpToolResult(id: unknown, payload: unknown): Response {
-  return jsonResponse({
-    jsonrpc: "2.0",
-    id,
-    result: {
-      content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
-    },
-  });
-}
-
-function parseScopes(scopeString: string): ParsedScopes {
+function parseScopes(scopeString: string): ParsedMcpScopes {
   const scopeValues = new Set<string>();
   for (const scope of splitScopeString(scopeString)) {
     scopeValues.add(scope);
@@ -330,7 +309,7 @@ async function handleReadTasksTool(
   }) => Promise<unknown>,
   rpcId: unknown,
   sessionUserId: string,
-  parsedScopes: ParsedScopes,
+  parsedScopes: ParsedMcpScopes,
   rawArgs: unknown
 ): Promise<Response> {
   if (!hasRequiredScope(parsedScopes, TASKS_READ_SCOPE)) {
@@ -395,7 +374,7 @@ async function handleUpdateTaskTool(
   syncLinearIssueAfterAttach: (args: { userId: string; linearIssue: MappedLinearIssueResult }) => Promise<void>,
   rpcId: unknown,
   sessionUserId: string,
-  parsedScopes: ParsedScopes,
+  parsedScopes: ParsedMcpScopes,
   rawArgs: unknown
 ): Promise<Response> {
   if (!hasRequiredScope(parsedScopes, TASKS_WRITE_SCOPE)) {
@@ -477,7 +456,7 @@ async function handleCreateTaskTool(
   syncLinearIssueAfterAttach: (args: { userId: string; linearIssue: MappedLinearIssueResult }) => Promise<void>,
   rpcId: unknown,
   sessionUserId: string,
-  parsedScopes: ParsedScopes,
+  parsedScopes: ParsedMcpScopes,
   rawArgs: unknown
 ): Promise<Response> {
   if (!hasRequiredScope(parsedScopes, TASKS_WRITE_SCOPE)) {
@@ -525,7 +504,7 @@ async function handleListCapturesTool(
   }) => Promise<unknown>,
   rpcId: unknown,
   sessionUserId: string,
-  parsedScopes: ParsedScopes,
+  parsedScopes: ParsedMcpScopes,
   rawArgs: unknown
 ): Promise<Response> {
   if (!hasRequiredScope(parsedScopes, TASKS_READ_SCOPE)) {
@@ -567,7 +546,7 @@ async function handleUpdateCapturesTool(
   }) => Promise<unknown>,
   rpcId: unknown,
   sessionUserId: string,
-  parsedScopes: ParsedScopes,
+  parsedScopes: ParsedMcpScopes,
   rawArgs: unknown
 ): Promise<Response> {
   if (!hasRequiredScope(parsedScopes, TASKS_WRITE_SCOPE)) {
@@ -612,7 +591,7 @@ async function handleCreateCapturesTool(
   }) => Promise<unknown>,
   rpcId: unknown,
   sessionUserId: string,
-  parsedScopes: ParsedScopes,
+  parsedScopes: ParsedMcpScopes,
   rawArgs: unknown
 ): Promise<Response> {
   if (!hasRequiredScope(parsedScopes, TASKS_WRITE_SCOPE)) {
@@ -801,6 +780,7 @@ function getToolsList() {
         },
       },
     },
+    ...signalToolDescriptors,
   ];
 }
 
@@ -869,78 +849,6 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           arguments?: unknown;
         };
         const toolName = typeof params.name === "string" ? params.name : undefined;
-        if (
-          toolName !== "readTasks" &&
-          toolName !== "createTask" &&
-          toolName !== "listCaptures" &&
-          toolName !== "updateCaptures" &&
-          toolName !== "createCaptures" &&
-          toolName !== "updateTask"
-        ) {
-          return mcpError(rpcId, -32601, "Tool not found");
-        }
-
-        if (toolName === "readTasks") {
-          return handleReadTasksTool(
-            (args) => ctx.runQuery(internal.tasks.listForMcp, args),
-            rpcId,
-            sessionUserId,
-            parsedScopes,
-            params.arguments
-          );
-        }
-        if (toolName === "createTask") {
-          const syncLinearIssueAfterAttach = async (args: {
-            userId: string;
-            linearIssue: MappedLinearIssueResult;
-          }) => {
-            await ctx.runAction(internal.linearIssues.syncLinearIssuesBatchInternal, {
-              userId: args.userId,
-              items: [
-                {
-                  linearIssueId: args.linearIssue.id,
-                  url: args.linearIssue.url,
-                  identifier: args.linearIssue.identifier,
-                },
-              ],
-            });
-          };
-          return handleCreateTaskTool(
-            (args) => ctx.runMutation(internal.tasks.createFromMcp, args),
-            syncLinearIssueAfterAttach,
-            rpcId,
-            sessionUserId,
-            parsedScopes,
-            params.arguments
-          );
-        }
-        if (toolName === "listCaptures") {
-          return handleListCapturesTool(
-            (args) => ctx.runQuery(internal.captures.listForMcp, args),
-            rpcId,
-            sessionUserId,
-            parsedScopes,
-            params.arguments
-          );
-        }
-        if (toolName === "updateCaptures") {
-          return handleUpdateCapturesTool(
-            (args) => ctx.runMutation(internal.captures.updateFromMcp, args),
-            rpcId,
-            sessionUserId,
-            parsedScopes,
-            params.arguments
-          );
-        }
-        if (toolName === "createCaptures") {
-          return handleCreateCapturesTool(
-            (args) => ctx.runMutation(internal.captures.createFromMcp, args),
-            rpcId,
-            sessionUserId,
-            parsedScopes,
-            params.arguments
-          );
-        }
         const syncLinearIssueAfterAttach = async (args: {
           userId: string;
           linearIssue: MappedLinearIssueResult;
@@ -956,14 +864,79 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
             ],
           });
         };
-        return handleUpdateTaskTool(
-          (args) => ctx.runMutation(internal.tasks.updateFromMcp, args),
-          syncLinearIssueAfterAttach,
-          rpcId,
-          sessionUserId,
-          parsedScopes,
-          params.arguments
-        );
+        const signalHandlers = createSignalToolHandlers({
+          read: (args) => ctx.runQuery(internal.signals.listForMcp, args),
+          record: (args) => ctx.runMutation(internal.signals.recordFromMcp, args),
+          manage: (args) => ctx.runMutation(internal.signals.manageFromMcp, args),
+        });
+        const toolHandlers: Record<string, () => Promise<Response>> = {
+          readTasks: () =>
+            handleReadTasksTool(
+            (args) => ctx.runQuery(internal.tasks.listForMcp, args),
+            rpcId,
+            sessionUserId,
+            parsedScopes,
+            params.arguments
+            ),
+          createTask: () =>
+            handleCreateTaskTool(
+              (args) => ctx.runMutation(internal.tasks.createFromMcp, args),
+              syncLinearIssueAfterAttach,
+              rpcId,
+              sessionUserId,
+              parsedScopes,
+              params.arguments
+            ),
+          listCaptures: () =>
+            handleListCapturesTool(
+              (args) => ctx.runQuery(internal.captures.listForMcp, args),
+              rpcId,
+              sessionUserId,
+              parsedScopes,
+              params.arguments
+            ),
+          updateCaptures: () =>
+            handleUpdateCapturesTool(
+              (args) => ctx.runMutation(internal.captures.updateFromMcp, args),
+              rpcId,
+              sessionUserId,
+              parsedScopes,
+              params.arguments
+            ),
+          createCaptures: () =>
+            handleCreateCapturesTool(
+              (args) => ctx.runMutation(internal.captures.createFromMcp, args),
+              rpcId,
+              sessionUserId,
+              parsedScopes,
+              params.arguments
+            ),
+          updateTask: () =>
+            handleUpdateTaskTool(
+              (args) => ctx.runMutation(internal.tasks.updateFromMcp, args),
+              syncLinearIssueAfterAttach,
+              rpcId,
+              sessionUserId,
+              parsedScopes,
+              params.arguments
+            ),
+          ...Object.fromEntries(
+            Object.entries(signalHandlers).map(([name, handler]) => [
+              name,
+              () =>
+                handler(
+                  rpcId,
+                  sessionUserId,
+                  parsedScopes,
+                  params.arguments
+                ),
+            ]),
+          ),
+        };
+        const handler = toolName === undefined ? undefined : toolHandlers[toolName];
+        return handler
+          ? await handler()
+          : mcpError(rpcId, -32601, "Tool not found");
       }
 
       return mcpError(rpcId, -32601, "Method not found");

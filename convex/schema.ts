@@ -126,6 +126,65 @@ export type EventAction = typeof eventAction.type;
 export const eventSource = v.union(v.literal("APP"), v.literal("MCP"));
 export type EventSource = "APP" | "MCP";
 
+export const signalAttention = v.union(
+  v.literal("ok"),
+  v.literal("soon"),
+  v.literal("due"),
+  v.literal("unknown"),
+);
+
+export const signalSource = v.union(
+  v.literal("mobile"),
+  v.literal("mcp"),
+);
+
+export const inventoryThreshold = v.object({
+  value: v.number(),
+  comparison: v.union(
+    v.literal("atOrBelow"),
+    v.literal("atOrAbove"),
+  ),
+});
+
+export const inventoryFlow = v.object({
+  amount: v.number(),
+  everyDays: v.number(),
+});
+
+export const signalModel = v.union(
+  v.object({
+    kind: v.literal("activity"),
+    dueAfterMs: v.optional(v.number()),
+    lastOccurredAt: v.optional(v.number()),
+  }),
+  v.object({
+    kind: v.literal("inventory"),
+    unit: v.string(),
+    threshold: inventoryThreshold,
+    flow: v.optional(inventoryFlow),
+    confirmedQuantity: v.number(),
+    confirmedAt: v.number(),
+    nextFlowAt: v.optional(v.number()),
+  }),
+);
+
+export const signalEntryOperation = v.union(
+  v.object({
+    type: v.literal("activity.occurred"),
+    note: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal("inventory.adjusted"),
+    amount: v.number(),
+    resultingQuantity: v.number(),
+  }),
+  v.object({
+    type: v.literal("inventory.set"),
+    quantity: v.number(),
+    previousQuantity: v.number(),
+  }),
+);
+
 // Note: better-auth manages its own tables (users, sessions, accounts, verifications)
 // through the component. Our app tables use string userId to reference better-auth users.
 export default defineSchema({
@@ -270,4 +329,29 @@ export default defineSchema({
     completedAt: v.number(), // Unix timestamp (ms) when onboarding was completed
     lastViewedAt: v.optional(v.number()), // Unix timestamp (ms) for analytics/debugging
   }).index("by_user", ["userId"]),
+
+  signals: defineTable({
+    userId: v.string(),
+    name: v.string(),
+    category: v.optional(v.string()),
+    model: signalModel,
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_archived", ["userId", "archivedAt"]),
+
+  signalEntries: defineTable({
+    userId: v.string(),
+    signalId: v.id("signals"),
+    effectiveAt: v.number(),
+    recordedAt: v.number(),
+    source: signalSource,
+    idempotencyKey: v.string(),
+    operation: signalEntryOperation,
+  })
+    .index("by_signal_effective_at", ["signalId", "effectiveAt"])
+    .index("by_user_effective_at", ["userId", "effectiveAt"])
+    .index("by_user_idempotency_key", ["userId", "idempotencyKey"]),
 });

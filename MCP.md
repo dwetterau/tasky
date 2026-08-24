@@ -17,7 +17,7 @@ This document explains how Tasky's MCP server is wired today and why key design 
 - MCP support is enabled via Better Auth's `mcp` plugin.
 - `oauthScopes` declares currently supported scopes:
   - identity/session scopes: `openid`, `profile`, `email`, `offline_access`
-  - capability scopes: `tasks:read`, `tasks:write`
+  - capability scopes: `tasks:read`, `tasks:write`, `signals:read`, `signals:write`
 - `defaultScope` is currently `openid offline_access tasks:read`.
 - Dynamic client registration is enabled (`allowDynamicClientRegistration: true`).
 
@@ -54,7 +54,7 @@ Why this design:
   - `notifications/initialized`
   - `tools/list`
   - `tools/call`
-- Tool catalog is defined in `getToolsList()` (currently `readTasks` and `updateTask`).
+- Existing task/capture tools remain in `getToolsList()`; modular tool descriptors and handlers live under `convex/mcpTools/`.
 - `tools/call` performs:
   1. Tool name check
   2. Scope check
@@ -63,14 +63,14 @@ Why this design:
   5. MCP-formatted response (`result.content` text payload)
 
 Why this design:
-- Explicit dispatch keeps tool behavior auditable and deterministic.
+- Declarative handler registration keeps tool behavior auditable without adding another whitelist/dispatch branch for every tool.
 - JSON-RPC error codes are returned in one place, improving client interoperability.
 
 ### 4) Scope parsing helpers (`convex/mcpScopes.ts`)
 
 Current scope model includes:
 
-- Capability scopes (`tasks:read`, `tasks:write`)
+- Capability scopes (`tasks:read`, `tasks:write`, `signals:read`, `signals:write`)
 - Resource constraint scope prefix: `tag:root=<tagId>`
 
 Current behavior:
@@ -201,6 +201,24 @@ Notes:
 - `removeAgentById` should use agent ids from `readTasks`.
 - Tool schema includes docs for due-date format and clear semantics.
 
+### `readSignals` (`signals:read`)
+
+Returns the authenticated user's active activity/inventory signals ordered by
+attention. Optional `kind`, `category`, and `attention` filters are supported.
+`now` and `soonWindowMs` can be supplied for deterministic evaluation.
+
+### `recordSignal` (`signals:write`)
+
+Records `activity.occurred`, `inventory.adjusted`, or `inventory.set` for a
+signal ID. `idempotencyKey` is required; replaying the same operation returns
+the original entry without applying it again.
+
+### `manageSignal` (`signals:write`)
+
+Creates activity/inventory signals, updates kind-specific configuration, and
+archives or restores a signal. Inventory flows are signed fixed-day
+projections rather than scheduled writes.
+
 ## Architectural Decisions and Trade-offs
 
 ### Better Auth plugin-first strategy
@@ -273,11 +291,11 @@ When adding a new MCP tool (for example `createTask`):
 - Add/confirm capability scope in `oauthScopes` and `mcpScopes`.
 - Decide whether resource scopes (tag constraints, etc.) should apply.
 
-2. Add tool schema to `getToolsList()`
+2. Add a tool descriptor under `convex/mcpTools/`
 - Keep input schema strict (`additionalProperties: false`).
 - Ensure argument names/types mirror the eventual Convex call.
 
-3. Extend `tools/call` dispatch
+3. Register the tool handler
 - Validate tool name, required scope(s), and arguments.
 - Return JSON-RPC error codes for not found, unauthorized, or invalid input.
 
