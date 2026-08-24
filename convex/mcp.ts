@@ -80,6 +80,7 @@ type TaskPriority = "triage" | "low" | "medium" | "high" | "urgent";
 type ParsedTaskMutationArgs = {
   taskId?: Id<"tasks">;
   content?: string;
+  tags?: string[];
   status?: TaskStatus;
   priority?: TaskPriority;
   dueDate?: string | null;
@@ -101,6 +102,7 @@ type UpdateTaskFromMcpResult = {
   taskId: Id<"tasks">;
   updatedFields: {
     content: boolean;
+    tags: boolean;
     status: boolean;
     priority: boolean;
     dueDate: boolean;
@@ -188,6 +190,7 @@ function parseTaskMutationArgs(
 
   const allowedKeys = new Set([
     "content",
+    "tags",
     "status",
     "priority",
     "dueDate",
@@ -212,6 +215,7 @@ function parseTaskMutationArgs(
   const args = (rawArgs ?? {}) as {
     taskId?: unknown;
     content?: unknown;
+    tags?: unknown;
     status?: unknown;
     priority?: unknown;
     dueDate?: unknown;
@@ -234,6 +238,19 @@ function parseTaskMutationArgs(
     }
   } else if (args.content !== undefined && typeof args.content !== "string") {
     return { error: mcpError(rpcId, -32602, "content must be a string") };
+  }
+
+  let tags: string[] | undefined;
+  if (args.tags !== undefined) {
+    if (
+      !Array.isArray(args.tags) ||
+      !args.tags.every((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+    ) {
+      return {
+        error: mcpError(rpcId, -32602, "tags must be an array of non-empty tag names"),
+      };
+    }
+    tags = Array.from(new Set(args.tags.map((tag) => tag.trim())));
   }
 
   const status = parseTaskStatus(args.status);
@@ -288,6 +305,7 @@ function parseTaskMutationArgs(
     parsed: {
       taskId,
       content: args.content as string | undefined,
+      tags,
       status,
       priority,
       dueDate,
@@ -363,6 +381,7 @@ async function handleUpdateTaskTool(
     id: Id<"tasks">;
     tagRootId?: Id<"tags">;
     content?: string;
+    tagNames?: string[];
     status?: "not_started" | "in_progress" | "agent_running" | "blocked" | "closed";
     priority?: "triage" | "low" | "medium" | "high" | "urgent";
     dueDate?: string | null;
@@ -394,6 +413,7 @@ async function handleUpdateTaskTool(
 
   const hasAnyUpdate =
     parsed.content !== undefined ||
+    parsed.tags !== undefined ||
     parsed.status !== undefined ||
     parsed.priority !== undefined ||
     parsed.dueDate !== undefined ||
@@ -407,7 +427,7 @@ async function handleUpdateTaskTool(
     return mcpError(
       rpcId,
       -32602,
-      "No updates provided. Set at least one of content/status/priority/dueDate/add*/remove*."
+      "No updates provided. Set at least one of content/tags/status/priority/dueDate/add*/remove*."
     );
   }
 
@@ -417,6 +437,7 @@ async function handleUpdateTaskTool(
       id: parsed.taskId,
       tagRootId: parsedScopes.tagRootId,
       content: parsed.content,
+      tagNames: parsed.tags,
       status: parsed.status,
       priority: parsed.priority,
       dueDate: parsed.dueDate,
@@ -445,6 +466,7 @@ async function handleCreateTaskTool(
     userId: string;
     tagRootId?: Id<"tags">;
     content: string;
+    tagNames?: string[];
     status?: "not_started" | "in_progress" | "agent_running" | "blocked" | "closed";
     priority?: "triage" | "low" | "medium" | "high" | "urgent";
     dueDate?: string | null;
@@ -475,6 +497,7 @@ async function handleCreateTaskTool(
       userId: sessionUserId,
       tagRootId: parsedScopes.tagRootId,
       content: parsed.content,
+      tagNames: parsed.tags,
       status: parsed.status,
       priority: parsed.priority,
       dueDate: parsed.dueDate,
@@ -656,13 +679,19 @@ function getToolsList() {
     {
       name: "createTask",
       description:
-        "Create a task for the authenticated user. Supports content/status/priority/dueDate and additive agent/PR attachment fields.",
+        "Create a task for the authenticated user. Supports tags by existing tag name, content/status/priority/dueDate, and additive attachment fields.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
         required: ["content"],
         properties: {
           content: { type: "string" },
+          tags: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            description:
+              "Existing tag names to assign. Matching is exact after trimming and case-insensitive when unambiguous.",
+          },
           status: {
             type: "string",
             enum: ["not_started", "in_progress", "agent_running", "blocked", "closed"],
@@ -736,7 +765,7 @@ function getToolsList() {
     {
       name: "updateTask",
       description:
-        "Partially update a task. Supports content/status/priority and additive agent/PR attachment changes.",
+        "Partially update a task. Supports replacing tags by existing tag name, content/status/priority, and attachment changes.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -744,6 +773,12 @@ function getToolsList() {
         properties: {
           taskId: { type: "string" },
           content: { type: "string" },
+          tags: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            description:
+              "Replacement set of existing tag names. Matching is exact after trimming and case-insensitive when unambiguous. Pass [] to clear tags when not tag-scoped.",
+          },
           status: {
             type: "string",
             enum: ["not_started", "in_progress", "agent_running", "blocked", "closed"],

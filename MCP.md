@@ -155,6 +155,27 @@ Output:
 
 - Task list including core task fields, `tags` (tag names only), `agents`, and `pullRequests`.
 
+### `createTask` (`tasks:write`)
+
+Input:
+
+- `content: string` (required)
+- `tags?: string[]`
+  - Assigns existing tags by name; matching trims whitespace and uses an exact, case-insensitive fallback only when unambiguous.
+- Optional task fields:
+  - `status?: "not_started" | "in_progress" | "agent_running" | "blocked" | "closed"`
+  - `priority?: "triage" | "low" | "medium" | "high" | "urgent"`
+  - `dueDate?: "YYYY-MM-DD" | null`
+- Optional attachment operations:
+  - `addAgent?: string`
+  - `addPullRequestByUrl?: string`
+  - `addLinearIssueByUrl?: string`
+
+Notes:
+
+- Tags must already exist for the authenticated user.
+- A tag-scoped token assigns its root tag when `tags` is omitted. If `tags` is supplied, at least one selected tag must remain in that scope.
+
 ### `updateTask` (`tasks:write`)
 
 Input:
@@ -162,8 +183,9 @@ Input:
 - `taskId: string` (required)
 - Optional task patches:
   - `content?: string`
-  - `status?: "not_started" | "in_progress" | "blocked" | "closed"`
-  - `priority?: "triage" | "low" | "medium" | "high"`
+  - `tags?: string[]`
+  - `status?: "not_started" | "in_progress" | "agent_running" | "blocked" | "closed"`
+  - `priority?: "triage" | "low" | "medium" | "high" | "urgent"`
   - `dueDate?: "YYYY-MM-DD" | null`
 - Optional attachment operations:
   - `addAgent?: string`
@@ -174,6 +196,8 @@ Input:
 Notes:
 
 - At least one update field/operation is required.
+- `tags` replaces the complete tag set; pass `[]` to clear tags when the token is not tag-scoped.
+- Tags must already exist for the authenticated user. A tag-scoped token must leave at least one selected tag in its allowed scope.
 - `removeAgentById` should use agent ids from `readTasks`.
 - Tool schema includes docs for due-date format and clear semantics.
 
