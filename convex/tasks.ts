@@ -51,6 +51,83 @@ async function assertOwnedTaskTagIds(
   return normalizedTagIds;
 }
 
+function haveSameTaskTagIds(left: Id<"tags">[], right: Id<"tags">[]): boolean {
+  const normalizedLeft = normalizeTaskTagIds(left);
+  const normalizedRight = normalizeTaskTagIds(right);
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+  const rightSet = new Set(normalizedRight);
+  return normalizedLeft.every((tagId) => rightSet.has(tagId));
+}
+
+async function getOwnedMcpTagScopeIds(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+  tagRootId: Id<"tags"> | undefined
+): Promise<Set<Id<"tags">> | undefined> {
+  if (!tagRootId) {
+    return undefined;
+  }
+
+  const rootTag = await ctx.db.get(tagRootId);
+  if (!rootTag || rootTag.userId !== userId) {
+    throw new Error("Tag scope is invalid for this user");
+  }
+
+  return new Set([tagRootId, ...(rootTag.childrenRecursive ?? [])]);
+}
+
+async function resolveMcpTaskTagIds(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+  tagNames: string[] | undefined,
+  tagScopeIds: Set<Id<"tags">> | undefined,
+  defaultTagRootId: Id<"tags"> | undefined
+): Promise<Id<"tags">[] | undefined> {
+  if (tagNames === undefined) {
+    return defaultTagRootId ? [defaultTagRootId] : undefined;
+  }
+
+  const userTags = await ctx.db
+    .query("tags")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+  const exactTagsByName = new Map(userTags.map((tag) => [tag.name, tag]));
+  const tagsByNormalizedName = new Map<string, Doc<"tags">[]>();
+  for (const tag of userTags) {
+    const normalizedName = tag.name.trim().toLowerCase();
+    const matches = tagsByNormalizedName.get(normalizedName) ?? [];
+    matches.push(tag);
+    tagsByNormalizedName.set(normalizedName, matches);
+  }
+
+  const resolvedTagIds: Id<"tags">[] = [];
+  for (const rawName of tagNames) {
+    const name = rawName.trim();
+    const exactTag = exactTagsByName.get(name);
+    if (exactTag) {
+      resolvedTagIds.push(exactTag._id);
+      continue;
+    }
+
+    const normalizedMatches = tagsByNormalizedName.get(name.toLowerCase()) ?? [];
+    if (normalizedMatches.length === 0) {
+      throw new Error(`Tag not found: "${name}". Tags must already exist.`);
+    }
+    if (normalizedMatches.length > 1) {
+      throw new Error(`Tag name is ambiguous: "${name}". Use the exact tag name.`);
+    }
+    resolvedTagIds.push(normalizedMatches[0]._id);
+  }
+
+  const normalizedTagIds = normalizeTaskTagIds(resolvedTagIds);
+  if (tagScopeIds && !normalizedTagIds.some((tagId) => tagScopeIds.has(tagId))) {
+    throw new Error("At least one tag must remain within the allowed tag scope");
+  }
+  return normalizedTagIds;
+}
+
 async function syncTaskTagLinks(
   ctx: MutationCtx,
   userId: string,
@@ -666,6 +743,7 @@ export const updateFromMcp = internalMutation({
     id: v.id("tasks"),
     tagRootId: v.optional(v.id("tags")),
     content: v.optional(v.string()),
+    tagNames: v.optional(v.array(v.string())),
     status: v.optional(taskStatus),
     priority: v.optional(taskPriority),
     dueDate: v.optional(v.union(v.string(), v.null())),
@@ -682,24 +760,28 @@ export const updateFromMcp = internalMutation({
       throw new Error("Task not found or access denied");
     }
 
-    if (args.tagRootId) {
-      const rootTag = await ctx.db.get(args.tagRootId);
-      if (!rootTag || rootTag.userId !== args.userId) {
-        throw new Error("Tag scope is invalid for this user");
-      }
-      const matchingTagIds = new Set<Id<"tags">>([args.tagRootId]);
-      for (const childId of rootTag.childrenRecursive ?? []) {
-        matchingTagIds.add(childId);
-      }
-      const inScope = task.tagIds.some((tagId) => matchingTagIds.has(tagId));
+    const tagScopeIds = await getOwnedMcpTagScopeIds(ctx, args.userId, args.tagRootId);
+    if (tagScopeIds) {
+      const inScope = task.tagIds.some((tagId) => tagScopeIds.has(tagId));
       if (!inScope) {
         throw new Error("Task is outside the allowed tag scope");
       }
     }
+    const nextTagIds = await resolveMcpTaskTagIds(
+      ctx,
+      args.userId,
+      args.tagNames,
+      tagScopeIds,
+      undefined
+    );
+    const tagsChanged =
+      nextTagIds !== undefined && !haveSameTaskTagIds(task.tagIds, nextTagIds);
 
     const now = Date.now();
     const updates: {
       content?: string;
+      tagIds?: Id<"tags">[];
+      hasTags?: boolean;
       status?: typeof args.status;
       priority?: typeof args.priority;
       dueDate?: string | undefined;
@@ -709,6 +791,10 @@ export const updateFromMcp = internalMutation({
 
     if (args.content !== undefined && args.content !== task.content) {
       updates.content = args.content;
+    }
+    if (tagsChanged && nextTagIds !== undefined) {
+      updates.tagIds = nextTagIds;
+      updates.hasTags = nextTagIds.length > 0;
     }
     if (args.status !== undefined && args.status !== task.status) {
       updates.status = args.status;
@@ -732,9 +818,15 @@ export const updateFromMcp = internalMutation({
     if (Object.keys(updates).length > 0) {
       await ctx.db.patch(args.id, updates);
     }
+    if (tagsChanged && nextTagIds !== undefined) {
+      await syncTaskTagLinks(ctx, args.userId, args.id, nextTagIds);
+    }
 
+    const effectiveTagIds = nextTagIds ?? task.tagIds;
+    const eventTagIds = getEventTagIds(effectiveTagIds);
     const hasPrimaryTaskFieldInRequest =
       args.content !== undefined ||
+      args.tagNames !== undefined ||
       args.status !== undefined ||
       args.priority !== undefined ||
       args.dueDate !== undefined;
@@ -744,7 +836,7 @@ export const updateFromMcp = internalMutation({
         entityId: args.id,
         action: { type: "task.edited" },
         source: "MCP",
-        tagIds: getEventTagIds(task.tagIds),
+        tagIds: eventTagIds,
       });
     }
     if (args.status !== undefined && args.status !== task.status) {
@@ -753,7 +845,7 @@ export const updateFromMcp = internalMutation({
         entityId: args.id,
         action: { type: "task.status_changed", from: task.status, to: args.status },
         source: "MCP",
-        tagIds: getEventTagIds(task.tagIds),
+        tagIds: eventTagIds,
       });
     }
     if (args.priority !== undefined && args.priority !== task.priority) {
@@ -762,7 +854,7 @@ export const updateFromMcp = internalMutation({
         entityId: args.id,
         action: { type: "task.priority_changed", from: task.priority, to: args.priority },
         source: "MCP",
-        tagIds: getEventTagIds(task.tagIds),
+        tagIds: eventTagIds,
       });
     }
 
@@ -787,7 +879,7 @@ export const updateFromMcp = internalMutation({
         addAgentInput: args.addAgent,
         now,
         source: "MCP",
-        eventTagIds: getEventTagIds(task.tagIds),
+        eventTagIds,
       });
     }
 
@@ -799,7 +891,7 @@ export const updateFromMcp = internalMutation({
           entityId: existingForTask._id,
           action: { type: "agent.deleted" },
           source: "MCP",
-          tagIds: getEventTagIds(task.tagIds),
+          tagIds: eventTagIds,
         });
         await ctx.db.delete(existingForTask._id);
         removedAgent = { id: existingForTask._id, externalId: existingForTask.externalId };
@@ -827,7 +919,7 @@ export const updateFromMcp = internalMutation({
         addPullRequestByUrl: args.addPullRequestByUrl,
         now,
         source: "MCP",
-        eventTagIds: getEventTagIds(task.tagIds),
+        eventTagIds,
       });
     }
 
@@ -845,7 +937,7 @@ export const updateFromMcp = internalMutation({
           entityId: existingForTask._id,
           action: { type: "pull_request.deleted" },
           source: "MCP",
-          tagIds: getEventTagIds(task.tagIds),
+          tagIds: eventTagIds,
         });
         await ctx.db.delete(existingForTask._id);
         removedPullRequest = { id: existingForTask._id, url: normalized.url };
@@ -875,7 +967,7 @@ export const updateFromMcp = internalMutation({
         addLinearIssueByUrl: args.addLinearIssueByUrl,
         now,
         source: "MCP",
-        eventTagIds: getEventTagIds(task.tagIds),
+        eventTagIds,
       });
     }
 
@@ -893,7 +985,7 @@ export const updateFromMcp = internalMutation({
           entityId: existingForTask._id,
           action: { type: "linear_issue.deleted" },
           source: "MCP",
-          tagIds: getEventTagIds(task.tagIds),
+          tagIds: eventTagIds,
         });
         await ctx.db.delete(existingForTask._id);
         removedLinearIssue = {
@@ -908,6 +1000,7 @@ export const updateFromMcp = internalMutation({
       taskId: args.id,
       updatedFields: {
         content: updates.content !== undefined,
+        tags: tagsChanged,
         status: updates.status !== undefined,
         priority: updates.priority !== undefined,
         dueDate: updates.dueDate !== undefined || (args.dueDate === null && task.dueDate !== undefined),
@@ -927,6 +1020,7 @@ export const createFromMcp = internalMutation({
     userId: v.string(),
     tagRootId: v.optional(v.id("tags")),
     content: v.string(),
+    tagNames: v.optional(v.array(v.string())),
     status: v.optional(taskStatus),
     priority: v.optional(taskPriority),
     dueDate: v.optional(v.union(v.string(), v.null())),
@@ -935,20 +1029,24 @@ export const createFromMcp = internalMutation({
     addLinearIssueByUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    if (args.tagRootId) {
-      const rootTag = await ctx.db.get(args.tagRootId);
-      if (!rootTag || rootTag.userId !== args.userId) {
-        throw new Error("Tag scope is invalid for this user");
-      }
-    }
+    const tagScopeIds = await getOwnedMcpTagScopeIds(ctx, args.userId, args.tagRootId);
+    const tagIds =
+      (await resolveMcpTaskTagIds(
+        ctx,
+        args.userId,
+        args.tagNames,
+        tagScopeIds,
+        args.tagRootId
+      )) ?? [];
+    const eventTagIds = getEventTagIds(tagIds);
 
     const now = Date.now();
     const status = args.status ?? "not_started";
     const taskId = await ctx.db.insert("tasks", {
       userId: args.userId,
       content: args.content,
-      tagIds: [],
-      hasTags: false,
+      tagIds,
+      hasTags: tagIds.length > 0,
       status,
       priority: args.priority ?? "triage",
       dueDate: args.dueDate ?? undefined,
@@ -956,11 +1054,13 @@ export const createFromMcp = internalMutation({
       completedAt: status === "closed" ? now : undefined,
     });
 
+    await syncTaskTagLinks(ctx, args.userId, taskId, tagIds);
     await insertEvent(ctx, {
       userId: args.userId,
       entityId: taskId,
       action: { type: "task.created" },
       source: "MCP",
+      tagIds: eventTagIds,
     });
 
     const addedAgent =
@@ -973,7 +1073,7 @@ export const createFromMcp = internalMutation({
             addAgentInput: args.addAgent,
             now,
             source: "MCP",
-            eventTagIds: undefined,
+            eventTagIds,
           });
 
     const addedPullRequest =
@@ -986,7 +1086,7 @@ export const createFromMcp = internalMutation({
             addPullRequestByUrl: args.addPullRequestByUrl,
             now,
             source: "MCP",
-            eventTagIds: undefined,
+            eventTagIds,
           });
 
     const addedLinearIssue =
@@ -999,7 +1099,7 @@ export const createFromMcp = internalMutation({
             addLinearIssueByUrl: args.addLinearIssueByUrl,
             now,
             source: "MCP",
-            eventTagIds: undefined,
+            eventTagIds,
           });
 
     return {
