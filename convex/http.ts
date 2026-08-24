@@ -30,8 +30,17 @@ http.route({
       redirectUrl.searchParams.set(key, value);
     }
     const authError = requestUrl.searchParams.get("error");
+    const authErrorDescription = requestUrl.searchParams.get("error_description");
+    const authFlow = requestUrl.searchParams.get("authFlow") ?? "unknown";
     if (authError && !redirectUrl.searchParams.has("authError")) {
       redirectUrl.searchParams.set("authError", authError);
+    }
+    if (authError) {
+      console.error("[auth.redirect] OAuth flow returned an error", {
+        flow: authFlow,
+        error: authError,
+        errorDescription: authErrorDescription,
+      });
     }
     return Response.redirect(redirectUrl.toString(), 302);
   }),
