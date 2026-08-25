@@ -32,15 +32,13 @@ function scopes(...values: string[]): ParsedMcpScopes {
 }
 
 function makeHandlers() {
-  const read = vi.fn<SignalExecutors["read"]>(
-    async () => [{ name: "Run" }],
-  );
-  const record = vi.fn<SignalExecutors["record"]>(
-    async () => ({ idempotent: false }),
-  );
-  const manage = vi.fn<SignalExecutors["manage"]>(
-    async () => ({ signalId: "signal-1" }),
-  );
+  const read = vi.fn<SignalExecutors["read"]>(async () => [{ name: "Run" }]);
+  const record = vi.fn<SignalExecutors["record"]>(async () => ({
+    idempotent: false,
+  }));
+  const manage = vi.fn<SignalExecutors["manage"]>(async () => ({
+    signalId: "signal-1",
+  }));
   return {
     read,
     record,
@@ -83,7 +81,7 @@ describe("signal MCP tools", () => {
       scopes(SIGNALS_READ_SCOPE),
       {
         kind: "activity",
-        category: "Exercise",
+        tagId: "tag-exercise",
         attention: "due",
         now: 123,
         soonWindowMs: 456,
@@ -94,8 +92,9 @@ describe("signal MCP tools", () => {
     expect(body.error).toBeUndefined();
     expect(read).toHaveBeenCalledWith({
       userId: "user-1",
+      tagRootId: undefined,
       kind: "activity",
-      category: "Exercise",
+      tagId: "tag-exercise",
       attention: "due",
       now: 123,
       soonWindowMs: 456,
@@ -155,6 +154,7 @@ describe("signal MCP tools", () => {
         operation: {
           type: "activity.create",
           name: "Run",
+          tagIds: [],
         },
       },
     );
@@ -170,6 +170,7 @@ describe("signal MCP tools", () => {
         operation: {
           type: "inventory.create",
           name: "Prescription",
+          tagIds: ["tag-care", "tag-care"],
           unit: "pills",
           initialQuantity: 60,
           threshold: {
@@ -189,6 +190,7 @@ describe("signal MCP tools", () => {
       operation: {
         type: "inventory.create",
         name: "Prescription",
+        tagIds: ["tag-care"],
         unit: "pills",
         initialQuantity: 60,
         threshold: {
@@ -202,14 +204,98 @@ describe("signal MCP tools", () => {
       },
     });
 
-    const malformed = await handlers.manageSignal(
+    const missingTags = await handlers.manageSignal(
       7,
+      "user-1",
+      scopes(SIGNALS_WRITE_SCOPE),
+      {
+        operation: {
+          type: "activity.create",
+          name: "Run",
+        },
+      },
+    );
+    expect((await responseBody(missingTags)).error).toMatchObject({
+      code: -32602,
+    });
+
+    const weeklyTarget = await handlers.manageSignal(
+      8,
+      "user-1",
+      scopes(SIGNALS_WRITE_SCOPE),
+      {
+        operation: {
+          type: "activity.create",
+          name: "Run",
+          tagIds: [],
+          target: {
+            type: "period",
+            period: "week",
+            targetCount: 3,
+          },
+        },
+      },
+    );
+    expect((await responseBody(weeklyTarget)).error).toBeUndefined();
+    expect(manage).toHaveBeenLastCalledWith({
+      userId: "user-1",
+      tagRootId: undefined,
+      now: expect.any(Number),
+      operation: {
+        type: "activity.create",
+        name: "Run",
+        tagIds: [],
+        target: {
+          type: "period",
+          period: "week",
+          targetCount: 3,
+        },
+      },
+    });
+
+    const legacyDueAfter = await handlers.manageSignal(
+      9,
+      "user-1",
+      scopes(SIGNALS_WRITE_SCOPE),
+      {
+        operation: {
+          type: "activity.create",
+          name: "Run",
+          tagIds: [],
+          dueAfterMs: 1_000,
+        },
+      },
+    );
+    expect((await responseBody(legacyDueAfter)).error).toMatchObject({
+      code: -32602,
+    });
+
+    const legacyCategory = await handlers.manageSignal(
+      10,
+      "user-1",
+      scopes(SIGNALS_WRITE_SCOPE),
+      {
+        operation: {
+          type: "activity.create",
+          name: "Run",
+          tagIds: [],
+          category: "Exercise",
+        },
+      },
+    );
+    expect((await responseBody(legacyCategory)).error).toMatchObject({
+      code: -32602,
+    });
+
+    const malformed = await handlers.manageSignal(
+      11,
       "user-1",
       scopes(SIGNALS_WRITE_SCOPE),
       {
         operation: {
           type: "inventory.create",
           name: "Prescription",
+          tagIds: [],
           unit: "pills",
           initialQuantity: 60,
           threshold: {

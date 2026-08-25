@@ -22,6 +22,7 @@ This document explains how Tasky's MCP server is wired today and why key design 
 - Dynamic client registration is enabled (`allowDynamicClientRegistration: true`).
 
 Why this design:
+
 - Better Auth handles standards compliance and token plumbing.
 - Tasky keeps custom logic focused on resource authorization and tool behavior, not OAuth protocol details.
 
@@ -41,6 +42,7 @@ The Convex router exposes:
   - `/api/auth/jwks`
 
 Why this design:
+
 - Keeps primary and compatibility metadata paths available for varied MCP/OAuth clients.
 - Allows clients to discover auth and token requirements without Tasky-specific setup.
 
@@ -63,6 +65,7 @@ Why this design:
   5. MCP-formatted response (`result.content` text payload)
 
 Why this design:
+
 - Declarative handler registration keeps tool behavior auditable without adding another whitelist/dispatch branch for every tool.
 - JSON-RPC error codes are returned in one place, improving client interoperability.
 
@@ -74,11 +77,13 @@ Current scope model includes:
 - Resource constraint scope prefix: `tag:root=<tagId>`
 
 Current behavior:
+
 - Scope string is split by whitespace.
 - Authorization checks are exact-match (`hasRequiredScope`).
 - One `tag:root=` scope is parsed (first matching value).
 
 Why this design:
+
 - Simple now, easy to evolve toward richer policy logic without touching every tool.
 
 ### 5) Tool data operations (`convex/tasks.ts`)
@@ -113,6 +118,7 @@ Why this design:
   - removals happen only when explicitly requested
 
 Why this design:
+
 - Keeps MCP transport concerns in `convex/mcp.ts` and data logic in task domain code.
 - Ensures updates are explicit and non-destructive by default.
 
@@ -125,6 +131,7 @@ Why this design:
 These pages/route exist to make the MCP OAuth flow work smoothly across frontend and Convex auth domains.
 
 Why this design:
+
 - Preserves normal app sign-in UX.
 - Safely forwards the Better Auth cookie to continue authorization.
 - Validates the target authorize URL before proxying to reduce abuse risk.
@@ -204,8 +211,12 @@ Notes:
 ### `readSignals` (`signals:read`)
 
 Returns the authenticated user's active activity/inventory signals ordered by
-attention. Optional `kind`, `category`, and `attention` filters are supported.
-`now` and `soonWindowMs` can be supplied for deterministic evaluation.
+attention. Optional `kind`, `tagId`, and `attention` filters are supported.
+`tagId` includes signals assigned to descendant tags. The result contains
+`signals` with hydrated tag names/colors and `availableTags`, which supplies the
+IDs needed by filters and manage operations. `now` and `soonWindowMs` can be
+supplied for deterministic evaluation. Activity signals can use a rolling
+`recency` target or a daily/weekly completion-count `period` target.
 
 ### `recordSignal` (`signals:write`)
 
@@ -216,41 +227,53 @@ the original entry without applying it again.
 ### `manageSignal` (`signals:write`)
 
 Creates activity/inventory signals, updates kind-specific configuration, and
-archives or restores a signal. Inventory flows are signed fixed-day
-projections rather than scheduled writes.
+archives or restores a signal. Creates require `tagIds` (an empty array is
+allowed), while updates can replace tags by supplying `tagIds`. Inventory flows
+are signed fixed-day projections rather than scheduled writes. Activity
+`target` values are either `{ type: "recency", dueAfterMs }` or
+`{ type: "period", period: "day" | "week", targetCount }`; omit the target to
+retain history without an attention goal.
 
 ## Architectural Decisions and Trade-offs
 
 ### Better Auth plugin-first strategy
 
 Decision:
+
 - Use Better Auth's `mcp`, `jwt`, and Convex adapters rather than implementing OAuth/OIDC manually.
 
 Trade-off:
+
 - Faster implementation and standards correctness, but constrained by plugin behavior and extension points.
 
 ### Single MCP endpoint with internal tool router
 
 Decision:
+
 - Route all tool calls through `/api/mcp` and dispatch by tool name in app code.
 
 Trade-off:
+
 - Centralized validation and observability, but requires keeping tool schemas + dispatch logic synchronized.
 
 ### Scope checks in server entrypoint
 
 Decision:
+
 - Perform scope authorization before running domain queries/mutations.
 
 Trade-off:
+
 - Prevents accidental privilege escalation; however, more advanced policies (field-level/resource-level) need additional infrastructure.
 
 ### Tag-root scoping encoded as scope string
 
 Decision:
+
 - Model resource scoping as `tag:root=<tagId>`.
 
 Trade-off:
+
 - Lightweight and easy to issue; currently only one root is honored and parser is intentionally minimal.
 
 ## Follow-up Work: Dynamic Scopes
@@ -260,27 +283,33 @@ The repo currently has foundational pieces for dynamic/resource scopes, but enfo
 Recommended next steps:
 
 1. Define dynamic scope contract
+
 - Decide canonical grammar for resource scopes beyond `tag:root=...` (single vs multiple roots, future resources).
 - Decide conflict behavior (intersection vs union) when multiple resource scopes are present.
 
 2. Expand parser and validation in `mcpScopes`
+
 - Parse all supported dynamic scopes into typed structures (not just a single optional value).
 - Reject malformed dynamic scopes explicitly (and surface clear errors).
 
 3. Centralize policy checks
+
 - Evolve `hasRequiredScope` into capability + resource evaluation helpers.
 - Keep tool handlers declarative, for example: "requires capability X and resource predicate Y".
 
 4. Ensure token issuance matches requested scopes
+
 - Verify consent + grant logic honors and persists dynamic scopes as requested.
 - Add tests for round-tripping dynamic scopes from request -> token -> runtime session.
 
 5. Add focused test coverage
+
 - Unit tests for parser/policy.
 - Integration tests for token scopes gating `tools/call`.
 - Regression tests for invalid/forged scope strings.
 
 Design note:
+
 - Prefer "default deny" when dynamic scopes are present but unparsable.
 
 ## Follow-up Work: Adding New MCP Tools/Endpoints
@@ -288,26 +317,32 @@ Design note:
 When adding a new MCP tool (for example `createTask`):
 
 1. Add scope and policy
+
 - Add/confirm capability scope in `oauthScopes` and `mcpScopes`.
 - Decide whether resource scopes (tag constraints, etc.) should apply.
 
 2. Add a tool descriptor under `convex/mcpTools/`
+
 - Keep input schema strict (`additionalProperties: false`).
 - Ensure argument names/types mirror the eventual Convex call.
 
 3. Register the tool handler
+
 - Validate tool name, required scope(s), and arguments.
 - Return JSON-RPC error codes for not found, unauthorized, or invalid input.
 
 4. Implement domain operation
+
 - Prefer a dedicated internal query/mutation for MCP usage if output/input differs from app UI behavior.
 - Keep returned payload minimal and stable.
 
 5. Update docs and verification
+
 - Update `README.md` scopes/tools section.
 - Validate flow from auth -> consent -> `tools/list` -> `tools/call`.
 
 If adding a non-tool endpoint:
+
 - Register route in `convex/http.ts`.
 - Add CORS behavior intentionally (metadata endpoints are broadly consumable; mutation endpoints may need stricter handling).
 - Keep endpoint purpose distinct from JSON-RPC tool operations.

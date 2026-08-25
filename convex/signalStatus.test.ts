@@ -11,7 +11,10 @@ describe("signal status evaluation", () => {
   it("reports an activity with no entries as unknown", () => {
     expect(
       evaluateSignal(
-        { kind: "activity", dueAfterMs: 3 * DAY_MS },
+        {
+          kind: "activity",
+          target: { type: "recency", dueAfterMs: 3 * DAY_MS },
+        },
         10 * DAY_MS,
         DAY_MS,
       ),
@@ -23,22 +26,62 @@ describe("signal status evaluation", () => {
   it("handles activity soon and due boundaries", () => {
     const model = {
       kind: "activity" as const,
-      dueAfterMs: 4 * DAY_MS,
+      target: {
+        type: "recency" as const,
+        dueAfterMs: 4 * DAY_MS,
+      },
       lastOccurredAt: 2 * DAY_MS,
     };
 
-    expect(
-      evaluateSignal(model, 5 * DAY_MS, DAY_MS),
-    ).toMatchObject({
+    expect(evaluateSignal(model, 5 * DAY_MS, DAY_MS)).toMatchObject({
       attention: "soon",
       actionAt: 6 * DAY_MS,
       elapsedMs: 3 * DAY_MS,
     });
-    expect(
-      evaluateSignal(model, 6 * DAY_MS, DAY_MS),
-    ).toMatchObject({
+    expect(evaluateSignal(model, 6 * DAY_MS, DAY_MS)).toMatchObject({
       attention: "due",
       actionAt: 6 * DAY_MS,
+    });
+  });
+
+  it("tracks completion targets within a calendar period", () => {
+    const model = {
+      kind: "activity" as const,
+      target: {
+        type: "period" as const,
+        period: "week" as const,
+        targetCount: 3,
+      },
+    };
+    const progress = {
+      period: "week" as const,
+      startAt: 7 * DAY_MS,
+      endAt: 14 * DAY_MS,
+      completedCount: 2,
+      targetCount: 3,
+      remainingCount: 1,
+    };
+
+    expect(evaluateSignal(model, 10 * DAY_MS, DAY_MS, progress)).toMatchObject({
+      attention: "due",
+      actionAt: 14 * DAY_MS,
+      periodProgress: {
+        completedCount: 2,
+        remainingCount: 1,
+      },
+    });
+    expect(
+      evaluateSignal(model, 10 * DAY_MS, DAY_MS, {
+        ...progress,
+        completedCount: 3,
+        remainingCount: 0,
+      }),
+    ).toMatchObject({
+      attention: "ok",
+      periodProgress: {
+        completedCount: 3,
+        remainingCount: 0,
+      },
     });
   });
 
@@ -59,9 +102,7 @@ describe("signal status evaluation", () => {
       nextFlowAt: 4 * DAY_MS,
       isProjected: true,
     });
-    expect(
-      evaluateSignal(model, 3 * DAY_MS, 2 * DAY_MS),
-    ).toMatchObject({
+    expect(evaluateSignal(model, 3 * DAY_MS, 2 * DAY_MS)).toMatchObject({
       attention: "ok",
       actionAt: 8 * DAY_MS,
       projectedQuantity: 7,
@@ -81,16 +122,12 @@ describe("signal status evaluation", () => {
       nextFlowAt: 2 * DAY_MS,
     };
 
-    expect(
-      evaluateSignal(model, 2 * DAY_MS, 4 * DAY_MS),
-    ).toMatchObject({
+    expect(evaluateSignal(model, 2 * DAY_MS, 4 * DAY_MS)).toMatchObject({
       attention: "soon",
       actionAt: 6 * DAY_MS,
       projectedQuantity: 3,
     });
-    expect(
-      evaluateSignal(model, 6 * DAY_MS, 4 * DAY_MS),
-    ).toMatchObject({
+    expect(evaluateSignal(model, 6 * DAY_MS, 4 * DAY_MS)).toMatchObject({
       attention: "due",
       projectedQuantity: 5,
     });
