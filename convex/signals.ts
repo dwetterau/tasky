@@ -11,6 +11,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
 import {
+  activityTarget,
   inventoryFlow,
   inventoryThreshold,
   signalAttention,
@@ -22,14 +23,33 @@ import {
   DAY_MS,
   evaluateSignal,
   materializeInventory,
+  type ActivityPeriodProgress,
+  type ActivityTarget,
   type InventorySignalModel,
   type SignalAttention,
 } from "./lib/signalStatus";
 
 const signalKind = v.union(v.literal("activity"), v.literal("inventory"));
-const categoryInput = v.optional(v.union(v.string(), v.null()));
-const dueAfterInput = v.optional(v.union(v.number(), v.null()));
+const activityTargetInput = v.optional(v.union(activityTarget, v.null()));
 const flowInput = v.optional(v.union(inventoryFlow, v.null()));
+const periodRangeInput = v.object({
+  startAt: v.number(),
+  endAt: v.number(),
+});
+const periodBoundsInput = v.object({
+  day: periodRangeInput,
+  week: periodRangeInput,
+});
+
+type PeriodRange = {
+  startAt: number;
+  endAt: number;
+};
+
+type PeriodBounds = {
+  day: PeriodRange;
+  week: PeriodRange;
+};
 
 const recordOperationInput = v.union(
   v.object({
@@ -52,6 +72,16 @@ const signalEvaluationValidator = v.object({
   actionAt: v.optional(v.number()),
   reason: v.string(),
   elapsedMs: v.optional(v.number()),
+  periodProgress: v.optional(
+    v.object({
+      period: v.union(v.literal("day"), v.literal("week")),
+      startAt: v.number(),
+      endAt: v.number(),
+      completedCount: v.number(),
+      targetCount: v.number(),
+      remainingCount: v.number(),
+    }),
+  ),
   projectedQuantity: v.optional(v.number()),
   runwayMs: v.optional(v.number()),
   confirmedAt: v.optional(v.number()),
@@ -59,16 +89,35 @@ const signalEvaluationValidator = v.object({
   nextFlowAt: v.optional(v.number()),
 });
 
+const signalTagValidator = v.object({
+  id: v.id("tags"),
+  name: v.string(),
+  color: v.optional(v.string()),
+});
+
+const availableSignalTagValidator = v.object({
+  id: v.id("tags"),
+  name: v.string(),
+  parentId: v.union(v.id("tags"), v.null()),
+  color: v.optional(v.string()),
+});
+
 const signalDashboardItemValidator = v.object({
   id: v.id("signals"),
   creationTime: v.number(),
   name: v.string(),
-  category: v.optional(v.string()),
+  tagIds: v.array(v.id("tags")),
+  tags: v.array(signalTagValidator),
   model: signalModel,
   createdAt: v.number(),
   updatedAt: v.number(),
   archivedAt: v.optional(v.number()),
   evaluation: signalEvaluationValidator,
+});
+
+const signalMcpReadResultValidator = v.object({
+  signals: v.array(signalDashboardItemValidator),
+  availableTags: v.array(availableSignalTagValidator),
 });
 
 const signalEntryOutputValidator = v.object({
@@ -92,13 +141,13 @@ const manageOperationInput = v.union(
   v.object({
     type: v.literal("activity.create"),
     name: v.string(),
-    category: v.optional(v.string()),
-    dueAfterMs: v.optional(v.number()),
+    tagIds: v.array(v.id("tags")),
+    target: v.optional(activityTarget),
   }),
   v.object({
     type: v.literal("inventory.create"),
     name: v.string(),
-    category: v.optional(v.string()),
+    tagIds: v.array(v.id("tags")),
     unit: v.string(),
     initialQuantity: v.number(),
     threshold: inventoryThreshold,
@@ -108,14 +157,14 @@ const manageOperationInput = v.union(
     type: v.literal("activity.update"),
     signalId: v.id("signals"),
     name: v.optional(v.string()),
-    category: categoryInput,
-    dueAfterMs: dueAfterInput,
+    tagIds: v.optional(v.array(v.id("tags"))),
+    target: activityTargetInput,
   }),
   v.object({
     type: v.literal("inventory.update"),
     signalId: v.id("signals"),
     name: v.optional(v.string()),
-    category: categoryInput,
+    tagIds: v.optional(v.array(v.id("tags"))),
     unit: v.optional(v.string()),
     threshold: v.optional(inventoryThreshold),
     flow: flowInput,
@@ -146,13 +195,13 @@ type ManageOperationInput =
   | {
       type: "activity.create";
       name: string;
-      category?: string;
-      dueAfterMs?: number;
+      tagIds: Id<"tags">[];
+      target?: ActivityTarget;
     }
   | {
       type: "inventory.create";
       name: string;
-      category?: string;
+      tagIds: Id<"tags">[];
       unit: string;
       initialQuantity: number;
       threshold: {
@@ -168,14 +217,14 @@ type ManageOperationInput =
       type: "activity.update";
       signalId: Id<"signals">;
       name?: string;
-      category?: string | null;
-      dueAfterMs?: number | null;
+      tagIds?: Id<"tags">[];
+      target?: ActivityTarget | null;
     }
   | {
       type: "inventory.update";
       signalId: Id<"signals">;
       name?: string;
-      category?: string | null;
+      tagIds?: Id<"tags">[];
       unit?: string;
       threshold?: {
         value: number;
@@ -196,7 +245,12 @@ type SignalDashboardItem = {
   id: Id<"signals">;
   creationTime: number;
   name: string;
-  category?: string;
+  tagIds: Id<"tags">[];
+  tags: Array<{
+    id: Id<"tags">;
+    name: string;
+    color?: string;
+  }>;
   model: Doc<"signals">["model"];
   createdAt: number;
   updatedAt: number;
@@ -257,13 +311,90 @@ function normalizeOptionalText(
   return normalized;
 }
 
-function validateDueAfterMs(value: number | undefined): void {
-  if (value === undefined) {
+function normalizeSignalTagIds(tagIds: Id<"tags">[]): Id<"tags">[] {
+  return Array.from(new Set(tagIds));
+}
+
+async function assertOwnedSignalTagIds(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+  tagIds: Id<"tags">[],
+): Promise<Id<"tags">[]> {
+  const normalizedTagIds = normalizeSignalTagIds(tagIds);
+  const tags = await Promise.all(
+    normalizedTagIds.map((tagId) => ctx.db.get("tags", tagId)),
+  );
+  if (tags.some((tag) => !tag || tag.userId !== userId)) {
+    throw new Error("One or more tags are invalid for this user");
+  }
+  return normalizedTagIds;
+}
+
+async function getTagSubtreeIds(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+  tagId: Id<"tags">,
+): Promise<Set<Id<"tags">>> {
+  const tag = await ctx.db.get("tags", tagId);
+  if (!tag || tag.userId !== userId) {
+    throw new Error("Tag not found or access denied");
+  }
+  return new Set([tagId, ...(tag.childrenRecursive ?? [])]);
+}
+
+async function assertSignalInTagRoot(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+  signal: Doc<"signals">,
+  tagRootId: Id<"tags"> | undefined,
+): Promise<void> {
+  if (tagRootId === undefined) {
     return;
   }
-  assertFiniteNumber(value, "dueAfterMs");
-  if (value <= 0) {
-    throw new Error("dueAfterMs must be greater than zero");
+  const allowedTagIds = await getTagSubtreeIds(ctx, userId, tagRootId);
+  if (!signal.tagIds.some((tagId) => allowedTagIds.has(tagId))) {
+    throw new Error("Signal is outside the authorized tag root");
+  }
+}
+
+async function scopedSignalTagIds(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+  tagIds: Id<"tags">[],
+  tagRootId: Id<"tags"> | undefined,
+  addRoot: boolean,
+): Promise<Id<"tags">[]> {
+  const normalized = await assertOwnedSignalTagIds(ctx, userId, tagIds);
+  if (tagRootId === undefined) {
+    return normalized;
+  }
+  const allowedTagIds = await getTagSubtreeIds(ctx, userId, tagRootId);
+  if (normalized.some((tagId) => !allowedTagIds.has(tagId))) {
+    throw new Error("Signal tags must stay inside the authorized tag root");
+  }
+  if (addRoot) {
+    return normalizeSignalTagIds([tagRootId, ...normalized]);
+  }
+  if (normalized.length === 0) {
+    throw new Error("Signal tags must remain inside the authorized tag root");
+  }
+  return normalized;
+}
+
+function validateActivityTarget(target: ActivityTarget | undefined): void {
+  if (target === undefined) {
+    return;
+  }
+  if (target.type === "recency") {
+    assertFiniteNumber(target.dueAfterMs, "target.dueAfterMs");
+    if (target.dueAfterMs <= 0) {
+      throw new Error("target.dueAfterMs must be greater than zero");
+    }
+    return;
+  }
+  assertFiniteNumber(target.targetCount, "target.targetCount");
+  if (!Number.isInteger(target.targetCount) || target.targetCount <= 0) {
+    throw new Error("target.targetCount must be a positive integer");
   }
 }
 
@@ -300,21 +431,114 @@ function validateReadClock(now: number, soonWindowMs: number): void {
   assertNonNegative(soonWindowMs, "soonWindowMs");
 }
 
-function toDashboardItem(
+function utcPeriodBounds(now: number): PeriodBounds {
+  const date = new Date(now);
+  const dayStart = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+  );
+  const weekStart = dayStart - date.getUTCDay() * DAY_MS;
+  return {
+    day: {
+      startAt: dayStart,
+      endAt: dayStart + DAY_MS,
+    },
+    week: {
+      startAt: weekStart,
+      endAt: weekStart + 7 * DAY_MS,
+    },
+  };
+}
+
+function resolvePeriodBounds(
+  now: number,
+  provided: PeriodBounds | undefined,
+): PeriodBounds {
+  const bounds = provided ?? utcPeriodBounds(now);
+  for (const [name, range] of Object.entries(bounds)) {
+    assertFiniteNumber(range.startAt, `periodBounds.${name}.startAt`);
+    assertFiniteNumber(range.endAt, `periodBounds.${name}.endAt`);
+    if (
+      range.startAt >= range.endAt ||
+      now < range.startAt ||
+      now >= range.endAt
+    ) {
+      throw new Error(
+        `periodBounds.${name} must be an ordered range containing now`,
+      );
+    }
+  }
+  return bounds;
+}
+
+async function getActivityPeriodProgress(
+  ctx: QueryCtx | MutationCtx,
+  signal: Doc<"signals">,
+  periodBounds: PeriodBounds,
+): Promise<ActivityPeriodProgress | undefined> {
+  if (
+    signal.model.kind !== "activity" ||
+    signal.model.target?.type !== "period"
+  ) {
+    return undefined;
+  }
+  const target = signal.model.target;
+  const range = periodBounds[target.period];
+  const entries = await ctx.db
+    .query("signalEntries")
+    .withIndex("by_signal_effective_at", (q) =>
+      q
+        .eq("signalId", signal._id)
+        .gte("effectiveAt", range.startAt)
+        .lt("effectiveAt", range.endAt),
+    )
+    .collect();
+  const completedCount = entries.length;
+  return {
+    period: target.period,
+    startAt: range.startAt,
+    endAt: range.endAt,
+    completedCount,
+    targetCount: target.targetCount,
+    remainingCount: Math.max(0, target.targetCount - completedCount),
+  };
+}
+
+async function toDashboardItem(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
   signal: Doc<"signals">,
   now: number,
   soonWindowMs: number,
-): SignalDashboardItem {
+  periodBounds: PeriodBounds,
+): Promise<SignalDashboardItem> {
+  const tagDocuments = await Promise.all(
+    signal.tagIds.map((tagId) => ctx.db.get("tags", tagId)),
+  );
+  const tags = tagDocuments
+    .filter((tag): tag is Doc<"tags"> => tag !== null && tag.userId === userId)
+    .map((tag) => ({
+      id: tag._id,
+      name: tag.name,
+      color: tag.color,
+    }));
+  const periodProgress = await getActivityPeriodProgress(
+    ctx,
+    signal,
+    periodBounds,
+  );
   return {
     id: signal._id,
     creationTime: signal._creationTime,
     name: signal.name,
-    category: signal.category,
+    tagIds: tags.map((tag) => tag.id),
+    tags,
     model: signal.model,
     createdAt: signal.createdAt,
     updatedAt: signal.updatedAt,
     archivedAt: signal.archivedAt,
-    evaluation: evaluateSignal(signal.model, now, soonWindowMs),
+    evaluation: evaluateSignal(signal.model, now, soonWindowMs, periodProgress),
   };
 }
 
@@ -328,10 +552,8 @@ function sortDashboardItems(
     if (attentionDifference !== 0) {
       return attentionDifference;
     }
-    const leftActionAt =
-      left.evaluation.actionAt ?? Number.POSITIVE_INFINITY;
-    const rightActionAt =
-      right.evaluation.actionAt ?? Number.POSITIVE_INFINITY;
+    const leftActionAt = left.evaluation.actionAt ?? Number.POSITIVE_INFINITY;
+    const rightActionAt = right.evaluation.actionAt ?? Number.POSITIVE_INFINITY;
     if (leftActionAt !== rightActionAt) {
       return leftActionAt - rightActionAt;
     }
@@ -357,37 +579,61 @@ async function listDashboardForUser(
     userId: string;
     now: number;
     soonWindowMs: number;
+    periodBounds?: PeriodBounds;
     kind?: "activity" | "inventory";
-    category?: string;
+    tagId?: Id<"tags">;
+    tagRootId?: Id<"tags">;
     attention?: SignalAttention;
   },
 ): Promise<SignalDashboardItem[]> {
   validateReadClock(args.now, args.soonWindowMs);
+  const periodBounds = resolvePeriodBounds(args.now, args.periodBounds);
+  const matchingTagIds =
+    args.tagId === undefined
+      ? undefined
+      : await getTagSubtreeIds(ctx, args.userId, args.tagId);
+  const allowedRootTagIds =
+    args.tagRootId === undefined
+      ? undefined
+      : await getTagSubtreeIds(ctx, args.userId, args.tagRootId);
   const signals = await ctx.db
     .query("signals")
     .withIndex("by_user_archived", (q) =>
       q.eq("userId", args.userId).eq("archivedAt", undefined),
     )
     .collect();
-  const normalizedCategory = args.category?.trim().toLocaleLowerCase();
-  const items = signals
+  const matchingSignals = signals
     .filter(
-      (signal) =>
-        args.kind === undefined || signal.model.kind === args.kind,
+      (signal) => args.kind === undefined || signal.model.kind === args.kind,
     )
     .filter(
       (signal) =>
-        normalizedCategory === undefined ||
-        signal.category?.toLocaleLowerCase() === normalizedCategory,
-    )
-    .map((signal) =>
-      toDashboardItem(signal, args.now, args.soonWindowMs),
+        matchingTagIds === undefined ||
+        signal.tagIds.some((tagId) => matchingTagIds.has(tagId)),
     )
     .filter(
-      (item) =>
-        args.attention === undefined ||
-        item.evaluation.attention === args.attention,
+      (signal) =>
+        allowedRootTagIds === undefined ||
+        signal.tagIds.some((tagId) => allowedRootTagIds.has(tagId)),
     );
+  const items = (
+    await Promise.all(
+      matchingSignals.map((signal) =>
+        toDashboardItem(
+          ctx,
+          args.userId,
+          signal,
+          args.now,
+          args.soonWindowMs,
+          periodBounds,
+        ),
+      ),
+    )
+  ).filter(
+    (item) =>
+      args.attention === undefined ||
+      item.evaluation.attention === args.attention,
+  );
   return sortDashboardItems(items);
 }
 
@@ -396,23 +642,30 @@ async function createActivityForUser(
   args: {
     userId: string;
     name: string;
-    category?: string;
-    dueAfterMs?: number;
+    tagIds: Id<"tags">[];
+    tagRootId?: Id<"tags">;
+    target?: ActivityTarget;
     now: number;
   },
 ): Promise<Id<"signals">> {
   const name = normalizeRequiredText(args.name, "name", 200);
-  const category = normalizeOptionalText(args.category, "category", 100);
-  validateDueAfterMs(args.dueAfterMs);
+  const tagIds = await scopedSignalTagIds(
+    ctx,
+    args.userId,
+    args.tagIds,
+    args.tagRootId,
+    true,
+  );
+  validateActivityTarget(args.target);
   assertFiniteNumber(args.now, "now");
 
   return await ctx.db.insert("signals", {
     userId: args.userId,
     name,
-    category,
+    tagIds,
     model: {
       kind: "activity",
-      dueAfterMs: args.dueAfterMs,
+      target: args.target,
     },
     createdAt: args.now,
     updatedAt: args.now,
@@ -424,7 +677,8 @@ async function createInventoryForUser(
   args: {
     userId: string;
     name: string;
-    category?: string;
+    tagIds: Id<"tags">[];
+    tagRootId?: Id<"tags">;
     unit: string;
     initialQuantity: number;
     threshold: {
@@ -439,7 +693,13 @@ async function createInventoryForUser(
   },
 ): Promise<Id<"signals">> {
   const name = normalizeRequiredText(args.name, "name", 200);
-  const category = normalizeOptionalText(args.category, "category", 100);
+  const tagIds = await scopedSignalTagIds(
+    ctx,
+    args.userId,
+    args.tagIds,
+    args.tagRootId,
+    true,
+  );
   const unit = normalizeRequiredText(args.unit, "unit", 50);
   assertNonNegative(args.initialQuantity, "initialQuantity");
   validateThreshold(args.threshold);
@@ -449,7 +709,7 @@ async function createInventoryForUser(
   return await ctx.db.insert("signals", {
     userId: args.userId,
     name,
-    category,
+    tagIds,
     model: {
       kind: "inventory",
       unit,
@@ -473,8 +733,9 @@ async function updateActivityForUser(
     userId: string;
     signalId: Id<"signals">;
     name?: string;
-    category?: string | null;
-    dueAfterMs?: number | null;
+    tagIds?: Id<"tags">[];
+    tagRootId?: Id<"tags">;
+    target?: ActivityTarget | null;
     now: number;
   },
 ): Promise<void> {
@@ -482,25 +743,31 @@ async function updateActivityForUser(
   if (signal.model.kind !== "activity") {
     throw new Error("Signal is not an activity");
   }
-  const dueAfterMs =
-    args.dueAfterMs === null
-      ? undefined
-      : (args.dueAfterMs ?? signal.model.dueAfterMs);
-  validateDueAfterMs(dueAfterMs);
+  await assertSignalInTagRoot(ctx, args.userId, signal, args.tagRootId);
+  const target =
+    args.target === null ? undefined : (args.target ?? signal.model.target);
+  validateActivityTarget(target);
   assertFiniteNumber(args.now, "now");
+  const tagIds =
+    args.tagIds === undefined
+      ? signal.tagIds
+      : await scopedSignalTagIds(
+          ctx,
+          args.userId,
+          args.tagIds,
+          args.tagRootId,
+          false,
+        );
 
   await ctx.db.patch("signals", signal._id, {
     name:
       args.name === undefined
         ? signal.name
         : normalizeRequiredText(args.name, "name", 200),
-    category:
-      args.category === undefined
-        ? signal.category
-        : normalizeOptionalText(args.category, "category", 100),
+    tagIds,
     model: {
       ...signal.model,
-      dueAfterMs,
+      target,
     },
     updatedAt: args.now,
   });
@@ -512,7 +779,8 @@ async function updateInventoryForUser(
     userId: string;
     signalId: Id<"signals">;
     name?: string;
-    category?: string | null;
+    tagIds?: Id<"tags">[];
+    tagRootId?: Id<"tags">;
     unit?: string;
     threshold?: {
       value: number;
@@ -529,6 +797,7 @@ async function updateInventoryForUser(
   if (signal.model.kind !== "inventory") {
     throw new Error("Signal is not an inventory");
   }
+  await assertSignalInTagRoot(ctx, args.userId, signal, args.tagRootId);
   assertFiniteNumber(args.now, "now");
   if (args.threshold) {
     validateThreshold(args.threshold);
@@ -536,6 +805,16 @@ async function updateInventoryForUser(
   if (args.flow !== null) {
     validateFlow(args.flow);
   }
+  const tagIds =
+    args.tagIds === undefined
+      ? signal.tagIds
+      : await scopedSignalTagIds(
+          ctx,
+          args.userId,
+          args.tagIds,
+          args.tagRootId,
+          false,
+        );
 
   const materialized = materializeInventory(signal.model, args.now);
   let nextModel: InventorySignalModel = {
@@ -566,10 +845,7 @@ async function updateInventoryForUser(
       args.name === undefined
         ? signal.name
         : normalizeRequiredText(args.name, "name", 200),
-    category:
-      args.category === undefined
-        ? signal.category
-        : normalizeOptionalText(args.category, "category", 100),
+    tagIds,
     model: nextModel,
     updatedAt: args.now,
   });
@@ -580,11 +856,13 @@ async function setArchivedForUser(
   args: {
     userId: string;
     signalId: Id<"signals">;
+    tagRootId?: Id<"tags">;
     archived: boolean;
     now: number;
   },
 ): Promise<void> {
   const signal = await getOwnedSignal(ctx, args.userId, args.signalId);
+  await assertSignalInTagRoot(ctx, args.userId, signal, args.tagRootId);
   assertFiniteNumber(args.now, "now");
   await ctx.db.patch("signals", signal._id, {
     archivedAt: args.archived ? args.now : undefined,
@@ -632,11 +910,13 @@ async function recordSignalForUser(
   args: {
     userId: string;
     signalId: Id<"signals">;
+    tagRootId?: Id<"tags">;
     source: "mobile" | "mcp";
     idempotencyKey: string;
     operation: RecordOperationInput;
     now: number;
     soonWindowMs: number;
+    periodBounds?: PeriodBounds;
   },
 ): Promise<{
   entryId: Id<"signalEntries">;
@@ -644,6 +924,7 @@ async function recordSignalForUser(
   signal: SignalDashboardItem;
 }> {
   validateReadClock(args.now, args.soonWindowMs);
+  const periodBounds = resolvePeriodBounds(args.now, args.periodBounds);
   const idempotencyKey = normalizeIdempotencyKey(args.idempotencyKey);
   const existing = await ctx.db
     .query("signalEntries")
@@ -665,18 +946,28 @@ async function recordSignalForUser(
       args.userId,
       args.signalId,
     );
+    await assertSignalInTagRoot(
+      ctx,
+      args.userId,
+      existingSignal,
+      args.tagRootId,
+    );
     return {
       entryId: existing._id,
       idempotent: true,
-      signal: toDashboardItem(
+      signal: await toDashboardItem(
+        ctx,
+        args.userId,
         existingSignal,
         args.now,
         args.soonWindowMs,
+        periodBounds,
       ),
     };
   }
 
   const signal = await getOwnedSignal(ctx, args.userId, args.signalId);
+  await assertSignalInTagRoot(ctx, args.userId, signal, args.tagRootId);
   if (signal.archivedAt !== undefined) {
     throw new Error("Archived signals cannot be recorded");
   }
@@ -764,10 +1055,13 @@ async function recordSignalForUser(
   return {
     entryId,
     idempotent: false,
-    signal: toDashboardItem(
+    signal: await toDashboardItem(
+      ctx,
+      args.userId,
       updatedSignal,
       args.now,
       args.soonWindowMs,
+      periodBounds,
     ),
   };
 }
@@ -776,6 +1070,7 @@ async function manageSignalForUser(
   ctx: MutationCtx,
   args: {
     userId: string;
+    tagRootId?: Id<"tags">;
     operation: ManageOperationInput;
     now: number;
   },
@@ -786,18 +1081,21 @@ async function manageSignalForUser(
       return await createActivityForUser(ctx, {
         ...operation,
         userId: args.userId,
+        tagRootId: args.tagRootId,
         now: args.now,
       });
     case "inventory.create":
       return await createInventoryForUser(ctx, {
         ...operation,
         userId: args.userId,
+        tagRootId: args.tagRootId,
         now: args.now,
       });
     case "activity.update":
       await updateActivityForUser(ctx, {
         ...operation,
         userId: args.userId,
+        tagRootId: args.tagRootId,
         now: args.now,
       });
       return operation.signalId;
@@ -805,6 +1103,7 @@ async function manageSignalForUser(
       await updateInventoryForUser(ctx, {
         ...operation,
         userId: args.userId,
+        tagRootId: args.tagRootId,
         now: args.now,
       });
       return operation.signalId;
@@ -812,6 +1111,7 @@ async function manageSignalForUser(
       await setArchivedForUser(ctx, {
         ...operation,
         userId: args.userId,
+        tagRootId: args.tagRootId,
         now: args.now,
       });
       return operation.signalId;
@@ -822,8 +1122,9 @@ export const listDashboard = query({
   args: {
     now: v.number(),
     soonWindowMs: v.number(),
+    periodBounds: v.optional(periodBoundsInput),
     kind: v.optional(signalKind),
-    category: v.optional(v.string()),
+    tagId: v.optional(v.id("tags")),
     attention: v.optional(signalAttention),
   },
   returns: v.array(signalDashboardItemValidator),
@@ -841,6 +1142,7 @@ export const get = query({
     signalId: v.id("signals"),
     now: v.number(),
     soonWindowMs: v.number(),
+    periodBounds: v.optional(periodBoundsInput),
   },
   returns: v.union(signalDashboardItemValidator, v.null()),
   handler: async (ctx, args) => {
@@ -853,7 +1155,15 @@ export const get = query({
     if (!signal || signal.userId !== userId) {
       return null;
     }
-    return toDashboardItem(signal, args.now, args.soonWindowMs);
+    const periodBounds = resolvePeriodBounds(args.now, args.periodBounds);
+    return await toDashboardItem(
+      ctx,
+      userId,
+      signal,
+      args.now,
+      args.soonWindowMs,
+      periodBounds,
+    );
   },
 });
 
@@ -904,8 +1214,8 @@ export const history = query({
 export const createActivity = mutation({
   args: {
     name: v.string(),
-    category: v.optional(v.string()),
-    dueAfterMs: v.optional(v.number()),
+    tagIds: v.array(v.id("tags")),
+    target: v.optional(activityTarget),
   },
   returns: v.id("signals"),
   handler: async (ctx, args) => {
@@ -924,7 +1234,7 @@ export const createActivity = mutation({
 export const createInventory = mutation({
   args: {
     name: v.string(),
-    category: v.optional(v.string()),
+    tagIds: v.array(v.id("tags")),
     unit: v.string(),
     initialQuantity: v.number(),
     threshold: inventoryThreshold,
@@ -948,8 +1258,8 @@ export const updateActivity = mutation({
   args: {
     signalId: v.id("signals"),
     name: v.optional(v.string()),
-    category: categoryInput,
-    dueAfterMs: dueAfterInput,
+    tagIds: v.optional(v.array(v.id("tags"))),
+    target: activityTargetInput,
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -970,7 +1280,7 @@ export const updateInventory = mutation({
   args: {
     signalId: v.id("signals"),
     name: v.optional(v.string()),
-    category: categoryInput,
+    tagIds: v.optional(v.array(v.id("tags"))),
     unit: v.optional(v.string()),
     threshold: v.optional(inventoryThreshold),
     flow: flowInput,
@@ -1016,6 +1326,7 @@ export const record = mutation({
     idempotencyKey: v.string(),
     operation: recordOperationInput,
     soonWindowMs: v.number(),
+    periodBounds: v.optional(periodBoundsInput),
   },
   returns: recordResultValidator,
   handler: async (ctx, args) => {
@@ -1037,13 +1348,39 @@ export const listForMcp = internalQuery({
     userId: v.string(),
     now: v.number(),
     soonWindowMs: v.number(),
+    periodBounds: v.optional(periodBoundsInput),
     kind: v.optional(signalKind),
-    category: v.optional(v.string()),
+    tagId: v.optional(v.id("tags")),
+    tagRootId: v.optional(v.id("tags")),
     attention: v.optional(signalAttention),
   },
-  returns: v.array(signalDashboardItemValidator),
+  returns: signalMcpReadResultValidator,
   handler: async (ctx, args) => {
-    return await listDashboardForUser(ctx, args);
+    const allowedTagIds =
+      args.tagRootId === undefined
+        ? undefined
+        : await getTagSubtreeIds(ctx, args.userId, args.tagRootId);
+    const [signals, tags] = await Promise.all([
+      listDashboardForUser(ctx, args),
+      ctx.db
+        .query("tags")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
+        .collect(),
+    ]);
+    return {
+      signals,
+      availableTags: tags
+        .filter(
+          (tag) => allowedTagIds === undefined || allowedTagIds.has(tag._id),
+        )
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((tag) => ({
+          id: tag._id,
+          name: tag.name,
+          parentId: tag.parentId,
+          color: tag.color,
+        })),
+    };
   },
 });
 
@@ -1051,10 +1388,12 @@ export const recordFromMcp = internalMutation({
   args: {
     userId: v.string(),
     signalId: v.id("signals"),
+    tagRootId: v.optional(v.id("tags")),
     idempotencyKey: v.string(),
     operation: recordOperationInput,
     now: v.number(),
     soonWindowMs: v.number(),
+    periodBounds: v.optional(periodBoundsInput),
   },
   returns: recordResultValidator,
   handler: async (ctx, args) => {
@@ -1068,6 +1407,7 @@ export const recordFromMcp = internalMutation({
 export const manageFromMcp = internalMutation({
   args: {
     userId: v.string(),
+    tagRootId: v.optional(v.id("tags")),
     operation: manageOperationInput,
     now: v.number(),
   },

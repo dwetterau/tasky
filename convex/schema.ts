@@ -133,17 +133,11 @@ export const signalAttention = v.union(
   v.literal("unknown"),
 );
 
-export const signalSource = v.union(
-  v.literal("mobile"),
-  v.literal("mcp"),
-);
+export const signalSource = v.union(v.literal("mobile"), v.literal("mcp"));
 
 export const inventoryThreshold = v.object({
   value: v.number(),
-  comparison: v.union(
-    v.literal("atOrBelow"),
-    v.literal("atOrAbove"),
-  ),
+  comparison: v.union(v.literal("atOrBelow"), v.literal("atOrAbove")),
 });
 
 export const inventoryFlow = v.object({
@@ -151,10 +145,22 @@ export const inventoryFlow = v.object({
   everyDays: v.number(),
 });
 
+export const activityTarget = v.union(
+  v.object({
+    type: v.literal("recency"),
+    dueAfterMs: v.number(),
+  }),
+  v.object({
+    type: v.literal("period"),
+    period: v.union(v.literal("day"), v.literal("week")),
+    targetCount: v.number(),
+  }),
+);
+
 export const signalModel = v.union(
   v.object({
     kind: v.literal("activity"),
-    dueAfterMs: v.optional(v.number()),
+    target: v.optional(activityTarget),
     lastOccurredAt: v.optional(v.number()),
   }),
   v.object({
@@ -333,7 +339,7 @@ export default defineSchema({
   signals: defineTable({
     userId: v.string(),
     name: v.string(),
-    category: v.optional(v.string()),
+    tagIds: v.array(v.id("tags")),
     model: signalModel,
     createdAt: v.number(),
     updatedAt: v.number(),

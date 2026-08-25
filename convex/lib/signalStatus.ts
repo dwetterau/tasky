@@ -3,9 +3,20 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 export type SignalAttention = "ok" | "soon" | "due" | "unknown";
 export type InventoryComparison = "atOrBelow" | "atOrAbove";
 
+export type ActivityTarget =
+  | {
+      type: "recency";
+      dueAfterMs: number;
+    }
+  | {
+      type: "period";
+      period: "day" | "week";
+      targetCount: number;
+    };
+
 export type ActivitySignalModel = {
   kind: "activity";
-  dueAfterMs?: number;
+  target?: ActivityTarget;
   lastOccurredAt?: number;
 };
 
@@ -32,11 +43,21 @@ export type SignalEvaluation = {
   actionAt?: number;
   reason: string;
   elapsedMs?: number;
+  periodProgress?: ActivityPeriodProgress;
   projectedQuantity?: number;
   runwayMs?: number;
   confirmedAt?: number;
   isProjected?: boolean;
   nextFlowAt?: number;
+};
+
+export type ActivityPeriodProgress = {
+  period: "day" | "week";
+  startAt: number;
+  endAt: number;
+  completedCount: number;
+  targetCount: number;
+  remainingCount: number;
 };
 
 export type ProjectedInventory = {
@@ -133,13 +154,9 @@ function inventoryActionAt(
 
   let stepsNeeded: number;
   if (comparison === "atOrBelow" && model.flow.amount < 0) {
-    stepsNeeded = Math.ceil(
-      (projected.quantity - value) / -model.flow.amount,
-    );
+    stepsNeeded = Math.ceil((projected.quantity - value) / -model.flow.amount);
   } else if (comparison === "atOrAbove" && model.flow.amount > 0) {
-    stepsNeeded = Math.ceil(
-      (value - projected.quantity) / model.flow.amount,
-    );
+    stepsNeeded = Math.ceil((value - projected.quantity) / model.flow.amount);
   } else {
     return undefined;
   }
@@ -157,7 +174,33 @@ function evaluateActivity(
   model: ActivitySignalModel,
   now: number,
   soonWindowMs: number,
+  periodProgress?: ActivityPeriodProgress,
 ): SignalEvaluation {
+  if (model.target?.type === "period") {
+    if (!periodProgress) {
+      return {
+        attention: "unknown",
+        reason: "Calendar period could not be evaluated",
+        elapsedMs:
+          model.lastOccurredAt === undefined
+            ? undefined
+            : Math.max(0, now - model.lastOccurredAt),
+      };
+    }
+    const targetMet =
+      periodProgress.completedCount >= periodProgress.targetCount;
+    return {
+      attention: targetMet ? "ok" : "due",
+      actionAt: targetMet ? undefined : periodProgress.endAt,
+      reason: `${periodProgress.completedCount} of ${periodProgress.targetCount} completed this ${periodProgress.period}`,
+      elapsedMs:
+        model.lastOccurredAt === undefined
+          ? undefined
+          : Math.max(0, now - model.lastOccurredAt),
+      periodProgress,
+    };
+  }
+
   if (model.lastOccurredAt === undefined) {
     return {
       attention: "unknown",
@@ -166,7 +209,7 @@ function evaluateActivity(
   }
 
   const elapsedMs = Math.max(0, now - model.lastOccurredAt);
-  if (model.dueAfterMs === undefined) {
+  if (model.target === undefined) {
     return {
       attention: "ok",
       reason: "Activity recorded; no action threshold configured",
@@ -174,14 +217,10 @@ function evaluateActivity(
     };
   }
 
-  const actionAt = model.lastOccurredAt + model.dueAfterMs;
+  const actionAt = model.lastOccurredAt + model.target.dueAfterMs;
   const remainingMs = actionAt - now;
   const attention: SignalAttention =
-    remainingMs <= 0
-      ? "due"
-      : remainingMs <= soonWindowMs
-        ? "soon"
-        : "ok";
+    remainingMs <= 0 ? "due" : remainingMs <= soonWindowMs ? "soon" : "ok";
 
   return {
     attention,
@@ -216,9 +255,7 @@ function evaluateInventory(
       ? "soon"
       : "ok";
   const comparisonText =
-    model.threshold.comparison === "atOrBelow"
-      ? "at or below"
-      : "at or above";
+    model.threshold.comparison === "atOrBelow" ? "at or below" : "at or above";
 
   return {
     attention,
@@ -238,8 +275,9 @@ export function evaluateSignal(
   model: SignalModel,
   now: number,
   soonWindowMs: number,
+  periodProgress?: ActivityPeriodProgress,
 ): SignalEvaluation {
   return model.kind === "activity"
-    ? evaluateActivity(model, now, soonWindowMs)
+    ? evaluateActivity(model, now, soonWindowMs, periodProgress)
     : evaluateInventory(model, now, soonWindowMs);
 }

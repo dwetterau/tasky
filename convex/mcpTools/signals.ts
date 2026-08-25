@@ -5,11 +5,7 @@ import {
   SIGNALS_WRITE_SCOPE,
   type ParsedMcpScopes,
 } from "../mcpScopes";
-import {
-  mcpError,
-  mcpToolResult,
-  type McpToolDescriptor,
-} from "./common";
+import { mcpError, mcpToolResult, type McpToolDescriptor } from "./common";
 
 const DEFAULT_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -26,6 +22,17 @@ type InventoryFlow = {
   amount: number;
   everyDays: number;
 };
+
+type ActivityTarget =
+  | {
+      type: "recency";
+      dueAfterMs: number;
+    }
+  | {
+      type: "period";
+      period: "day" | "week";
+      targetCount: number;
+    };
 
 type RecordSignalOperation =
   | {
@@ -46,13 +53,13 @@ type ManageSignalOperation =
   | {
       type: "activity.create";
       name: string;
-      category?: string;
-      dueAfterMs?: number;
+      tagIds: Id<"tags">[];
+      target?: ActivityTarget;
     }
   | {
       type: "inventory.create";
       name: string;
-      category?: string;
+      tagIds: Id<"tags">[];
       unit: string;
       initialQuantity: number;
       threshold: InventoryThreshold;
@@ -62,14 +69,14 @@ type ManageSignalOperation =
       type: "activity.update";
       signalId: Id<"signals">;
       name?: string;
-      category?: string | null;
-      dueAfterMs?: number | null;
+      tagIds?: Id<"tags">[];
+      target?: ActivityTarget | null;
     }
   | {
       type: "inventory.update";
       signalId: Id<"signals">;
       name?: string;
-      category?: string | null;
+      tagIds?: Id<"tags">[];
       unit?: string;
       threshold?: InventoryThreshold;
       flow?: InventoryFlow | null;
@@ -90,14 +97,16 @@ type SignalToolHandler = (
 export type SignalExecutors = {
   read: (args: {
     userId: string;
+    tagRootId?: Id<"tags">;
     now: number;
     soonWindowMs: number;
     kind?: SignalKind;
-    category?: string;
+    tagId?: Id<"tags">;
     attention?: SignalAttention;
   }) => Promise<unknown>;
   record: (args: {
     userId: string;
+    tagRootId?: Id<"tags">;
     signalId: Id<"signals">;
     idempotencyKey: string;
     operation: RecordSignalOperation;
@@ -106,6 +115,7 @@ export type SignalExecutors = {
   }) => Promise<unknown>;
   manage: (args: {
     userId: string;
+    tagRootId?: Id<"tags">;
     operation: ManageSignalOperation;
     now: number;
   }) => Promise<unknown>;
@@ -134,11 +144,44 @@ const flowSchema = {
   },
 };
 
+const tagIdsSchema = {
+  type: "array",
+  uniqueItems: true,
+  items: { type: "string", minLength: 1 },
+};
+
+const activityTargetSchema = {
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "dueAfterMs"],
+      properties: {
+        type: { const: "recency" },
+        dueAfterMs: { type: "number", exclusiveMinimum: 0 },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "period", "targetCount"],
+      properties: {
+        type: { const: "period" },
+        period: { type: "string", enum: ["day", "week"] },
+        targetCount: {
+          type: "integer",
+          minimum: 1,
+        },
+      },
+    },
+  ],
+};
+
 export const signalToolDescriptors: McpToolDescriptor[] = [
   {
     name: "readSignals",
     description:
-      "Read the authenticated user's activity and inventory signal dashboard, ordered by attention. Inventory quantities are projections from the last confirmed state.",
+      "Read the authenticated user's activity and inventory signal dashboard, ordered by attention, plus the Tasky tag catalog needed to filter or manage signals. Inventory quantities are projections from the last confirmed state.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -147,7 +190,11 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
           type: "string",
           enum: ["activity", "inventory"],
         },
-        category: { type: "string" },
+        tagId: {
+          type: "string",
+          description:
+            "Optional Tasky tag ID. Matches signals tagged with this tag or any descendant tag.",
+        },
         attention: {
           type: "string",
           enum: ["ok", "soon", "due", "unknown"],
@@ -236,12 +283,12 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
             {
               type: "object",
               additionalProperties: false,
-              required: ["type", "name"],
+              required: ["type", "name", "tagIds"],
               properties: {
                 type: { const: "activity.create" },
                 name: { type: "string" },
-                category: { type: "string" },
-                dueAfterMs: { type: "number", exclusiveMinimum: 0 },
+                tagIds: tagIdsSchema,
+                target: activityTargetSchema,
               },
             },
             {
@@ -250,6 +297,7 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
               required: [
                 "type",
                 "name",
+                "tagIds",
                 "unit",
                 "initialQuantity",
                 "threshold",
@@ -257,7 +305,7 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
               properties: {
                 type: { const: "inventory.create" },
                 name: { type: "string" },
-                category: { type: "string" },
+                tagIds: tagIdsSchema,
                 unit: { type: "string" },
                 initialQuantity: { type: "number", minimum: 0 },
                 threshold: thresholdSchema,
@@ -272,14 +320,9 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
                 type: { const: "activity.update" },
                 signalId: { type: "string" },
                 name: { type: "string" },
-                category: {
-                  oneOf: [{ type: "string" }, { type: "null" }],
-                },
-                dueAfterMs: {
-                  oneOf: [
-                    { type: "number", exclusiveMinimum: 0 },
-                    { type: "null" },
-                  ],
+                tagIds: tagIdsSchema,
+                target: {
+                  oneOf: [activityTargetSchema, { type: "null" }],
                 },
               },
             },
@@ -291,9 +334,7 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
                 type: { const: "inventory.update" },
                 signalId: { type: "string" },
                 name: { type: "string" },
-                category: {
-                  oneOf: [{ type: "string" }, { type: "null" }],
-                },
+                tagIds: tagIdsSchema,
                 unit: { type: "string" },
                 threshold: thresholdSchema,
                 flow: {
@@ -334,11 +375,7 @@ function parseStrictObject(
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) {
       return {
-        error: mcpError(
-          rpcId,
-          -32602,
-          `Unexpected ${fieldName} field: ${key}`,
-        ),
+        error: mcpError(rpcId, -32602, `Unexpected ${fieldName} field: ${key}`),
       };
     }
   }
@@ -353,11 +390,7 @@ function parseFiniteNumber(
 ): { value?: number; error?: Response } {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return {
-      error: mcpError(
-        rpcId,
-        -32602,
-        `${fieldName} must be a finite number`,
-      ),
+      error: mcpError(rpcId, -32602, `${fieldName} must be a finite number`),
     };
   }
   if (options?.minimum !== undefined && value < options.minimum) {
@@ -398,6 +431,120 @@ function parseOptionalText(
     };
   }
   return { value };
+}
+
+function parseTagIds(
+  rpcId: unknown,
+  value: unknown,
+  fieldName: string,
+  required: boolean,
+): { value?: Id<"tags">[]; error?: Response } {
+  if (value === undefined && !required) {
+    return {};
+  }
+  if (!Array.isArray(value)) {
+    return {
+      error: mcpError(rpcId, -32602, `${fieldName} must be an array`),
+    };
+  }
+  if (value.some((tagId) => typeof tagId !== "string" || !tagId.trim())) {
+    return {
+      error: mcpError(
+        rpcId,
+        -32602,
+        `${fieldName} must contain only non-empty tag IDs`,
+      ),
+    };
+  }
+  return {
+    value: Array.from(new Set(value as string[])) as Id<"tags">[],
+  };
+}
+
+function parseActivityTarget(
+  rpcId: unknown,
+  input: unknown,
+  required: boolean,
+): { value?: ActivityTarget; error?: Response } {
+  if (input === undefined && !required) {
+    return {};
+  }
+  const object = parseStrictObject(
+    rpcId,
+    input,
+    ["type", "dueAfterMs", "period", "targetCount"],
+    "target",
+  );
+  if (object.error || !object.value) {
+    return { error: object.error };
+  }
+  if (object.value.type === "recency") {
+    const recency = parseStrictObject(
+      rpcId,
+      input,
+      ["type", "dueAfterMs"],
+      "target",
+    );
+    if (recency.error || !recency.value) {
+      return { error: recency.error };
+    }
+    const dueAfterMs = parseFiniteNumber(
+      rpcId,
+      recency.value.dueAfterMs,
+      "target.dueAfterMs",
+      { exclusiveMinimum: 0 },
+    );
+    if (dueAfterMs.error || dueAfterMs.value === undefined) {
+      return { error: dueAfterMs.error };
+    }
+    return {
+      value: {
+        type: "recency",
+        dueAfterMs: dueAfterMs.value,
+      },
+    };
+  }
+  if (object.value.type === "period") {
+    const periodTarget = parseStrictObject(
+      rpcId,
+      input,
+      ["type", "period", "targetCount"],
+      "target",
+    );
+    if (periodTarget.error || !periodTarget.value) {
+      return { error: periodTarget.error };
+    }
+    const period = periodTarget.value.period;
+    if (period !== "day" && period !== "week") {
+      return {
+        error: mcpError(rpcId, -32602, "target.period must be day or week"),
+      };
+    }
+    const targetCount = parseFiniteNumber(
+      rpcId,
+      periodTarget.value.targetCount,
+      "target.targetCount",
+      { exclusiveMinimum: 0 },
+    );
+    if (targetCount.error || targetCount.value === undefined) {
+      return { error: targetCount.error };
+    }
+    if (!Number.isInteger(targetCount.value)) {
+      return {
+        error: mcpError(rpcId, -32602, "target.targetCount must be an integer"),
+      };
+    }
+    return {
+      value: {
+        type: "period",
+        period,
+        targetCount: targetCount.value,
+      },
+    };
+  }
+  return {
+    error: mcpError(rpcId, -32602, "target.type must be recency or period"),
+  };
 }
 
 function parseThreshold(
@@ -460,11 +607,7 @@ function parseFlow(
   if (object.error || !object.value) {
     return { error: object.error };
   }
-  const amount = parseFiniteNumber(
-    rpcId,
-    object.value.amount,
-    "flow.amount",
-  );
+  const amount = parseFiniteNumber(rpcId, object.value.amount, "flow.amount");
   if (amount.error || amount.value === undefined) {
     return { error: amount.error };
   }
@@ -562,11 +705,7 @@ function parseRecordOperation(
     }
     if (amount.value === 0) {
       return {
-        error: mcpError(
-          rpcId,
-          -32602,
-          "operation.amount must not be zero",
-        ),
+        error: mcpError(rpcId, -32602, "operation.amount must not be zero"),
       };
     }
     return { value: { type, amount: amount.value } };
@@ -608,8 +747,8 @@ function parseManageOperation(
       "type",
       "signalId",
       "name",
-      "category",
-      "dueAfterMs",
+      "tagIds",
+      "target",
       "unit",
       "initialQuantity",
       "threshold",
@@ -626,7 +765,7 @@ function parseManageOperation(
     const operation = parseStrictObject(
       rpcId,
       input,
-      ["type", "name", "category", "dueAfterMs"],
+      ["type", "name", "tagIds", "target"],
       "operation",
     );
     if (operation.error || !operation.value) {
@@ -637,33 +776,25 @@ function parseManageOperation(
         error: mcpError(rpcId, -32602, "operation.name is required"),
       };
     }
-    const category = parseOptionalText(
+    const tagIds = parseTagIds(
       rpcId,
-      operation.value.category,
-      "operation.category",
+      operation.value.tagIds,
+      "operation.tagIds",
+      true,
     );
-    if (category.error) {
-      return { error: category.error };
+    if (tagIds.error || !tagIds.value) {
+      return { error: tagIds.error };
     }
-    let dueAfterMs: number | undefined;
-    if (operation.value.dueAfterMs !== undefined) {
-      const parsed = parseFiniteNumber(
-        rpcId,
-        operation.value.dueAfterMs,
-        "operation.dueAfterMs",
-        { exclusiveMinimum: 0 },
-      );
-      if (parsed.error || parsed.value === undefined) {
-        return { error: parsed.error };
-      }
-      dueAfterMs = parsed.value;
+    const target = parseActivityTarget(rpcId, operation.value.target, false);
+    if (target.error) {
+      return { error: target.error };
     }
     return {
       value: {
         type,
         name: operation.value.name,
-        category: category.value,
-        dueAfterMs,
+        tagIds: tagIds.value,
+        target: target.value,
       },
     };
   }
@@ -674,7 +805,7 @@ function parseManageOperation(
       [
         "type",
         "name",
-        "category",
+        "tagIds",
         "unit",
         "initialQuantity",
         "threshold",
@@ -697,13 +828,14 @@ function parseManageOperation(
         ),
       };
     }
-    const category = parseOptionalText(
+    const tagIds = parseTagIds(
       rpcId,
-      operation.value.category,
-      "operation.category",
+      operation.value.tagIds,
+      "operation.tagIds",
+      true,
     );
-    if (category.error) {
-      return { error: category.error };
+    if (tagIds.error || !tagIds.value) {
+      return { error: tagIds.error };
     }
     const initialQuantity = parseFiniteNumber(
       rpcId,
@@ -711,17 +843,10 @@ function parseManageOperation(
       "operation.initialQuantity",
       { minimum: 0 },
     );
-    if (
-      initialQuantity.error ||
-      initialQuantity.value === undefined
-    ) {
+    if (initialQuantity.error || initialQuantity.value === undefined) {
       return { error: initialQuantity.error };
     }
-    const threshold = parseThreshold(
-      rpcId,
-      operation.value.threshold,
-      true,
-    );
+    const threshold = parseThreshold(rpcId, operation.value.threshold, true);
     if (threshold.error || !threshold.value) {
       return { error: threshold.error };
     }
@@ -733,7 +858,7 @@ function parseManageOperation(
       value: {
         type,
         name: operation.value.name,
-        category: category.value,
+        tagIds: tagIds.value,
         unit: operation.value.unit,
         initialQuantity: initialQuantity.value,
         threshold: threshold.value,
@@ -745,7 +870,7 @@ function parseManageOperation(
     const operation = parseStrictObject(
       rpcId,
       input,
-      ["type", "signalId", "name", "category", "dueAfterMs"],
+      ["type", "signalId", "name", "tagIds", "target"],
       "operation",
     );
     if (operation.error || !operation.value) {
@@ -764,42 +889,36 @@ function parseManageOperation(
     if (name.error) {
       return { error: name.error };
     }
-    let category: string | null | undefined;
-    if (operation.value.category === null) {
-      category = null;
-    } else {
-      const parsed = parseOptionalText(
-        rpcId,
-        operation.value.category,
-        "operation.category",
-      );
-      if (parsed.error) {
-        return { error: parsed.error };
-      }
-      category = parsed.value;
+    const tagIds = parseTagIds(
+      rpcId,
+      operation.value.tagIds,
+      "operation.tagIds",
+      false,
+    );
+    if (tagIds.error) {
+      return { error: tagIds.error };
     }
-    let dueAfterMs: number | null | undefined;
-    if (operation.value.dueAfterMs === null) {
-      dueAfterMs = null;
-    } else if (operation.value.dueAfterMs !== undefined) {
-      const parsed = parseFiniteNumber(
+    let target: ActivityTarget | null | undefined;
+    if (operation.value.target === null) {
+      target = null;
+    } else {
+      const parsedTarget = parseActivityTarget(
         rpcId,
-        operation.value.dueAfterMs,
-        "operation.dueAfterMs",
-        { exclusiveMinimum: 0 },
+        operation.value.target,
+        false,
       );
-      if (parsed.error || parsed.value === undefined) {
-        return { error: parsed.error };
+      if (parsedTarget.error) {
+        return { error: parsedTarget.error };
       }
-      dueAfterMs = parsed.value;
+      target = parsedTarget.value;
     }
     return {
       value: {
         type,
         signalId: operation.value.signalId as Id<"signals">,
         name: name.value,
-        category,
-        dueAfterMs,
+        tagIds: tagIds.value,
+        target,
       },
     };
   }
@@ -807,15 +926,7 @@ function parseManageOperation(
     const operation = parseStrictObject(
       rpcId,
       input,
-      [
-        "type",
-        "signalId",
-        "name",
-        "category",
-        "unit",
-        "threshold",
-        "flow",
-      ],
+      ["type", "signalId", "name", "tagIds", "unit", "threshold", "flow"],
       "operation",
     );
     if (operation.error || !operation.value) {
@@ -839,25 +950,16 @@ function parseManageOperation(
     if (name.error || unit.error) {
       return { error: name.error ?? unit.error };
     }
-    let category: string | null | undefined;
-    if (operation.value.category === null) {
-      category = null;
-    } else {
-      const parsed = parseOptionalText(
-        rpcId,
-        operation.value.category,
-        "operation.category",
-      );
-      if (parsed.error) {
-        return { error: parsed.error };
-      }
-      category = parsed.value;
-    }
-    const threshold = parseThreshold(
+    const tagIds = parseTagIds(
       rpcId,
-      operation.value.threshold,
+      operation.value.tagIds,
+      "operation.tagIds",
       false,
     );
+    if (tagIds.error) {
+      return { error: tagIds.error };
+    }
+    const threshold = parseThreshold(rpcId, operation.value.threshold, false);
     if (threshold.error) {
       return { error: threshold.error };
     }
@@ -876,7 +978,7 @@ function parseManageOperation(
         type,
         signalId: operation.value.signalId as Id<"signals">,
         name: name.value,
-        category,
+        tagIds: tagIds.value,
         unit: unit.value,
         threshold: threshold.value,
         flow,
@@ -937,12 +1039,7 @@ export function createSignalToolHandlers(
   executors: SignalExecutors,
 ): Record<string, SignalToolHandler> {
   return {
-    readSignals: async (
-      rpcId,
-      sessionUserId,
-      parsedScopes,
-      rawArgs,
-    ) => {
+    readSignals: async (rpcId, sessionUserId, parsedScopes, rawArgs) => {
       if (!hasRequiredScope(parsedScopes, SIGNALS_READ_SCOPE)) {
         return mcpError(
           rpcId,
@@ -950,20 +1047,18 @@ export function createSignalToolHandlers(
           `Missing required scope: ${SIGNALS_READ_SCOPE}`,
         );
       }
-      const parsed = parseStrictObject(
-        rpcId,
-        rawArgs ?? {},
-        ["kind", "category", "attention", "now", "soonWindowMs"],
-      );
+      const parsed = parseStrictObject(rpcId, rawArgs ?? {}, [
+        "kind",
+        "tagId",
+        "attention",
+        "now",
+        "soonWindowMs",
+      ]);
       if (parsed.error || !parsed.value) {
         return parsed.error ?? mcpError(rpcId, -32602, "Invalid arguments");
       }
       const kind = parsed.value.kind;
-      if (
-        kind !== undefined &&
-        kind !== "activity" &&
-        kind !== "inventory"
-      ) {
+      if (kind !== undefined && kind !== "activity" && kind !== "inventory") {
         return mcpError(rpcId, -32602, "Invalid kind");
       }
       const attention = parsed.value.attention;
@@ -976,13 +1071,12 @@ export function createSignalToolHandlers(
       ) {
         return mcpError(rpcId, -32602, "Invalid attention");
       }
-      const category = parseOptionalText(
-        rpcId,
-        parsed.value.category,
-        "category",
-      );
-      if (category.error) {
-        return category.error;
+      const tagId = parseOptionalText(rpcId, parsed.value.tagId, "tagId");
+      if (tagId.error) {
+        return tagId.error;
+      }
+      if (tagId.value !== undefined && !tagId.value.trim()) {
+        return mcpError(rpcId, -32602, "tagId must not be empty");
       }
       let now = Date.now();
       if (parsed.value.now !== undefined) {
@@ -1011,20 +1105,16 @@ export function createSignalToolHandlers(
       return await executeTool(rpcId, async () => {
         return await executors.read({
           userId: sessionUserId,
+          tagRootId: parsedScopes.tagRootId,
           now,
           soonWindowMs,
           kind: kind as SignalKind | undefined,
-          category: category.value,
+          tagId: tagId.value as Id<"tags"> | undefined,
           attention: attention as SignalAttention | undefined,
         });
       });
     },
-    recordSignal: async (
-      rpcId,
-      sessionUserId,
-      parsedScopes,
-      rawArgs,
-    ) => {
+    recordSignal: async (rpcId, sessionUserId, parsedScopes, rawArgs) => {
       if (!hasRequiredScope(parsedScopes, SIGNALS_WRITE_SCOPE)) {
         return mcpError(
           rpcId,
@@ -1032,11 +1122,12 @@ export function createSignalToolHandlers(
           `Missing required scope: ${SIGNALS_WRITE_SCOPE}`,
         );
       }
-      const parsed = parseStrictObject(
-        rpcId,
-        rawArgs,
-        ["signalId", "idempotencyKey", "operation", "soonWindowMs"],
-      );
+      const parsed = parseStrictObject(rpcId, rawArgs, [
+        "signalId",
+        "idempotencyKey",
+        "operation",
+        "soonWindowMs",
+      ]);
       if (parsed.error || !parsed.value) {
         return parsed.error ?? mcpError(rpcId, -32602, "Invalid arguments");
       }
@@ -1051,14 +1142,10 @@ export function createSignalToolHandlers(
           "signalId and idempotencyKey are required",
         );
       }
-      const operation = parseRecordOperation(
-        rpcId,
-        parsed.value.operation,
-      );
+      const operation = parseRecordOperation(rpcId, parsed.value.operation);
       if (operation.error || !operation.value) {
         return (
-          operation.error ??
-          mcpError(rpcId, -32602, "Invalid signal operation")
+          operation.error ?? mcpError(rpcId, -32602, "Invalid signal operation")
         );
       }
       let soonWindowMs = DEFAULT_SOON_WINDOW_MS;
@@ -1080,6 +1167,7 @@ export function createSignalToolHandlers(
       return await executeTool(rpcId, async () => {
         return await executors.record({
           userId: sessionUserId,
+          tagRootId: parsedScopes.tagRootId,
           signalId: parsed.value!.signalId as Id<"signals">,
           idempotencyKey: parsed.value!.idempotencyKey as string,
           operation: operation.value!,
@@ -1088,12 +1176,7 @@ export function createSignalToolHandlers(
         });
       });
     },
-    manageSignal: async (
-      rpcId,
-      sessionUserId,
-      parsedScopes,
-      rawArgs,
-    ) => {
+    manageSignal: async (rpcId, sessionUserId, parsedScopes, rawArgs) => {
       if (!hasRequiredScope(parsedScopes, SIGNALS_WRITE_SCOPE)) {
         return mcpError(
           rpcId,
@@ -1101,27 +1184,20 @@ export function createSignalToolHandlers(
           `Missing required scope: ${SIGNALS_WRITE_SCOPE}`,
         );
       }
-      const parsed = parseStrictObject(
-        rpcId,
-        rawArgs,
-        ["operation"],
-      );
+      const parsed = parseStrictObject(rpcId, rawArgs, ["operation"]);
       if (parsed.error || !parsed.value) {
         return parsed.error ?? mcpError(rpcId, -32602, "Invalid arguments");
       }
-      const operation = parseManageOperation(
-        rpcId,
-        parsed.value.operation,
-      );
+      const operation = parseManageOperation(rpcId, parsed.value.operation);
       if (operation.error || !operation.value) {
         return (
-          operation.error ??
-          mcpError(rpcId, -32602, "Invalid manage operation")
+          operation.error ?? mcpError(rpcId, -32602, "Invalid manage operation")
         );
       }
       return await executeTool(rpcId, async () => {
         return await executors.manage({
           userId: sessionUserId,
+          tagRootId: parsedScopes.tagRootId,
           operation: operation.value!,
           now: Date.now(),
         });

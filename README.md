@@ -81,4 +81,6 @@ Supported resource scope:
 
 `readTasks` defaults to returning non-closed tasks (`not_started`, `in_progress`, `blocked`).
 Signal tools expose the activity/inventory attention dashboard and idempotent
-recording operations through the same MCP endpoint.
+recording operations through the same MCP endpoint. Signals reuse Tasky's
+hierarchical tags; reads can filter by a tag subtree. Activity goals support
+rolling recency timers as well as daily or weekly completion targets.
