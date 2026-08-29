@@ -204,6 +204,160 @@ describe("signals backend", () => {
     });
   });
 
+  it("records and corrects structured exercise measurements", async () => {
+    const t = convexTest(schema, modules);
+    const { signalId } = await t.mutation(internal.signals.manageFromMcp, {
+      userId: "user-1",
+      now: 10 * DAY_MS,
+      operation: {
+        type: "activity.create",
+        name: "Strength training",
+        tagIds: [],
+        measurementFields: ["weight", "reps", "sets"],
+      },
+    });
+
+    const first = await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId,
+      idempotencyKey: "workout-1",
+      operation: {
+        type: "activity.occurred",
+        occurredAt: 8 * DAY_MS,
+        note: "Bench press",
+        measurements: {
+          weight: 135,
+          reps: 8,
+          sets: 3,
+        },
+      },
+      now: 10 * DAY_MS,
+      soonWindowMs: 0,
+    });
+    const second = await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId,
+      idempotencyKey: "workout-2",
+      operation: {
+        type: "activity.occurred",
+        occurredAt: 9 * DAY_MS,
+        measurements: {
+          weight: 145,
+          reps: 6,
+          sets: 3,
+        },
+      },
+      now: 10 * DAY_MS,
+      soonWindowMs: 0,
+    });
+
+    const history = await t.query(internal.signals.historyForMcp, {
+      userId: "user-1",
+      signalId,
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(history.page[0]).toMatchObject({
+      id: second.entryId,
+      operation: {
+        type: "activity.occurred",
+        measurements: {
+          weight: 145,
+          reps: 6,
+          sets: 3,
+        },
+      },
+    });
+
+    await t.mutation(internal.signals.manageEntryFromMcp, {
+      userId: "user-1",
+      now: 10 * DAY_MS,
+      operation: {
+        type: "activity.update",
+        entryId: second.entryId,
+        effectiveAt: 7 * DAY_MS,
+        note: "Corrected",
+        measurements: {
+          weight: 140,
+          reps: 6,
+          sets: 3,
+        },
+      },
+    });
+    let dashboard = await t.query(internal.signals.listForMcp, {
+      userId: "user-1",
+      now: 10 * DAY_MS,
+      soonWindowMs: 0,
+    });
+    expect(dashboard.signals[0].model).toMatchObject({
+      kind: "activity",
+      lastOccurredAt: 8 * DAY_MS,
+    });
+
+    await t.mutation(internal.signals.manageEntryFromMcp, {
+      userId: "user-1",
+      now: 10 * DAY_MS,
+      operation: {
+        type: "activity.delete",
+        entryId: first.entryId,
+      },
+    });
+    dashboard = await t.query(internal.signals.listForMcp, {
+      userId: "user-1",
+      now: 10 * DAY_MS,
+      soonWindowMs: 0,
+    });
+    expect(dashboard.signals[0].model).toMatchObject({
+      kind: "activity",
+      lastOccurredAt: 7 * DAY_MS,
+    });
+  });
+
+  it("validates configured exercise measurements", async () => {
+    const t = convexTest(schema, modules);
+    const { signalId } = await t.mutation(internal.signals.manageFromMcp, {
+      userId: "user-1",
+      now: 1,
+      operation: {
+        type: "activity.create",
+        name: "Run",
+        tagIds: [],
+        measurementFields: ["durationSeconds", "distance"],
+      },
+    });
+
+    await expect(
+      t.mutation(internal.signals.recordFromMcp, {
+        userId: "user-1",
+        signalId,
+        idempotencyKey: "missing-distance",
+        operation: {
+          type: "activity.occurred",
+          measurements: { durationSeconds: 1800 },
+        },
+        now: 2,
+        soonWindowMs: 0,
+      }),
+    ).rejects.toThrow(/measurements.distance is required/);
+
+    await expect(
+      t.mutation(internal.signals.recordFromMcp, {
+        userId: "user-1",
+        signalId,
+        idempotencyKey: "unexpected-weight",
+        operation: {
+          type: "activity.occurred",
+          measurements: {
+            durationSeconds: 1800,
+            distance: 3,
+            weight: 100,
+          },
+        },
+        now: 2,
+        soonWindowMs: 0,
+      }),
+    ).rejects.toThrow(/measurements.weight is not enabled/);
+  });
+
   it("materializes scheduled inventory before applying an adjustment", async () => {
     const t = convexTest(schema, modules);
     const { signalId } = await t.mutation(internal.signals.manageFromMcp, {
@@ -400,6 +554,36 @@ describe("signals backend", () => {
         operation: { type: "activity.occurred" },
         now: 2,
         soonWindowMs: 0,
+      }),
+    ).rejects.toThrow(/authorized tag root/);
+    const outsideEntry = await t.mutation(
+      internal.signals.recordFromMcp,
+      {
+        userId: "user-1",
+        signalId: outsideSignalId,
+        idempotencyKey: "outside-unscoped",
+        operation: { type: "activity.occurred" },
+        now: 2,
+        soonWindowMs: 0,
+      },
+    );
+    await expect(
+      t.query(internal.signals.historyForMcp, {
+        userId: "user-1",
+        tagRootId: exerciseTagId,
+        signalId: outsideSignalId,
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ).rejects.toThrow(/authorized tag root/);
+    await expect(
+      t.mutation(internal.signals.manageEntryFromMcp, {
+        userId: "user-1",
+        tagRootId: exerciseTagId,
+        now: 3,
+        operation: {
+          type: "activity.delete",
+          entryId: outsideEntry.entryId,
+        },
       }),
     ).rejects.toThrow(/authorized tag root/);
 

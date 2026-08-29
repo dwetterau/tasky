@@ -157,10 +157,27 @@ export const activityTarget = v.union(
   }),
 );
 
+export const activityMeasurementField = v.union(
+  v.literal("weight"),
+  v.literal("reps"),
+  v.literal("sets"),
+  v.literal("durationSeconds"),
+  v.literal("distance"),
+);
+
+export const activityMeasurements = v.object({
+  weight: v.optional(v.number()),
+  reps: v.optional(v.number()),
+  sets: v.optional(v.number()),
+  durationSeconds: v.optional(v.number()),
+  distance: v.optional(v.number()),
+});
+
 export const signalModel = v.union(
   v.object({
     kind: v.literal("activity"),
     target: v.optional(activityTarget),
+    measurementFields: v.optional(v.array(activityMeasurementField)),
     lastOccurredAt: v.optional(v.number()),
   }),
   v.object({
@@ -178,6 +195,7 @@ export const signalEntryOperation = v.union(
   v.object({
     type: v.literal("activity.occurred"),
     note: v.optional(v.string()),
+    measurements: v.optional(activityMeasurements),
   }),
   v.object({
     type: v.literal("inventory.adjusted"),
@@ -353,6 +371,7 @@ export default defineSchema({
     signalId: v.id("signals"),
     effectiveAt: v.number(),
     recordedAt: v.number(),
+    updatedAt: v.optional(v.number()),
     source: signalSource,
     idempotencyKey: v.string(),
     operation: signalEntryOperation,

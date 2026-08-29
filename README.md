@@ -72,8 +72,9 @@ Supported capability scopes:
 
 - `tasks:read` (required for `readTasks`)
 - `tasks:write` (required for task/capture mutation tools)
-- `signals:read` (required for `readSignals`)
-- `signals:write` (required for `recordSignal` and `manageSignal`)
+- `signals:read` (required for `readSignals` and `readSignalHistory`)
+- `signals:write` (required for `recordSignal`, `manageSignal`, and
+  `manageSignalEntry`)
 
 Supported resource scope:
 
@@ -83,4 +84,6 @@ Supported resource scope:
 Signal tools expose the activity/inventory attention dashboard and idempotent
 recording operations through the same MCP endpoint. Signals reuse Tasky's
 hierarchical tags; reads can filter by a tag subtree. Activity goals support
-rolling recency timers as well as daily or weekly completion targets.
+rolling recency timers as well as daily or weekly completion targets. Activity
+signals can request structured weight, reps, sets, duration, and distance data;
+agents can read, update, or delete those history entries through MCP.

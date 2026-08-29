@@ -33,25 +33,43 @@ function scopes(...values: string[]): ParsedMcpScopes {
 
 function makeHandlers() {
   const read = vi.fn<SignalExecutors["read"]>(async () => [{ name: "Run" }]);
+  const history = vi.fn<SignalExecutors["history"]>(async () => ({
+    page: [],
+    isDone: true,
+    continueCursor: "",
+  }));
   const record = vi.fn<SignalExecutors["record"]>(async () => ({
     idempotent: false,
   }));
   const manage = vi.fn<SignalExecutors["manage"]>(async () => ({
     signalId: "signal-1",
   }));
+  const manageEntry = vi.fn<SignalExecutors["manageEntry"]>(async () => ({
+    entryId: "entry-1",
+  }));
   return {
     read,
+    history,
     record,
     manage,
-    handlers: createSignalToolHandlers({ read, record, manage }),
+    manageEntry,
+    handlers: createSignalToolHandlers({
+      read,
+      history,
+      record,
+      manage,
+      manageEntry,
+    }),
   };
 }
 
 describe("signal MCP tools", () => {
-  it("registers the three signal tools", () => {
+  it("registers all signal tools", () => {
     expect(signalToolDescriptors.map((tool) => tool.name)).toEqual([
       "readSignals",
+      "readSignalHistory",
       "recordSignal",
+      "manageSignalEntry",
       "manageSignal",
     ]);
   });
@@ -111,6 +129,31 @@ describe("signal MCP tools", () => {
     });
   });
 
+  it("paginates signal history with the read scope", async () => {
+    const { handlers, history } = makeHandlers();
+    const response = await handlers.readSignalHistory(
+      4,
+      "user-1",
+      scopes(SIGNALS_READ_SCOPE),
+      {
+        signalId: "signal-1",
+        numItems: 25,
+        cursor: "next-page",
+      },
+    );
+
+    expect((await responseBody(response)).error).toBeUndefined();
+    expect(history).toHaveBeenCalledWith({
+      userId: "user-1",
+      tagRootId: undefined,
+      signalId: "signal-1",
+      paginationOpts: {
+        numItems: 25,
+        cursor: "next-page",
+      },
+    });
+  });
+
   it("validates and forwards idempotent record operations", async () => {
     const { handlers, record } = makeHandlers();
     const response = await handlers.recordSignal(
@@ -142,6 +185,75 @@ describe("signal MCP tools", () => {
       soonWindowMs: 1_000,
     });
     expect(record.mock.calls[0]?.[0].now).toEqual(expect.any(Number));
+  });
+
+  it("parses structured activity measurements and entry corrections", async () => {
+    const { handlers, record, manageEntry } = makeHandlers();
+    const recorded = await handlers.recordSignal(
+      5,
+      "user-1",
+      scopes(SIGNALS_WRITE_SCOPE),
+      {
+        signalId: "signal-1",
+        idempotencyKey: "workout-1",
+        operation: {
+          type: "activity.occurred",
+          note: "Bench press",
+          measurements: {
+            weight: 135,
+            reps: 8,
+            sets: 3,
+          },
+        },
+      },
+    );
+    expect((await responseBody(recorded)).error).toBeUndefined();
+    expect(record.mock.calls[0]?.[0]).toMatchObject({
+      operation: {
+        type: "activity.occurred",
+        measurements: {
+          weight: 135,
+          reps: 8,
+          sets: 3,
+        },
+      },
+    });
+
+    const updated = await handlers.manageSignalEntry(
+      6,
+      "user-1",
+      scopes(SIGNALS_WRITE_SCOPE),
+      {
+        operation: {
+          type: "activity.update",
+          entryId: "entry-1",
+          effectiveAt: 123,
+          note: null,
+          measurements: {
+            weight: 140,
+            reps: 6,
+            sets: 3,
+          },
+        },
+      },
+    );
+    expect((await responseBody(updated)).error).toBeUndefined();
+    expect(manageEntry).toHaveBeenCalledWith({
+      userId: "user-1",
+      tagRootId: undefined,
+      now: expect.any(Number),
+      operation: {
+        type: "activity.update",
+        entryId: "entry-1",
+        effectiveAt: 123,
+        note: null,
+        measurements: {
+          weight: 140,
+          reps: 6,
+          sets: 3,
+        },
+      },
+    });
   });
 
   it("requires write scope and strictly validates manage operations", async () => {
@@ -233,6 +345,7 @@ describe("signal MCP tools", () => {
             period: "week",
             targetCount: 3,
           },
+          measurementFields: ["distance", "durationSeconds"],
         },
       },
     );
@@ -250,6 +363,7 @@ describe("signal MCP tools", () => {
           period: "week",
           targetCount: 3,
         },
+        measurementFields: ["distance", "durationSeconds"],
       },
     });
 

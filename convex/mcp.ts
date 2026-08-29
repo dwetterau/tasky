@@ -866,8 +866,12 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
         };
         const signalHandlers = createSignalToolHandlers({
           read: (args) => ctx.runQuery(internal.signals.listForMcp, args),
+          history: (args) =>
+            ctx.runQuery(internal.signals.historyForMcp, args),
           record: (args) => ctx.runMutation(internal.signals.recordFromMcp, args),
           manage: (args) => ctx.runMutation(internal.signals.manageFromMcp, args),
+          manageEntry: (args) =>
+            ctx.runMutation(internal.signals.manageEntryFromMcp, args),
         });
         const toolHandlers: Record<string, () => Promise<Response>> = {
           readTasks: () =>
