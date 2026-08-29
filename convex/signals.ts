@@ -438,7 +438,8 @@ function utcPeriodBounds(now: number): PeriodBounds {
     date.getUTCMonth(),
     date.getUTCDate(),
   );
-  const weekStart = dayStart - date.getUTCDay() * DAY_MS;
+  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+  const weekStart = dayStart - daysSinceMonday * DAY_MS;
   return {
     day: {
       startAt: dayStart,
