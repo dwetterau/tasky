@@ -174,6 +174,36 @@ describe("signals backend", () => {
     });
   });
 
+  it("keeps weekly targets open through Sunday", async () => {
+    const t = convexTest(schema, modules);
+    const sunday = Date.UTC(2026, 7, 30, 12);
+    await t.mutation(internal.signals.manageFromMcp, {
+      userId: "user-1",
+      now: sunday,
+      operation: {
+        type: "activity.create",
+        name: "Run",
+        tagIds: [],
+        target: {
+          type: "period",
+          period: "week",
+          targetCount: 2,
+        },
+      },
+    });
+
+    const result = await t.query(internal.signals.listForMcp, {
+      userId: "user-1",
+      now: sunday,
+      soonWindowMs: DAY_MS,
+    });
+
+    expect(result.signals[0].evaluation.periodProgress).toMatchObject({
+      startAt: Date.UTC(2026, 7, 24),
+      endAt: Date.UTC(2026, 7, 31),
+    });
+  });
+
   it("materializes scheduled inventory before applying an adjustment", async () => {
     const t = convexTest(schema, modules);
     const { signalId } = await t.mutation(internal.signals.manageFromMcp, {
