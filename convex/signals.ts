@@ -11,6 +11,8 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
 import {
+  activityMeasurementField,
+  activityMeasurements,
   activityTarget,
   inventoryFlow,
   inventoryThreshold,
@@ -31,6 +33,11 @@ import {
 
 const signalKind = v.union(v.literal("activity"), v.literal("inventory"));
 const activityTargetInput = v.optional(v.union(activityTarget, v.null()));
+const activityMeasurementFieldsInput = v.array(activityMeasurementField);
+const activityMeasurementsInput = v.optional(
+  v.union(activityMeasurements, v.null()),
+);
+const nullableNoteInput = v.optional(v.union(v.string(), v.null()));
 const flowInput = v.optional(v.union(inventoryFlow, v.null()));
 const periodRangeInput = v.object({
   startAt: v.number(),
@@ -56,6 +63,7 @@ const recordOperationInput = v.union(
     type: v.literal("activity.occurred"),
     occurredAt: v.optional(v.number()),
     note: v.optional(v.string()),
+    measurements: v.optional(activityMeasurements),
   }),
   v.object({
     type: v.literal("inventory.adjusted"),
@@ -126,6 +134,7 @@ const signalEntryOutputValidator = v.object({
   signalId: v.id("signals"),
   effectiveAt: v.number(),
   recordedAt: v.number(),
+  updatedAt: v.optional(v.number()),
   source: signalSource,
   idempotencyKey: v.string(),
   operation: signalEntryOperation,
@@ -143,6 +152,7 @@ const manageOperationInput = v.union(
     name: v.string(),
     tagIds: v.array(v.id("tags")),
     target: v.optional(activityTarget),
+    measurementFields: v.optional(activityMeasurementFieldsInput),
   }),
   v.object({
     type: v.literal("inventory.create"),
@@ -159,6 +169,7 @@ const manageOperationInput = v.union(
     name: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
     target: activityTargetInput,
+    measurementFields: v.optional(activityMeasurementFieldsInput),
   }),
   v.object({
     type: v.literal("inventory.update"),
@@ -176,11 +187,26 @@ const manageOperationInput = v.union(
   }),
 );
 
+const manageEntryOperationInput = v.union(
+  v.object({
+    type: v.literal("activity.update"),
+    entryId: v.id("signalEntries"),
+    effectiveAt: v.optional(v.number()),
+    note: nullableNoteInput,
+    measurements: activityMeasurementsInput,
+  }),
+  v.object({
+    type: v.literal("activity.delete"),
+    entryId: v.id("signalEntries"),
+  }),
+);
+
 type RecordOperationInput =
   | {
       type: "activity.occurred";
       occurredAt?: number;
       note?: string;
+      measurements?: ActivityMeasurements;
     }
   | {
       type: "inventory.adjusted";
@@ -197,6 +223,7 @@ type ManageOperationInput =
       name: string;
       tagIds: Id<"tags">[];
       target?: ActivityTarget;
+      measurementFields?: ActivityMeasurementField[];
     }
   | {
       type: "inventory.create";
@@ -219,6 +246,7 @@ type ManageOperationInput =
       name?: string;
       tagIds?: Id<"tags">[];
       target?: ActivityTarget | null;
+      measurementFields?: ActivityMeasurementField[];
     }
   | {
       type: "inventory.update";
@@ -241,6 +269,19 @@ type ManageOperationInput =
       archived: boolean;
     };
 
+type ManageEntryOperationInput =
+  | {
+      type: "activity.update";
+      entryId: Id<"signalEntries">;
+      effectiveAt?: number;
+      note?: string | null;
+      measurements?: ActivityMeasurements | null;
+    }
+  | {
+      type: "activity.delete";
+      entryId: Id<"signalEntries">;
+    };
+
 type SignalDashboardItem = {
   id: Id<"signals">;
   creationTime: number;
@@ -257,6 +298,35 @@ type SignalDashboardItem = {
   archivedAt?: number;
   evaluation: ReturnType<typeof evaluateSignal>;
 };
+
+type ActivityMeasurementField =
+  | "weight"
+  | "reps"
+  | "sets"
+  | "durationSeconds"
+  | "distance";
+
+type ActivityMeasurements = {
+  weight?: number;
+  reps?: number;
+  sets?: number;
+  durationSeconds?: number;
+  distance?: number;
+};
+
+function toSignalEntryOutput(entry: Doc<"signalEntries">) {
+  return {
+    id: entry._id,
+    creationTime: entry._creationTime,
+    signalId: entry.signalId,
+    effectiveAt: entry.effectiveAt,
+    recordedAt: entry.recordedAt,
+    updatedAt: entry.updatedAt,
+    source: entry.source,
+    idempotencyKey: entry.idempotencyKey,
+    operation: entry.operation,
+  };
+}
 
 const attentionRank: Record<SignalAttention, number> = {
   due: 0,
@@ -313,6 +383,55 @@ function normalizeOptionalText(
 
 function normalizeSignalTagIds(tagIds: Id<"tags">[]): Id<"tags">[] {
   return Array.from(new Set(tagIds));
+}
+
+function normalizeActivityMeasurementFields(
+  fields: ActivityMeasurementField[] | undefined,
+): ActivityMeasurementField[] | undefined {
+  if (fields === undefined) {
+    return undefined;
+  }
+  const normalized = Array.from(new Set(fields));
+  return normalized.length === 0 ? undefined : normalized;
+}
+
+function validateActivityMeasurements(
+  measurements: ActivityMeasurements | undefined,
+  configuredFields: ActivityMeasurementField[] | undefined,
+): ActivityMeasurements | undefined {
+  const fields = normalizeActivityMeasurementFields(configuredFields) ?? [];
+  const configured = new Set(fields);
+  const values = measurements ?? {};
+
+  for (const field of fields) {
+    if (values[field] === undefined) {
+      throw new Error(`measurements.${field} is required for this activity`);
+    }
+  }
+
+  for (const field of [
+    "weight",
+    "reps",
+    "sets",
+    "durationSeconds",
+    "distance",
+  ] as const) {
+    const value = values[field];
+    if (value === undefined) {
+      continue;
+    }
+    if (!configured.has(field)) {
+      throw new Error(`measurements.${field} is not enabled for this activity`);
+    }
+    assertNonNegative(value, `measurements.${field}`);
+    if ((field === "reps" || field === "sets") && !Number.isInteger(value)) {
+      throw new Error(`measurements.${field} must be a whole number`);
+    }
+  }
+
+  return Object.values(values).some((value) => value !== undefined)
+    ? values
+    : undefined;
 }
 
 async function assertOwnedSignalTagIds(
@@ -574,6 +693,70 @@ async function getOwnedSignal(
   return signal;
 }
 
+async function getOwnedActivityEntry(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+  entryId: Id<"signalEntries">,
+  tagRootId: Id<"tags"> | undefined,
+): Promise<{
+  entry: Doc<"signalEntries"> & {
+    operation: Extract<
+      Doc<"signalEntries">["operation"],
+      { type: "activity.occurred" }
+    >;
+  };
+  signal: Doc<"signals"> & {
+    model: Extract<Doc<"signals">["model"], { kind: "activity" }>;
+  };
+}> {
+  const entry = await ctx.db.get("signalEntries", entryId);
+  if (!entry || entry.userId !== userId) {
+    throw new Error("Signal entry not found or access denied");
+  }
+  const signal = await getOwnedSignal(ctx, userId, entry.signalId);
+  await assertSignalInTagRoot(ctx, userId, signal, tagRootId);
+  if (
+    signal.model.kind !== "activity" ||
+    entry.operation.type !== "activity.occurred"
+  ) {
+    throw new Error("Signal entry is not an activity occurrence");
+  }
+  return {
+    entry: entry as Doc<"signalEntries"> & {
+      operation: Extract<
+        Doc<"signalEntries">["operation"],
+        { type: "activity.occurred" }
+      >;
+    },
+    signal: signal as Doc<"signals"> & {
+      model: Extract<Doc<"signals">["model"], { kind: "activity" }>;
+    },
+  };
+}
+
+async function recomputeLastOccurredAt(
+  ctx: MutationCtx,
+  signal: Doc<"signals"> & {
+    model: Extract<Doc<"signals">["model"], { kind: "activity" }>;
+  },
+  now: number,
+): Promise<void> {
+  const latest = await ctx.db
+    .query("signalEntries")
+    .withIndex("by_signal_effective_at", (q) =>
+      q.eq("signalId", signal._id),
+    )
+    .order("desc")
+    .first();
+  await ctx.db.patch("signals", signal._id, {
+    model: {
+      ...signal.model,
+      lastOccurredAt: latest?.effectiveAt,
+    },
+    updatedAt: now,
+  });
+}
+
 async function listDashboardForUser(
   ctx: QueryCtx,
   args: {
@@ -646,6 +829,7 @@ async function createActivityForUser(
     tagIds: Id<"tags">[];
     tagRootId?: Id<"tags">;
     target?: ActivityTarget;
+    measurementFields?: ActivityMeasurementField[];
     now: number;
   },
 ): Promise<Id<"signals">> {
@@ -658,6 +842,9 @@ async function createActivityForUser(
     true,
   );
   validateActivityTarget(args.target);
+  const measurementFields = normalizeActivityMeasurementFields(
+    args.measurementFields,
+  );
   assertFiniteNumber(args.now, "now");
 
   return await ctx.db.insert("signals", {
@@ -667,6 +854,7 @@ async function createActivityForUser(
     model: {
       kind: "activity",
       target: args.target,
+      measurementFields,
     },
     createdAt: args.now,
     updatedAt: args.now,
@@ -737,6 +925,7 @@ async function updateActivityForUser(
     tagIds?: Id<"tags">[];
     tagRootId?: Id<"tags">;
     target?: ActivityTarget | null;
+    measurementFields?: ActivityMeasurementField[];
     now: number;
   },
 ): Promise<void> {
@@ -747,6 +936,10 @@ async function updateActivityForUser(
   await assertSignalInTagRoot(ctx, args.userId, signal, args.tagRootId);
   const target =
     args.target === null ? undefined : (args.target ?? signal.model.target);
+  const measurementFields =
+    args.measurementFields === undefined
+      ? signal.model.measurementFields
+      : normalizeActivityMeasurementFields(args.measurementFields);
   validateActivityTarget(target);
   assertFiniteNumber(args.now, "now");
   const tagIds =
@@ -769,6 +962,7 @@ async function updateActivityForUser(
     model: {
       ...signal.model,
       target,
+      measurementFields,
     },
     updatedAt: args.now,
   });
@@ -879,6 +1073,19 @@ function normalizeNote(value: string | undefined): string | undefined {
   return normalizeOptionalText(value, "note", 1000);
 }
 
+function activityMeasurementsEqual(
+  left: ActivityMeasurements | undefined,
+  right: ActivityMeasurements | undefined,
+): boolean {
+  return (
+    left?.weight === right?.weight &&
+    left?.reps === right?.reps &&
+    left?.sets === right?.sets &&
+    left?.durationSeconds === right?.durationSeconds &&
+    left?.distance === right?.distance
+  );
+}
+
 function existingEntryMatches(
   entry: Doc<"signalEntries">,
   operation: RecordOperationInput,
@@ -890,6 +1097,10 @@ function existingEntryMatches(
     return (
       entry.operation.type === "activity.occurred" &&
       entry.operation.note === normalizeNote(operation.note) &&
+      activityMeasurementsEqual(
+        entry.operation.measurements,
+        operation.measurements,
+      ) &&
       (operation.occurredAt === undefined ||
         entry.effectiveAt === operation.occurredAt)
     );
@@ -987,9 +1198,14 @@ async function recordSignalForUser(
       throw new Error("occurredAt cannot be in the future");
     }
     const note = normalizeNote(args.operation.note);
+    const measurements = validateActivityMeasurements(
+      args.operation.measurements,
+      signal.model.measurementFields,
+    );
     operation = {
       type: "activity.occurred",
       note,
+      measurements,
     };
     nextModel = {
       ...signal.model,
@@ -1067,6 +1283,81 @@ async function recordSignalForUser(
   };
 }
 
+async function updateActivityEntryForUser(
+  ctx: MutationCtx,
+  args: {
+    userId: string;
+    tagRootId?: Id<"tags">;
+    entryId: Id<"signalEntries">;
+    effectiveAt?: number;
+    note?: string | null;
+    measurements?: ActivityMeasurements | null;
+    now: number;
+  },
+): Promise<void> {
+  assertFiniteNumber(args.now, "now");
+  if (
+    args.effectiveAt === undefined &&
+    args.note === undefined &&
+    args.measurements === undefined
+  ) {
+    throw new Error("At least one activity entry update is required");
+  }
+  const { entry, signal } = await getOwnedActivityEntry(
+    ctx,
+    args.userId,
+    args.entryId,
+    args.tagRootId,
+  );
+  const effectiveAt = args.effectiveAt ?? entry.effectiveAt;
+  assertFiniteNumber(effectiveAt, "effectiveAt");
+  if (effectiveAt > args.now) {
+    throw new Error("effectiveAt cannot be in the future");
+  }
+  const note =
+    args.note === undefined
+      ? entry.operation.note
+      : normalizeOptionalText(args.note, "note", 1000);
+  const measurements =
+    args.measurements === undefined
+      ? entry.operation.measurements
+      : validateActivityMeasurements(
+          args.measurements ?? undefined,
+          signal.model.measurementFields,
+        );
+
+  await ctx.db.patch("signalEntries", entry._id, {
+    effectiveAt,
+    updatedAt: args.now,
+    operation: {
+      type: "activity.occurred",
+      note,
+      measurements,
+    },
+  });
+  await recomputeLastOccurredAt(ctx, signal, args.now);
+}
+
+async function deleteActivityEntryForUser(
+  ctx: MutationCtx,
+  args: {
+    userId: string;
+    tagRootId?: Id<"tags">;
+    entryId: Id<"signalEntries">;
+    now: number;
+  },
+): Promise<void> {
+  assertFiniteNumber(args.now, "now");
+  const { entry, signal } = await getOwnedActivityEntry(
+    ctx,
+    args.userId,
+    args.entryId,
+    args.tagRootId,
+  );
+  await ctx.db.delete("signalEntries", entry._id);
+  await recomputeLastOccurredAt(ctx, signal, args.now);
+}
+
 async function manageSignalForUser(
   ctx: MutationCtx,
   args: {
@@ -1117,6 +1408,33 @@ async function manageSignalForUser(
       });
       return operation.signalId;
   }
+}
+
+async function manageSignalEntryForUser(
+  ctx: MutationCtx,
+  args: {
+    userId: string;
+    tagRootId?: Id<"tags">;
+    operation: ManageEntryOperationInput;
+    now: number;
+  },
+): Promise<Id<"signalEntries">> {
+  if (args.operation.type === "activity.update") {
+    await updateActivityEntryForUser(ctx, {
+      ...args.operation,
+      userId: args.userId,
+      tagRootId: args.tagRootId,
+      now: args.now,
+    });
+    return args.operation.entryId;
+  }
+  await deleteActivityEntryForUser(ctx, {
+    ...args.operation,
+    userId: args.userId,
+    tagRootId: args.tagRootId,
+    now: args.now,
+  });
+  return args.operation.entryId;
 }
 
 export const listDashboard = query({
@@ -1196,16 +1514,7 @@ export const history = query({
       .order("desc")
       .paginate(args.paginationOpts);
     return {
-      page: result.page.map((entry) => ({
-        id: entry._id,
-        creationTime: entry._creationTime,
-        signalId: entry.signalId,
-        effectiveAt: entry.effectiveAt,
-        recordedAt: entry.recordedAt,
-        source: entry.source,
-        idempotencyKey: entry.idempotencyKey,
-        operation: entry.operation,
-      })),
+      page: result.page.map(toSignalEntryOutput),
       isDone: result.isDone,
       continueCursor: result.continueCursor,
     };
@@ -1217,6 +1526,7 @@ export const createActivity = mutation({
     name: v.string(),
     tagIds: v.array(v.id("tags")),
     target: v.optional(activityTarget),
+    measurementFields: v.optional(activityMeasurementFieldsInput),
   },
   returns: v.id("signals"),
   handler: async (ctx, args) => {
@@ -1261,6 +1571,7 @@ export const updateActivity = mutation({
     name: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
     target: activityTargetInput,
+    measurementFields: v.optional(activityMeasurementFieldsInput),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -1344,6 +1655,47 @@ export const record = mutation({
   },
 });
 
+export const updateActivityEntry = mutation({
+  args: {
+    entryId: v.id("signalEntries"),
+    effectiveAt: v.optional(v.number()),
+    note: nullableNoteInput,
+    measurements: activityMeasurementsInput,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+    await updateActivityEntryForUser(ctx, {
+      ...args,
+      userId,
+      now: Date.now(),
+    });
+    return null;
+  },
+});
+
+export const deleteActivityEntry = mutation({
+  args: {
+    entryId: v.id("signalEntries"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+    await deleteActivityEntryForUser(ctx, {
+      ...args,
+      userId,
+      now: Date.now(),
+    });
+    return null;
+  },
+});
+
 export const listForMcp = internalQuery({
   args: {
     userId: v.string(),
@@ -1385,6 +1737,41 @@ export const listForMcp = internalQuery({
   },
 });
 
+export const historyForMcp = internalQuery({
+  args: {
+    userId: v.string(),
+    tagRootId: v.optional(v.id("tags")),
+    signalId: v.id("signals"),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: v.object({
+    page: v.array(signalEntryOutputValidator),
+    isDone: v.boolean(),
+    continueCursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const signal = await getOwnedSignal(ctx, args.userId, args.signalId);
+    await assertSignalInTagRoot(
+      ctx,
+      args.userId,
+      signal,
+      args.tagRootId,
+    );
+    const result = await ctx.db
+      .query("signalEntries")
+      .withIndex("by_signal_effective_at", (q) =>
+        q.eq("signalId", args.signalId),
+      )
+      .order("desc")
+      .paginate(args.paginationOpts);
+    return {
+      page: result.page.map(toSignalEntryOutput),
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
+
 export const recordFromMcp = internalMutation({
   args: {
     userId: v.string(),
@@ -1418,6 +1805,23 @@ export const manageFromMcp = internalMutation({
   handler: async (ctx, args) => {
     return {
       signalId: await manageSignalForUser(ctx, args),
+    };
+  },
+});
+
+export const manageEntryFromMcp = internalMutation({
+  args: {
+    userId: v.string(),
+    tagRootId: v.optional(v.id("tags")),
+    operation: manageEntryOperationInput,
+    now: v.number(),
+  },
+  returns: v.object({
+    entryId: v.id("signalEntries"),
+  }),
+  handler: async (ctx, args) => {
+    return {
+      entryId: await manageSignalEntryForUser(ctx, args),
     };
   },
 });

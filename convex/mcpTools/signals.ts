@@ -12,6 +12,20 @@ const DEFAULT_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 type SignalKind = "activity" | "inventory";
 type SignalAttention = "ok" | "soon" | "due" | "unknown";
 type InventoryComparison = "atOrBelow" | "atOrAbove";
+type ActivityMeasurementField =
+  | "weight"
+  | "reps"
+  | "sets"
+  | "durationSeconds"
+  | "distance";
+
+type ActivityMeasurements = {
+  weight?: number;
+  reps?: number;
+  sets?: number;
+  durationSeconds?: number;
+  distance?: number;
+};
 
 type InventoryThreshold = {
   value: number;
@@ -39,6 +53,7 @@ type RecordSignalOperation =
       type: "activity.occurred";
       occurredAt?: number;
       note?: string;
+      measurements?: ActivityMeasurements;
     }
   | {
       type: "inventory.adjusted";
@@ -55,6 +70,7 @@ type ManageSignalOperation =
       name: string;
       tagIds: Id<"tags">[];
       target?: ActivityTarget;
+      measurementFields?: ActivityMeasurementField[];
     }
   | {
       type: "inventory.create";
@@ -71,6 +87,7 @@ type ManageSignalOperation =
       name?: string;
       tagIds?: Id<"tags">[];
       target?: ActivityTarget | null;
+      measurementFields?: ActivityMeasurementField[];
     }
   | {
       type: "inventory.update";
@@ -85,6 +102,19 @@ type ManageSignalOperation =
       type: "signal.archive";
       signalId: Id<"signals">;
       archived: boolean;
+    };
+
+type ManageSignalEntryOperation =
+  | {
+      type: "activity.update";
+      entryId: Id<"signalEntries">;
+      effectiveAt?: number;
+      note?: string | null;
+      measurements?: ActivityMeasurements | null;
+    }
+  | {
+      type: "activity.delete";
+      entryId: Id<"signalEntries">;
     };
 
 type SignalToolHandler = (
@@ -104,6 +134,15 @@ export type SignalExecutors = {
     tagId?: Id<"tags">;
     attention?: SignalAttention;
   }) => Promise<unknown>;
+  history: (args: {
+    userId: string;
+    tagRootId?: Id<"tags">;
+    signalId: Id<"signals">;
+    paginationOpts: {
+      numItems: number;
+      cursor: string | null;
+    };
+  }) => Promise<unknown>;
   record: (args: {
     userId: string;
     tagRootId?: Id<"tags">;
@@ -117,6 +156,12 @@ export type SignalExecutors = {
     userId: string;
     tagRootId?: Id<"tags">;
     operation: ManageSignalOperation;
+    now: number;
+  }) => Promise<unknown>;
+  manageEntry: (args: {
+    userId: string;
+    tagRootId?: Id<"tags">;
+    operation: ManageSignalEntryOperation;
     now: number;
   }) => Promise<unknown>;
 };
@@ -148,6 +193,35 @@ const tagIdsSchema = {
   type: "array",
   uniqueItems: true,
   items: { type: "string", minLength: 1 },
+};
+
+const measurementFieldsSchema = {
+  type: "array",
+  uniqueItems: true,
+  items: {
+    type: "string",
+    enum: ["weight", "reps", "sets", "durationSeconds", "distance"],
+  },
+};
+
+const activityMeasurementsSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    weight: {
+      type: "number",
+      minimum: 0,
+      description: "Weight in pounds.",
+    },
+    reps: { type: "integer", minimum: 0 },
+    sets: { type: "integer", minimum: 0 },
+    durationSeconds: { type: "number", minimum: 0 },
+    distance: {
+      type: "number",
+      minimum: 0,
+      description: "Distance in miles.",
+    },
+  },
 };
 
 const activityTargetSchema = {
@@ -214,6 +288,29 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
     },
   },
   {
+    name: "readSignalHistory",
+    description:
+      "Read a signal's recorded history, including structured exercise measurements, newest first. Use the returned cursor to continue when isDone is false.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["signalId"],
+      properties: {
+        signalId: { type: "string" },
+        numItems: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          description: "Page size. Defaults to 50.",
+        },
+        cursor: {
+          oneOf: [{ type: "string" }, { type: "null" }],
+          description: "Pagination cursor from a previous response.",
+        },
+      },
+    },
+  },
+  {
     name: "recordSignal",
     description:
       "Record an activity occurrence or adjust/set an inventory. Writes require an idempotency key so retries cannot double-apply.",
@@ -244,6 +341,7 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
                     "Optional backdated Unix timestamp in milliseconds.",
                 },
                 note: { type: "string" },
+                measurements: activityMeasurementsSchema,
               },
             },
             {
@@ -262,6 +360,50 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
               properties: {
                 type: { const: "inventory.set" },
                 quantity: { type: "number", minimum: 0 },
+              },
+            },
+          ],
+        },
+      },
+    },
+  },
+  {
+    name: "manageSignalEntry",
+    description:
+      "Update or delete an activity occurrence. Updates can change its time, note, or structured exercise measurements; deleting or moving an occurrence recomputes the signal's latest occurrence.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["operation"],
+      properties: {
+        operation: {
+          oneOf: [
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["type", "entryId"],
+              properties: {
+                type: { const: "activity.update" },
+                entryId: { type: "string" },
+                effectiveAt: {
+                  type: "number",
+                  description: "Backdated Unix timestamp in milliseconds.",
+                },
+                note: {
+                  oneOf: [{ type: "string" }, { type: "null" }],
+                },
+                measurements: {
+                  oneOf: [activityMeasurementsSchema, { type: "null" }],
+                },
+              },
+            },
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["type", "entryId"],
+              properties: {
+                type: { const: "activity.delete" },
+                entryId: { type: "string" },
               },
             },
           ],
@@ -289,6 +431,7 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
                 name: { type: "string" },
                 tagIds: tagIdsSchema,
                 target: activityTargetSchema,
+                measurementFields: measurementFieldsSchema,
               },
             },
             {
@@ -324,6 +467,7 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
                 target: {
                   oneOf: [activityTargetSchema, { type: "null" }],
                 },
+                measurementFields: measurementFieldsSchema,
               },
             },
             {
@@ -459,6 +603,89 @@ function parseTagIds(
   return {
     value: Array.from(new Set(value as string[])) as Id<"tags">[],
   };
+}
+
+function parseMeasurementFields(
+  rpcId: unknown,
+  value: unknown,
+): { value?: ActivityMeasurementField[]; error?: Response } {
+  if (value === undefined) {
+    return {};
+  }
+  const allowed = new Set<ActivityMeasurementField>([
+    "weight",
+    "reps",
+    "sets",
+    "durationSeconds",
+    "distance",
+  ]);
+  if (
+    !Array.isArray(value) ||
+    value.some(
+      (field) => typeof field !== "string" || !allowed.has(field as ActivityMeasurementField),
+    )
+  ) {
+    return {
+      error: mcpError(
+        rpcId,
+        -32602,
+        "measurementFields must contain only weight, reps, sets, durationSeconds, or distance",
+      ),
+    };
+  }
+  return {
+    value: Array.from(new Set(value as ActivityMeasurementField[])),
+  };
+}
+
+function parseActivityMeasurements(
+  rpcId: unknown,
+  input: unknown,
+): { value?: ActivityMeasurements; error?: Response } {
+  if (input === undefined) {
+    return {};
+  }
+  const object = parseStrictObject(
+    rpcId,
+    input,
+    ["weight", "reps", "sets", "durationSeconds", "distance"],
+    "measurements",
+  );
+  if (object.error || !object.value) {
+    return { error: object.error };
+  }
+  const result: ActivityMeasurements = {};
+  for (const field of [
+    "weight",
+    "reps",
+    "sets",
+    "durationSeconds",
+    "distance",
+  ] as const) {
+    if (object.value[field] === undefined) {
+      continue;
+    }
+    const parsed = parseFiniteNumber(
+      rpcId,
+      object.value[field],
+      `measurements.${field}`,
+      { minimum: 0 },
+    );
+    if (parsed.error || parsed.value === undefined) {
+      return { error: parsed.error };
+    }
+    if ((field === "reps" || field === "sets") && !Number.isInteger(parsed.value)) {
+      return {
+        error: mcpError(
+          rpcId,
+          -32602,
+          `measurements.${field} must be an integer`,
+        ),
+      };
+    }
+    result[field] = parsed.value;
+  }
+  return { value: result };
 }
 
 function parseActivityTarget(
@@ -640,7 +867,7 @@ function parseRecordOperation(
   const base = parseStrictObject(
     rpcId,
     input,
-    ["type", "occurredAt", "note", "amount", "quantity"],
+    ["type", "occurredAt", "note", "measurements", "amount", "quantity"],
     "operation",
   );
   if (base.error || !base.value) {
@@ -651,7 +878,7 @@ function parseRecordOperation(
     const operation = parseStrictObject(
       rpcId,
       input,
-      ["type", "occurredAt", "note"],
+      ["type", "occurredAt", "note", "measurements"],
       "operation",
     );
     if (operation.error || !operation.value) {
@@ -677,11 +904,19 @@ function parseRecordOperation(
     if (note.error) {
       return { error: note.error };
     }
+    const measurements = parseActivityMeasurements(
+      rpcId,
+      operation.value.measurements,
+    );
+    if (measurements.error) {
+      return { error: measurements.error };
+    }
     return {
       value: {
         type,
         occurredAt,
         note: note.value,
+        measurements: measurements.value,
       },
     };
   }
@@ -749,6 +984,7 @@ function parseManageOperation(
       "name",
       "tagIds",
       "target",
+      "measurementFields",
       "unit",
       "initialQuantity",
       "threshold",
@@ -765,7 +1001,7 @@ function parseManageOperation(
     const operation = parseStrictObject(
       rpcId,
       input,
-      ["type", "name", "tagIds", "target"],
+      ["type", "name", "tagIds", "target", "measurementFields"],
       "operation",
     );
     if (operation.error || !operation.value) {
@@ -789,12 +1025,20 @@ function parseManageOperation(
     if (target.error) {
       return { error: target.error };
     }
+    const measurementFields = parseMeasurementFields(
+      rpcId,
+      operation.value.measurementFields,
+    );
+    if (measurementFields.error) {
+      return { error: measurementFields.error };
+    }
     return {
       value: {
         type,
         name: operation.value.name,
         tagIds: tagIds.value,
         target: target.value,
+        measurementFields: measurementFields.value,
       },
     };
   }
@@ -870,7 +1114,14 @@ function parseManageOperation(
     const operation = parseStrictObject(
       rpcId,
       input,
-      ["type", "signalId", "name", "tagIds", "target"],
+      [
+        "type",
+        "signalId",
+        "name",
+        "tagIds",
+        "target",
+        "measurementFields",
+      ],
       "operation",
     );
     if (operation.error || !operation.value) {
@@ -912,6 +1163,13 @@ function parseManageOperation(
       }
       target = parsedTarget.value;
     }
+    const measurementFields = parseMeasurementFields(
+      rpcId,
+      operation.value.measurementFields,
+    );
+    if (measurementFields.error) {
+      return { error: measurementFields.error };
+    }
     return {
       value: {
         type,
@@ -919,6 +1177,7 @@ function parseManageOperation(
         name: name.value,
         tagIds: tagIds.value,
         target,
+        measurementFields: measurementFields.value,
       },
     };
   }
@@ -1020,6 +1279,117 @@ function parseManageOperation(
   };
 }
 
+function parseManageEntryOperation(
+  rpcId: unknown,
+  input: unknown,
+): { value?: ManageSignalEntryOperation; error?: Response } {
+  const base = parseStrictObject(
+    rpcId,
+    input,
+    ["type", "entryId", "effectiveAt", "note", "measurements"],
+    "operation",
+  );
+  if (base.error || !base.value) {
+    return { error: base.error };
+  }
+  if (typeof base.value.entryId !== "string" || !base.value.entryId.trim()) {
+    return {
+      error: mcpError(rpcId, -32602, "operation.entryId is required"),
+    };
+  }
+  if (base.value.type === "activity.delete") {
+    const operation = parseStrictObject(
+      rpcId,
+      input,
+      ["type", "entryId"],
+      "operation",
+    );
+    if (operation.error) {
+      return { error: operation.error };
+    }
+    return {
+      value: {
+        type: "activity.delete",
+        entryId: base.value.entryId as Id<"signalEntries">,
+      },
+    };
+  }
+  if (base.value.type !== "activity.update") {
+    return {
+      error: mcpError(
+        rpcId,
+        -32602,
+        "operation.type must be activity.update or activity.delete",
+      ),
+    };
+  }
+
+  let effectiveAt: number | undefined;
+  if (base.value.effectiveAt !== undefined) {
+    const parsed = parseFiniteNumber(
+      rpcId,
+      base.value.effectiveAt,
+      "operation.effectiveAt",
+    );
+    if (parsed.error || parsed.value === undefined) {
+      return { error: parsed.error };
+    }
+    effectiveAt = parsed.value;
+  }
+
+  let note: string | null | undefined;
+  if (base.value.note === null) {
+    note = null;
+  } else {
+    const parsed = parseOptionalText(
+      rpcId,
+      base.value.note,
+      "operation.note",
+    );
+    if (parsed.error) {
+      return { error: parsed.error };
+    }
+    note = parsed.value;
+  }
+
+  let measurements: ActivityMeasurements | null | undefined;
+  if (base.value.measurements === null) {
+    measurements = null;
+  } else {
+    const parsed = parseActivityMeasurements(
+      rpcId,
+      base.value.measurements,
+    );
+    if (parsed.error) {
+      return { error: parsed.error };
+    }
+    measurements = parsed.value;
+  }
+
+  if (
+    effectiveAt === undefined &&
+    note === undefined &&
+    measurements === undefined
+  ) {
+    return {
+      error: mcpError(
+        rpcId,
+        -32602,
+        "activity.update requires effectiveAt, note, or measurements",
+      ),
+    };
+  }
+  return {
+    value: {
+      type: "activity.update",
+      entryId: base.value.entryId as Id<"signalEntries">,
+      effectiveAt,
+      note,
+      measurements,
+    },
+  };
+}
+
 async function executeTool(
   rpcId: unknown,
   execute: () => Promise<unknown>,
@@ -1114,6 +1484,79 @@ export function createSignalToolHandlers(
         });
       });
     },
+    readSignalHistory: async (
+      rpcId,
+      sessionUserId,
+      parsedScopes,
+      rawArgs,
+    ) => {
+      if (!hasRequiredScope(parsedScopes, SIGNALS_READ_SCOPE)) {
+        return mcpError(
+          rpcId,
+          -32001,
+          `Missing required scope: ${SIGNALS_READ_SCOPE}`,
+        );
+      }
+      const parsed = parseStrictObject(rpcId, rawArgs, [
+        "signalId",
+        "numItems",
+        "cursor",
+      ]);
+      if (parsed.error || !parsed.value) {
+        return parsed.error ?? mcpError(rpcId, -32602, "Invalid arguments");
+      }
+      if (
+        typeof parsed.value.signalId !== "string" ||
+        !parsed.value.signalId.trim()
+      ) {
+        return mcpError(rpcId, -32602, "signalId is required");
+      }
+      const cursor = parsed.value.cursor;
+      if (
+        cursor !== undefined &&
+        cursor !== null &&
+        typeof cursor !== "string"
+      ) {
+        return mcpError(rpcId, -32602, "cursor must be a string or null");
+      }
+      let numItems = 50;
+      if (parsed.value.numItems !== undefined) {
+        const parsedNumItems = parseFiniteNumber(
+          rpcId,
+          parsed.value.numItems,
+          "numItems",
+          { minimum: 1 },
+        );
+        if (parsedNumItems.error || parsedNumItems.value === undefined) {
+          return (
+            parsedNumItems.error ??
+            mcpError(rpcId, -32602, "Invalid numItems")
+          );
+        }
+        if (
+          !Number.isInteger(parsedNumItems.value) ||
+          parsedNumItems.value > 100
+        ) {
+          return mcpError(
+            rpcId,
+            -32602,
+            "numItems must be an integer from 1 to 100",
+          );
+        }
+        numItems = parsedNumItems.value;
+      }
+      return await executeTool(rpcId, async () => {
+        return await executors.history({
+          userId: sessionUserId,
+          tagRootId: parsedScopes.tagRootId,
+          signalId: parsed.value!.signalId as Id<"signals">,
+          paginationOpts: {
+            numItems,
+            cursor: (cursor as string | null | undefined) ?? null,
+          },
+        });
+      });
+    },
     recordSignal: async (rpcId, sessionUserId, parsedScopes, rawArgs) => {
       if (!hasRequiredScope(parsedScopes, SIGNALS_WRITE_SCOPE)) {
         return mcpError(
@@ -1173,6 +1616,42 @@ export function createSignalToolHandlers(
           operation: operation.value!,
           now: Date.now(),
           soonWindowMs,
+        });
+      });
+    },
+    manageSignalEntry: async (
+      rpcId,
+      sessionUserId,
+      parsedScopes,
+      rawArgs,
+    ) => {
+      if (!hasRequiredScope(parsedScopes, SIGNALS_WRITE_SCOPE)) {
+        return mcpError(
+          rpcId,
+          -32001,
+          `Missing required scope: ${SIGNALS_WRITE_SCOPE}`,
+        );
+      }
+      const parsed = parseStrictObject(rpcId, rawArgs, ["operation"]);
+      if (parsed.error || !parsed.value) {
+        return parsed.error ?? mcpError(rpcId, -32602, "Invalid arguments");
+      }
+      const operation = parseManageEntryOperation(
+        rpcId,
+        parsed.value.operation,
+      );
+      if (operation.error || !operation.value) {
+        return (
+          operation.error ??
+          mcpError(rpcId, -32602, "Invalid signal entry operation")
+        );
+      }
+      return await executeTool(rpcId, async () => {
+        return await executors.manageEntry({
+          userId: sessionUserId,
+          tagRootId: parsedScopes.tagRootId,
+          operation: operation.value!,
+          now: Date.now(),
         });
       });
     },

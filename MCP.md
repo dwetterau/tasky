@@ -216,13 +216,31 @@ attention. Optional `kind`, `tagId`, and `attention` filters are supported.
 `signals` with hydrated tag names/colors and `availableTags`, which supplies the
 IDs needed by filters and manage operations. `now` and `soonWindowMs` can be
 supplied for deterministic evaluation. Activity signals can use a rolling
-`recency` target or a daily/weekly completion-count `period` target.
+`recency` target or a daily/weekly completion-count `period` target. Activities
+can also declare `measurementFields` chosen from `weight`, `reps`, `sets`,
+`durationSeconds`, and `distance`.
+
+### `readSignalHistory` (`signals:read`)
+
+Returns a cursor-paginated signal history, newest first. Activity entries include
+their note and structured measurements. Supply `signalId`; `numItems` defaults
+to 50 and is capped at 100. Pass the returned `continueCursor` as `cursor` to
+load the next page.
 
 ### `recordSignal` (`signals:write`)
 
 Records `activity.occurred`, `inventory.adjusted`, or `inventory.set` for a
 signal ID. `idempotencyKey` is required; replaying the same operation returns
-the original entry without applying it again.
+the original entry without applying it again. An activity occurrence accepts
+`measurements` with the fields configured on the signal. Weight is stored in
+pounds, distance in miles, and duration in seconds.
+
+### `manageSignalEntry` (`signals:write`)
+
+Updates or deletes an activity occurrence. `activity.update` can replace its
+effective time, note, and measurements; use `null` to clear optional note or
+measurements. `activity.delete` removes the entry. Both operations recompute the
+signal's cached latest occurrence, and tag-root restrictions are enforced.
 
 ### `manageSignal` (`signals:write`)
 
@@ -232,7 +250,9 @@ allowed), while updates can replace tags by supplying `tagIds`. Inventory flows
 are signed fixed-day projections rather than scheduled writes. Activity
 `target` values are either `{ type: "recency", dueAfterMs }` or
 `{ type: "period", period: "day" | "week", targetCount }`; omit the target to
-retain history without an attention goal.
+retain history without an attention goal. Activity create/update operations can
+set `measurementFields`; selected fields are required on newly recorded
+occurrences.
 
 ## Architectural Decisions and Trade-offs
 
