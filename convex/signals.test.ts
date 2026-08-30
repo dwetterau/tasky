@@ -204,6 +204,100 @@ describe("signals backend", () => {
     });
   });
 
+  it("counts activity entries inside monthly targets", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.UTC(2026, 7, 15, 12);
+    const periodBounds = {
+      day: {
+        startAt: Date.UTC(2026, 7, 15),
+        endAt: Date.UTC(2026, 7, 16),
+      },
+      week: {
+        startAt: Date.UTC(2026, 7, 10),
+        endAt: Date.UTC(2026, 7, 17),
+      },
+      month: {
+        startAt: Date.UTC(2026, 7, 1),
+        endAt: Date.UTC(2026, 8, 1),
+      },
+    };
+    const { signalId } = await t.mutation(internal.signals.manageFromMcp, {
+      userId: "user-1",
+      now,
+      operation: {
+        type: "activity.create",
+        name: "Call parents",
+        tagIds: [],
+        target: {
+          type: "period",
+          period: "month",
+          targetCount: 2,
+        },
+      },
+    });
+
+    const first = await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId,
+      idempotencyKey: "call-1",
+      operation: { type: "activity.occurred" },
+      now,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    expect(first.signal.evaluation).toMatchObject({
+      attention: "due",
+      periodProgress: {
+        period: "month",
+        completedCount: 1,
+        targetCount: 2,
+        remainingCount: 1,
+      },
+    });
+
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId,
+      idempotencyKey: "old-call",
+      operation: {
+        type: "activity.occurred",
+        occurredAt: Date.UTC(2026, 6, 31, 12),
+      },
+      now,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    const beforeTarget = await t.query(internal.signals.listForMcp, {
+      userId: "user-1",
+      now,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    expect(beforeTarget.signals[0].evaluation.periodProgress).toMatchObject({
+      completedCount: 1,
+    });
+
+    const completed = await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId,
+      idempotencyKey: "call-2",
+      operation: {
+        type: "activity.occurred",
+        occurredAt: now + 1,
+      },
+      now: now + 1,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    expect(completed.signal.evaluation).toMatchObject({
+      attention: "ok",
+      periodProgress: {
+        completedCount: 2,
+        remainingCount: 0,
+      },
+    });
+  });
+
   it("records and corrects structured exercise measurements", async () => {
     const t = convexTest(schema, modules);
     const { signalId } = await t.mutation(internal.signals.manageFromMcp, {

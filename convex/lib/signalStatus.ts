@@ -10,7 +10,7 @@ export type ActivityTarget =
     }
   | {
       type: "period";
-      period: "day" | "week";
+      period: "day" | "week" | "month";
       targetCount: number;
     };
 
@@ -57,7 +57,7 @@ export type SignalEvaluation = SignalEvaluationBase & {
 };
 
 export type ActivityPeriodProgress = {
-  period: "day" | "week";
+  period: "day" | "week" | "month";
   startAt: number;
   endAt: number;
   completedCount: number;

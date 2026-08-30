@@ -11,7 +11,7 @@ async function createActivity(
   name: string,
   target?: {
     type: "period";
-    period: "day" | "week";
+    period: "day" | "week" | "month";
     targetCount: number;
   },
   tagIds: Id<"tags">[] = [],

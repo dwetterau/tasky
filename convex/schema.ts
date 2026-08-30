@@ -155,6 +155,12 @@ export const inventoryFlow = v.object({
   everyDays: v.number(),
 });
 
+export const activityPeriod = v.union(
+  v.literal("day"),
+  v.literal("week"),
+  v.literal("month"),
+);
+
 export const activityTarget = v.union(
   v.object({
     type: v.literal("recency"),
@@ -162,7 +168,7 @@ export const activityTarget = v.union(
   }),
   v.object({
     type: v.literal("period"),
-    period: v.union(v.literal("day"), v.literal("week")),
+    period: activityPeriod,
     targetCount: v.number(),
   }),
 );
