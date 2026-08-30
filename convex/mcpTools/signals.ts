@@ -44,7 +44,7 @@ type ActivityTarget =
     }
   | {
       type: "period";
-      period: "day" | "week";
+      period: "day" | "week" | "month";
       targetCount: number;
     };
 
@@ -241,12 +241,12 @@ const activityTargetSchema = {
       required: ["type", "period", "targetCount"],
       properties: {
         type: { const: "period" },
-        period: { type: "string", enum: ["day", "week"] },
+        period: { type: "string", enum: ["day", "week", "month"] },
         targetCount: {
           type: "integer",
           minimum: 0,
           description:
-            "How many completions are required in the period. 0 keeps the day/week window for scorecard done-ness without making the signal due.",
+            "How many completions are required in the period. 0 keeps the day/week/month window for scorecard done-ness without making the signal due.",
         },
       },
     },
@@ -744,9 +744,13 @@ function parseActivityTarget(
       return { error: periodTarget.error };
     }
     const period = periodTarget.value.period;
-    if (period !== "day" && period !== "week") {
+    if (period !== "day" && period !== "week" && period !== "month") {
       return {
-        error: mcpError(rpcId, -32602, "target.period must be day or week"),
+        error: mcpError(
+          rpcId,
+          -32602,
+          "target.period must be day, week, or month",
+        ),
       };
     }
     const targetCount = parseFiniteNumber(

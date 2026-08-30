@@ -249,7 +249,7 @@ archives or restores a signal. Creates require `tagIds` (an empty array is
 allowed), while updates can replace tags by supplying `tagIds`. Inventory flows
 are signed fixed-day projections rather than scheduled writes. Activity
 `target` values are either `{ type: "recency", dueAfterMs }` or
-`{ type: "period", period: "day" | "week", targetCount }`; `targetCount` 0
+`{ type: "period", period: "day" | "week" | "month", targetCount }`; `targetCount` 0
 keeps the period window for completion without making the signal due. Omit
 the target to retain history without a reset window. Activity create/update operations can
 set `measurementFields`; selected fields are required on newly recorded

@@ -13,6 +13,7 @@ import { getAuthUserId } from "./auth";
 import {
   activityMeasurementField,
   activityMeasurements,
+  activityPeriod,
   activityTarget,
   inventoryFlow,
   inventoryThreshold,
@@ -47,6 +48,7 @@ const periodRangeInput = v.object({
 const periodBoundsInput = v.object({
   day: periodRangeInput,
   week: periodRangeInput,
+  month: v.optional(periodRangeInput),
 });
 
 type PeriodRange = {
@@ -54,9 +56,14 @@ type PeriodRange = {
   endAt: number;
 };
 
-type PeriodBounds = {
+type PeriodBoundsInput = {
   day: PeriodRange;
   week: PeriodRange;
+  month?: PeriodRange;
+};
+
+type PeriodBounds = PeriodBoundsInput & {
+  month: PeriodRange;
 };
 
 const recordOperationInput = v.union(
@@ -83,7 +90,7 @@ const signalEvaluationValidator = v.object({
   elapsedMs: v.optional(v.number()),
   periodProgress: v.optional(
     v.object({
-      period: v.union(v.literal("day"), v.literal("week")),
+      period: activityPeriod,
       startAt: v.number(),
       endAt: v.number(),
       completedCount: v.number(),
@@ -576,6 +583,8 @@ function utcPeriodBounds(now: number): PeriodBounds {
   );
   const daysSinceMonday = (date.getUTCDay() + 6) % 7;
   const weekStart = dayStart - daysSinceMonday * DAY_MS;
+  const monthStart = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+  const monthEnd = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
   return {
     day: {
       startAt: dayStart,
@@ -585,14 +594,23 @@ function utcPeriodBounds(now: number): PeriodBounds {
       startAt: weekStart,
       endAt: weekStart + 7 * DAY_MS,
     },
+    month: {
+      startAt: monthStart,
+      endAt: monthEnd,
+    },
   };
 }
 
 function resolvePeriodBounds(
   now: number,
-  provided: PeriodBounds | undefined,
+  provided: PeriodBoundsInput | undefined,
 ): PeriodBounds {
-  const bounds = provided ?? utcPeriodBounds(now);
+  const fallback = utcPeriodBounds(now);
+  const bounds: PeriodBounds = {
+    day: provided?.day ?? fallback.day,
+    week: provided?.week ?? fallback.week,
+    month: provided?.month ?? fallback.month,
+  };
   for (const [name, range] of Object.entries(bounds)) {
     assertFiniteNumber(range.startAt, `periodBounds.${name}.startAt`);
     assertFiniteNumber(range.endAt, `periodBounds.${name}.endAt`);
@@ -832,7 +850,7 @@ async function listDashboardForUser(
     userId: string;
     now: number;
     soonWindowMs: number;
-    periodBounds?: PeriodBounds;
+    periodBounds?: PeriodBoundsInput;
     kind?: "activity" | "inventory";
     tagId?: Id<"tags">;
     tagRootId?: Id<"tags">;
@@ -1204,7 +1222,7 @@ async function recordSignalForUser(
     operation: RecordOperationInput;
     now: number;
     soonWindowMs: number;
-    periodBounds?: PeriodBounds;
+    periodBounds?: PeriodBoundsInput;
   },
 ): Promise<{
   entryId: Id<"signalEntries">;
