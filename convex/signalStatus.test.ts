@@ -20,6 +20,8 @@ describe("signal status evaluation", () => {
       ),
     ).toMatchObject({
       attention: "unknown",
+      ratio: 0,
+      isComplete: false,
     });
   });
 
@@ -37,10 +39,14 @@ describe("signal status evaluation", () => {
       attention: "soon",
       actionAt: 6 * DAY_MS,
       elapsedMs: 3 * DAY_MS,
+      ratio: 0,
+      isComplete: false,
     });
     expect(evaluateSignal(model, 6 * DAY_MS, DAY_MS)).toMatchObject({
       attention: "due",
       actionAt: 6 * DAY_MS,
+      ratio: 0,
+      isComplete: false,
     });
   });
 
@@ -69,6 +75,8 @@ describe("signal status evaluation", () => {
         completedCount: 2,
         remainingCount: 1,
       },
+      ratio: 2 / 3,
+      isComplete: false,
     });
     expect(
       evaluateSignal(model, 10 * DAY_MS, DAY_MS, {
@@ -82,6 +90,8 @@ describe("signal status evaluation", () => {
         completedCount: 3,
         remainingCount: 0,
       },
+      ratio: 1,
+      isComplete: true,
     });
   });
 
@@ -108,6 +118,8 @@ describe("signal status evaluation", () => {
       projectedQuantity: 7,
       runwayMs: 5 * DAY_MS,
       isProjected: true,
+      ratio: 1,
+      isComplete: true,
     });
   });
 
@@ -126,10 +138,14 @@ describe("signal status evaluation", () => {
       attention: "soon",
       actionAt: 6 * DAY_MS,
       projectedQuantity: 3,
+      ratio: 0,
+      isComplete: false,
     });
     expect(evaluateSignal(model, 6 * DAY_MS, 4 * DAY_MS)).toMatchObject({
       attention: "due",
       projectedQuantity: 5,
+      ratio: 0,
+      isComplete: false,
     });
   });
 

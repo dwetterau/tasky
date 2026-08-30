@@ -20,6 +20,10 @@ import {
   createSignalToolHandlers,
   signalToolDescriptors,
 } from "./mcpTools/signals";
+import {
+  createScorecardToolHandlers,
+  scorecardToolDescriptors,
+} from "./mcpTools/scorecards";
 
 function parseScopes(scopeString: string): ParsedMcpScopes {
   const scopeValues = new Set<string>();
@@ -781,6 +785,7 @@ function getToolsList() {
       },
     },
     ...signalToolDescriptors,
+    ...scorecardToolDescriptors,
   ];
 }
 
@@ -873,6 +878,11 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           manageEntry: (args) =>
             ctx.runMutation(internal.signals.manageEntryFromMcp, args),
         });
+        const scorecardHandlers = createScorecardToolHandlers({
+          read: (args) => ctx.runQuery(internal.scorecards.listForMcp, args),
+          manage: (args) =>
+            ctx.runMutation(internal.scorecards.manageFromMcp, args),
+        });
         const toolHandlers: Record<string, () => Promise<Response>> = {
           readTasks: () =>
             handleReadTasksTool(
@@ -925,7 +935,8 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
               params.arguments
             ),
           ...Object.fromEntries(
-            Object.entries(signalHandlers).map(([name, handler]) => [
+            Object.entries({ ...signalHandlers, ...scorecardHandlers }).map(
+              ([name, handler]) => [
               name,
               () =>
                 handler(
@@ -934,7 +945,8 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
                   parsedScopes,
                   params.arguments
                 ),
-            ]),
+              ],
+            ),
           ),
         };
         const handler = toolName === undefined ? undefined : toolHandlers[toolName];

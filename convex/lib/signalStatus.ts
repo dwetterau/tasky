@@ -38,7 +38,7 @@ export type InventorySignalModel = {
 
 export type SignalModel = ActivitySignalModel | InventorySignalModel;
 
-export type SignalEvaluation = {
+export type SignalEvaluationBase = {
   attention: SignalAttention;
   actionAt?: number;
   reason: string;
@@ -49,6 +49,11 @@ export type SignalEvaluation = {
   confirmedAt?: number;
   isProjected?: boolean;
   nextFlowAt?: number;
+};
+
+export type SignalEvaluation = SignalEvaluationBase & {
+  ratio: number;
+  isComplete: boolean;
 };
 
 export type ActivityPeriodProgress = {
@@ -175,7 +180,7 @@ function evaluateActivity(
   now: number,
   soonWindowMs: number,
   periodProgress?: ActivityPeriodProgress,
-): SignalEvaluation {
+): SignalEvaluationBase {
   if (model.target?.type === "period") {
     if (!periodProgress) {
       return {
@@ -239,7 +244,7 @@ function evaluateInventory(
   model: InventorySignalModel,
   now: number,
   soonWindowMs: number,
-): SignalEvaluation {
+): SignalEvaluationBase {
   const projected = projectInventory(model, now);
   const actionAt = inventoryActionAt(model, projected, now);
   const isDue = thresholdReached(
@@ -271,13 +276,48 @@ function evaluateInventory(
   };
 }
 
+export function signalCompletionRatio(
+  model: SignalModel,
+  evaluation: SignalEvaluationBase,
+): number {
+  if (model.kind === "activity") {
+    if (model.target?.type === "period") {
+      const progress = evaluation.periodProgress;
+      if (!progress || progress.targetCount <= 0) {
+        return 0;
+      }
+      return Math.min(1, progress.completedCount / progress.targetCount);
+    }
+    if (model.target === undefined) {
+      return model.lastOccurredAt === undefined ? 0 : 1;
+    }
+    return evaluation.attention === "ok" ? 1 : 0;
+  }
+  return evaluation.attention === "ok" ? 1 : 0;
+}
+
+function withCompletion(
+  model: SignalModel,
+  evaluation: SignalEvaluationBase,
+): SignalEvaluation {
+  const ratio = signalCompletionRatio(model, evaluation);
+  return {
+    ...evaluation,
+    ratio,
+    isComplete: ratio >= 1,
+  };
+}
+
 export function evaluateSignal(
   model: SignalModel,
   now: number,
   soonWindowMs: number,
   periodProgress?: ActivityPeriodProgress,
 ): SignalEvaluation {
-  return model.kind === "activity"
-    ? evaluateActivity(model, now, soonWindowMs, periodProgress)
-    : evaluateInventory(model, now, soonWindowMs);
+  return withCompletion(
+    model,
+    model.kind === "activity"
+      ? evaluateActivity(model, now, soonWindowMs, periodProgress)
+      : evaluateInventory(model, now, soonWindowMs),
+  );
 }

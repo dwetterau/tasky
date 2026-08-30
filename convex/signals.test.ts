@@ -651,4 +651,166 @@ describe("signals backend", () => {
       }),
     ).rejects.toThrow(/tags are invalid/);
   });
+
+  it("imports dailies workouts onto matching activity signals", async () => {
+    const t = convexTest(schema, modules);
+    const exerciseTagId = await t.run(async (ctx) => {
+      return await ctx.db.insert("tags", {
+        userId: "user-1",
+        name: "Exercise",
+        parentId: null,
+        childrenRecursive: [],
+      });
+    });
+    const { signalId: runId } = await t.mutation(
+      internal.signals.manageFromMcp,
+      {
+        userId: "user-1",
+        now: 10 * DAY_MS,
+        operation: {
+          type: "activity.create",
+          name: "Run",
+          tagIds: [],
+          target: {
+            type: "period",
+            period: "week",
+            targetCount: 2,
+          },
+        },
+      },
+    );
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: runId,
+      idempotencyKey: "strava-existing",
+      operation: {
+        type: "activity.occurred",
+        occurredAt: 9 * DAY_MS,
+        note: "existing",
+      },
+      now: 10 * DAY_MS,
+      soonWindowMs: 0,
+    });
+
+    const first = await t.mutation(internal.signals.importDailiesWorkouts, {
+      userId: "user-1",
+      exerciseTagId,
+      now: 12 * DAY_MS,
+      workouts: [
+        {
+          entityId: "entity-run",
+          name: "Running",
+          mergeIntoName: "Run",
+          measurementFields: ["distance", "durationSeconds"],
+          events: [
+            {
+              eventId: "event-run-1",
+              occurredAt: 8 * DAY_MS,
+              measurements: { distance: 3.23, durationSeconds: 1521 },
+            },
+          ],
+        },
+        {
+          entityId: "entity-squat",
+          name: "Squats",
+          measurementFields: ["weight", "reps", "sets"],
+          events: [
+            {
+              eventId: "event-squat-1",
+              occurredAt: 7 * DAY_MS,
+              measurements: { weight: 125, reps: 5, sets: 5 },
+            },
+          ],
+        },
+      ],
+    });
+    const replay = await t.mutation(internal.signals.importDailiesWorkouts, {
+      userId: "user-1",
+      exerciseTagId,
+      now: 13 * DAY_MS,
+      workouts: [
+        {
+          entityId: "entity-run",
+          name: "Running",
+          mergeIntoName: "Run",
+          measurementFields: ["distance", "durationSeconds"],
+          events: [
+            {
+              eventId: "event-run-1",
+              occurredAt: 8 * DAY_MS,
+              measurements: { distance: 3.23, durationSeconds: 1521 },
+            },
+          ],
+        },
+        {
+          entityId: "entity-squat",
+          name: "Squats",
+          measurementFields: ["weight", "reps", "sets"],
+          events: [
+            {
+              eventId: "event-squat-1",
+              occurredAt: 7 * DAY_MS,
+              measurements: { weight: 125, reps: 5, sets: 5 },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(first).toMatchObject({
+      createdSignals: 1,
+      updatedSignals: 1,
+      insertedEntries: 2,
+      skippedEntries: 0,
+    });
+    expect(replay).toMatchObject({
+      createdSignals: 0,
+      updatedSignals: 2,
+      insertedEntries: 0,
+      skippedEntries: 2,
+    });
+
+    const { signals } = await t.query(internal.signals.listForMcp, {
+      userId: "user-1",
+      now: 13 * DAY_MS,
+      soonWindowMs: 0,
+    });
+    const run = signals.find((signal) => signal.name === "Run");
+    const squats = signals.find((signal) => signal.name === "Squats");
+    expect(run?.model).toMatchObject({
+      kind: "activity",
+      lastOccurredAt: 9 * DAY_MS,
+      measurementFields: ["distance", "durationSeconds"],
+      target: { type: "period", period: "week", targetCount: 2 },
+    });
+    expect(run?.tagIds).toEqual([]);
+    expect(squats?.model).toMatchObject({
+      kind: "activity",
+      lastOccurredAt: 7 * DAY_MS,
+      measurementFields: ["weight", "reps", "sets"],
+    });
+    expect(squats?.model.kind === "activity" && squats.model.target).toBe(
+      undefined,
+    );
+    expect(squats?.tagIds).toEqual([exerciseTagId]);
+
+    const squatHistory = await t.query(internal.signals.historyForMcp, {
+      userId: "user-1",
+      signalId: squats!.id,
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(squatHistory.page[0]).toMatchObject({
+      source: "import",
+      idempotencyKey: "dailies:event:event-squat-1",
+      provenance: {
+        system: "dailies",
+        entityId: "entity-squat",
+        eventId: "event-squat-1",
+      },
+      operation: {
+        type: "activity.occurred",
+        measurements: { weight: 125, reps: 5, sets: 5 },
+      },
+    });
+  });
 });

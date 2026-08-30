@@ -252,7 +252,27 @@ are signed fixed-day projections rather than scheduled writes. Activity
 `{ type: "period", period: "day" | "week", targetCount }`; omit the target to
 retain history without an attention goal. Activity create/update operations can
 set `measurementFields`; selected fields are required on newly recorded
-occurrences.
+occurrences. Each returned signal includes `evaluation.ratio`,
+`evaluation.isComplete`, and `scorecards` membership (`id`, `name`, `role`).
+
+### `readScorecards` (`signals:read`)
+
+Returns the authenticated user's active scorecards with member breakdowns and
+rollup completion (`evaluation.ratio`, `evaluation.isComplete`,
+`optionalDoneCount`). Optional `scorecardId` reads one scorecard (including
+archived). Optional `tagId` includes scorecards tagged with that tag or any
+descendant. `now` and `soonWindowMs` can be supplied for deterministic
+evaluation. A scorecard is complete when every required member is complete and
+at least `optionalQuota` optional members are complete.
+
+### `manageScorecard` (`signals:write`)
+
+Creates, updates, archives, or restores a scorecard. Creates require `name`,
+`tagIds`, `members`, and `optionalQuota`. Members are an ordered list of
+`{ signalId, role: "required" | "optional" }`. Updates may replace name, tags,
+members, or quota. `optionalQuota` cannot exceed the number of optional
+members. Tag-root tokens constrain list/create to that subtree and prevent
+updates from leaving it.
 
 ## Architectural Decisions and Trade-offs
 
