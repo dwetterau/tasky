@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import { getAuthUserId } from "./auth";
 import { decryptApiKey } from "./apiKeys";
 import { ApiKeyType } from "./schema";
+import { collectPriceHistoryPoints } from "./lib/portfolioHistory";
 
 const POSITIONS_TABLE = "Positions";
 const PRICE_HISTORY_TABLE = "Price History";
@@ -816,6 +817,100 @@ export const getSnapshot = action({
           dayReturnPercent: null,
         },
       };
+    }
+  },
+});
+
+const priceHistoryPointValidator = v.object({
+  ticker: v.string(),
+  date: v.string(),
+  close: v.number(),
+  quantity: v.number(),
+});
+
+const emptyPriceHistory = (
+  status: "no_credentials" | "airtable_error",
+  message: string,
+  startDate: string | null = null,
+) => ({
+  status,
+  message,
+  startDate,
+  points: [],
+});
+
+export const getPriceHistory = action({
+  args: {
+    startDate: v.optional(v.string()),
+  },
+  returns: v.object({
+    status: v.union(
+      v.literal("ok"),
+      v.literal("no_credentials"),
+      v.literal("airtable_error"),
+    ),
+    message: v.optional(v.string()),
+    startDate: v.union(v.string(), v.null()),
+    points: v.array(priceHistoryPointValidator),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const [apiKey, baseId, resetDate] = await Promise.all([
+      getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
+      getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
+      getCredential(ctx, userId, portfolioCredentialTypes.resetDate),
+    ]);
+
+    if (!apiKey || !baseId) {
+      return emptyPriceHistory(
+        "no_credentials",
+        "Add Portfolio Airtable API Key and Base ID in Tasky settings.",
+      );
+    }
+
+    const requestedStart = args.startDate ?? resetDate;
+    const startDate =
+      requestedStart && isValidIsoDate(requestedStart) ? requestedStart : null;
+
+    try {
+      const params = new URLSearchParams();
+      if (startDate) {
+        params.set("filterByFormula", `{Date} >= '${startDate}'`);
+      }
+      params.set("sort[0][field]", "Date");
+      params.set("sort[0][direction]", "asc");
+
+      const records = await fetchAirtableRecords({
+        apiKey,
+        baseId,
+        table: PRICE_HISTORY_TABLE,
+        params,
+      });
+      const points = collectPriceHistoryPoints(
+        records.map((record) => ({
+          name: asString(record.fields.Name),
+          ...mapPriceHistoryPoint(record),
+        })),
+        startDate,
+      );
+
+      return {
+        status: "ok" as const,
+        startDate,
+        points,
+      };
+    } catch (error) {
+      return emptyPriceHistory(
+        "airtable_error",
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch price history.",
+        startDate,
+      );
     }
   },
 });
