@@ -529,8 +529,8 @@ function validateActivityTarget(target: ActivityTarget | undefined): void {
     return;
   }
   assertFiniteNumber(target.targetCount, "target.targetCount");
-  if (!Number.isInteger(target.targetCount) || target.targetCount <= 0) {
-    throw new Error("target.targetCount must be a positive integer");
+  if (!Number.isInteger(target.targetCount) || target.targetCount < 0) {
+    throw new Error("target.targetCount must be a non-negative integer");
   }
 }
 

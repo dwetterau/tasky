@@ -95,6 +95,43 @@ describe("signal status evaluation", () => {
     });
   });
 
+  it("treats a zero weekly target as optional in-window completion", () => {
+    const model = {
+      kind: "activity" as const,
+      target: {
+        type: "period" as const,
+        period: "week" as const,
+        targetCount: 0,
+      },
+    };
+    const progress = {
+      period: "week" as const,
+      startAt: 7 * DAY_MS,
+      endAt: 14 * DAY_MS,
+      completedCount: 0,
+      targetCount: 0,
+      remainingCount: 0,
+    };
+
+    expect(evaluateSignal(model, 10 * DAY_MS, DAY_MS, progress)).toMatchObject({
+      attention: "ok",
+      reason: "No activity this week",
+      ratio: 0,
+      isComplete: false,
+    });
+    expect(
+      evaluateSignal(model, 10 * DAY_MS, DAY_MS, {
+        ...progress,
+        completedCount: 2,
+      }),
+    ).toMatchObject({
+      attention: "ok",
+      reason: "Recorded this week",
+      ratio: 1,
+      isComplete: true,
+    });
+  });
+
   it("projects draining inventory without writing daily events", () => {
     const model: InventorySignalModel = {
       kind: "inventory",
