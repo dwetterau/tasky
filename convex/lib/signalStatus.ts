@@ -193,11 +193,18 @@ function evaluateActivity(
       };
     }
     const targetMet =
+      periodProgress.targetCount <= 0 ||
       periodProgress.completedCount >= periodProgress.targetCount;
+    const reason =
+      periodProgress.targetCount <= 0
+        ? periodProgress.completedCount > 0
+          ? `Recorded this ${periodProgress.period}`
+          : `No activity this ${periodProgress.period}`
+        : `${periodProgress.completedCount} of ${periodProgress.targetCount} completed this ${periodProgress.period}`;
     return {
       attention: targetMet ? "ok" : "due",
       actionAt: targetMet ? undefined : periodProgress.endAt,
-      reason: `${periodProgress.completedCount} of ${periodProgress.targetCount} completed this ${periodProgress.period}`,
+      reason,
       elapsedMs:
         model.lastOccurredAt === undefined
           ? undefined
@@ -283,8 +290,11 @@ export function signalCompletionRatio(
   if (model.kind === "activity") {
     if (model.target?.type === "period") {
       const progress = evaluation.periodProgress;
-      if (!progress || progress.targetCount <= 0) {
+      if (!progress) {
         return 0;
+      }
+      if (progress.targetCount <= 0) {
+        return progress.completedCount > 0 ? 1 : 0;
       }
       return Math.min(1, progress.completedCount / progress.targetCount);
     }

@@ -244,7 +244,9 @@ const activityTargetSchema = {
         period: { type: "string", enum: ["day", "week"] },
         targetCount: {
           type: "integer",
-          minimum: 1,
+          minimum: 0,
+          description:
+            "How many completions are required in the period. 0 keeps the day/week window for scorecard done-ness without making the signal due.",
         },
       },
     },
@@ -751,7 +753,7 @@ function parseActivityTarget(
       rpcId,
       periodTarget.value.targetCount,
       "target.targetCount",
-      { exclusiveMinimum: 0 },
+      { minimum: 0 },
     );
     if (targetCount.error || targetCount.value === undefined) {
       return { error: targetCount.error };

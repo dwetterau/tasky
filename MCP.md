@@ -249,8 +249,9 @@ archives or restores a signal. Creates require `tagIds` (an empty array is
 allowed), while updates can replace tags by supplying `tagIds`. Inventory flows
 are signed fixed-day projections rather than scheduled writes. Activity
 `target` values are either `{ type: "recency", dueAfterMs }` or
-`{ type: "period", period: "day" | "week", targetCount }`; omit the target to
-retain history without an attention goal. Activity create/update operations can
+`{ type: "period", period: "day" | "week", targetCount }`; `targetCount` 0
+keeps the period window for completion without making the signal due. Omit
+the target to retain history without a reset window. Activity create/update operations can
 set `measurementFields`; selected fields are required on newly recorded
 occurrences. Each returned signal includes `evaluation.ratio`,
 `evaluation.isComplete`, and `scorecards` membership (`id`, `name`, `role`).
