@@ -19,6 +19,7 @@ import {
   signalAttention,
   signalEntryOperation,
   signalModel,
+  signalProvenance,
   signalSource,
 } from "./schema";
 import {
@@ -95,6 +96,14 @@ const signalEvaluationValidator = v.object({
   confirmedAt: v.optional(v.number()),
   isProjected: v.optional(v.boolean()),
   nextFlowAt: v.optional(v.number()),
+  ratio: v.number(),
+  isComplete: v.boolean(),
+});
+
+const scorecardMembershipValidator = v.object({
+  id: v.id("scorecards"),
+  name: v.string(),
+  role: v.union(v.literal("required"), v.literal("optional")),
 });
 
 const signalTagValidator = v.object({
@@ -121,6 +130,7 @@ const signalDashboardItemValidator = v.object({
   updatedAt: v.number(),
   archivedAt: v.optional(v.number()),
   evaluation: signalEvaluationValidator,
+  scorecards: v.array(scorecardMembershipValidator),
 });
 
 const signalMcpReadResultValidator = v.object({
@@ -136,6 +146,7 @@ const signalEntryOutputValidator = v.object({
   recordedAt: v.number(),
   updatedAt: v.optional(v.number()),
   source: signalSource,
+  provenance: v.optional(signalProvenance),
   idempotencyKey: v.string(),
   operation: signalEntryOperation,
 });
@@ -297,6 +308,11 @@ type SignalDashboardItem = {
   updatedAt: number;
   archivedAt?: number;
   evaluation: ReturnType<typeof evaluateSignal>;
+  scorecards: Array<{
+    id: Id<"scorecards">;
+    name: string;
+    role: "required" | "optional";
+  }>;
 };
 
 type ActivityMeasurementField =
@@ -323,6 +339,7 @@ function toSignalEntryOutput(entry: Doc<"signalEntries">) {
     recordedAt: entry.recordedAt,
     updatedAt: entry.updatedAt,
     source: entry.source,
+    provenance: entry.provenance,
     idempotencyKey: entry.idempotencyKey,
     operation: entry.operation,
   };
@@ -625,6 +642,47 @@ async function getActivityPeriodProgress(
   };
 }
 
+async function loadScorecardMemberships(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+): Promise<
+  Map<
+    Id<"signals">,
+    Array<{
+      id: Id<"scorecards">;
+      name: string;
+      role: "required" | "optional";
+    }>
+  >
+> {
+  const scorecards = await ctx.db
+    .query("scorecards")
+    .withIndex("by_user_archived", (q) =>
+      q.eq("userId", userId).eq("archivedAt", undefined),
+    )
+    .collect();
+  const memberships = new Map<
+    Id<"signals">,
+    Array<{
+      id: Id<"scorecards">;
+      name: string;
+      role: "required" | "optional";
+    }>
+  >();
+  for (const scorecard of scorecards) {
+    for (const member of scorecard.members) {
+      const existing = memberships.get(member.signalId) ?? [];
+      existing.push({
+        id: scorecard._id,
+        name: scorecard.name,
+        role: member.role,
+      });
+      memberships.set(member.signalId, existing);
+    }
+  }
+  return memberships;
+}
+
 async function toDashboardItem(
   ctx: QueryCtx | MutationCtx,
   userId: string,
@@ -632,6 +690,14 @@ async function toDashboardItem(
   now: number,
   soonWindowMs: number,
   periodBounds: PeriodBounds,
+  memberships?: Map<
+    Id<"signals">,
+    Array<{
+      id: Id<"scorecards">;
+      name: string;
+      role: "required" | "optional";
+    }>
+  >,
 ): Promise<SignalDashboardItem> {
   const tagDocuments = await Promise.all(
     signal.tagIds.map((tagId) => ctx.db.get("tags", tagId)),
@@ -648,6 +714,8 @@ async function toDashboardItem(
     signal,
     periodBounds,
   );
+  const scorecards =
+    memberships ?? (await loadScorecardMemberships(ctx, userId));
   return {
     id: signal._id,
     creationTime: signal._creationTime,
@@ -659,6 +727,7 @@ async function toDashboardItem(
     updatedAt: signal.updatedAt,
     archivedAt: signal.archivedAt,
     evaluation: evaluateSignal(signal.model, now, soonWindowMs, periodProgress),
+    scorecards: scorecards.get(signal._id) ?? [],
   };
 }
 
@@ -800,6 +869,7 @@ async function listDashboardForUser(
         allowedRootTagIds === undefined ||
         signal.tagIds.some((tagId) => allowedRootTagIds.has(tagId)),
     );
+  const memberships = await loadScorecardMemberships(ctx, args.userId);
   const items = (
     await Promise.all(
       matchingSignals.map((signal) =>
@@ -810,6 +880,7 @@ async function listDashboardForUser(
           args.now,
           args.soonWindowMs,
           periodBounds,
+          memberships,
         ),
       ),
     )
@@ -1123,7 +1194,12 @@ async function recordSignalForUser(
     userId: string;
     signalId: Id<"signals">;
     tagRootId?: Id<"tags">;
-    source: "mobile" | "mcp";
+    source: "mobile" | "mcp" | "import";
+    provenance?: {
+      system: "dailies";
+      entityId: string;
+      eventId: string;
+    };
     idempotencyKey: string;
     operation: RecordOperationInput;
     now: number;
@@ -1256,6 +1332,7 @@ async function recordSignalForUser(
     effectiveAt,
     recordedAt: args.now,
     source: args.source,
+    provenance: args.provenance,
     idempotencyKey,
     operation,
   });
@@ -1822,6 +1899,130 @@ export const manageEntryFromMcp = internalMutation({
   handler: async (ctx, args) => {
     return {
       entryId: await manageSignalEntryForUser(ctx, args),
+    };
+  },
+});
+
+const dailiesWorkoutImportValidator = v.object({
+  entityId: v.string(),
+  name: v.string(),
+  mergeIntoName: v.optional(v.string()),
+  measurementFields: activityMeasurementFieldsInput,
+  events: v.array(
+    v.object({
+      eventId: v.string(),
+      occurredAt: v.number(),
+      measurements: activityMeasurements,
+    }),
+  ),
+});
+
+export const importDailiesWorkouts = internalMutation({
+  args: {
+    userId: v.string(),
+    exerciseTagId: v.id("tags"),
+    now: v.number(),
+    workouts: v.array(dailiesWorkoutImportValidator),
+  },
+  returns: v.object({
+    createdSignals: v.number(),
+    updatedSignals: v.number(),
+    insertedEntries: v.number(),
+    skippedEntries: v.number(),
+    signalIds: v.array(v.id("signals")),
+  }),
+  handler: async (ctx, args) => {
+    const exerciseTag = await ctx.db.get("tags", args.exerciseTagId);
+    if (
+      !exerciseTag ||
+      exerciseTag.userId !== args.userId ||
+      exerciseTag.name !== "Exercise"
+    ) {
+      throw new Error("Exercise tag not found for this user");
+    }
+    assertFiniteNumber(args.now, "now");
+
+    const userSignals = await ctx.db
+      .query("signals")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    let createdSignals = 0;
+    let updatedSignals = 0;
+    let insertedEntries = 0;
+    let skippedEntries = 0;
+    const signalIds: Id<"signals">[] = [];
+
+    for (const workout of args.workouts) {
+      const signalName = workout.mergeIntoName ?? workout.name;
+      const matches = userSignals.filter(
+        (signal) =>
+          signal.name === signalName && signal.archivedAt === undefined,
+      );
+      if (matches.length > 1) {
+        throw new Error(`Ambiguous active signal name: ${signalName}`);
+      }
+
+      let signal = matches[0];
+      if (signal) {
+        if (signal.model.kind !== "activity") {
+          throw new Error(`Existing signal ${signalName} is not an activity`);
+        }
+        await updateActivityForUser(ctx, {
+          userId: args.userId,
+          signalId: signal._id,
+          measurementFields: workout.measurementFields,
+          now: args.now,
+        });
+        signal = await getOwnedSignal(ctx, args.userId, signal._id);
+        updatedSignals += 1;
+      } else {
+        const signalId = await createActivityForUser(ctx, {
+          userId: args.userId,
+          name: signalName,
+          tagIds: [args.exerciseTagId],
+          measurementFields: workout.measurementFields,
+          now: args.now,
+        });
+        signal = await getOwnedSignal(ctx, args.userId, signalId);
+        userSignals.push(signal);
+        createdSignals += 1;
+      }
+      signalIds.push(signal._id);
+
+      for (const event of workout.events) {
+        const recorded = await recordSignalForUser(ctx, {
+          userId: args.userId,
+          signalId: signal._id,
+          source: "import",
+          provenance: {
+            system: "dailies",
+            entityId: workout.entityId,
+            eventId: event.eventId,
+          },
+          idempotencyKey: `dailies:event:${event.eventId}`,
+          operation: {
+            type: "activity.occurred",
+            occurredAt: event.occurredAt,
+            measurements: event.measurements,
+          },
+          now: args.now,
+          soonWindowMs: 0,
+        });
+        if (recorded.idempotent) {
+          skippedEntries += 1;
+        } else {
+          insertedEntries += 1;
+        }
+      }
+    }
+
+    return {
+      createdSignals,
+      updatedSignals,
+      insertedEntries,
+      skippedEntries,
+      signalIds,
     };
   },
 });

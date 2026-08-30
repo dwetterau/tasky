@@ -72,9 +72,10 @@ Supported capability scopes:
 
 - `tasks:read` (required for `readTasks`)
 - `tasks:write` (required for task/capture mutation tools)
-- `signals:read` (required for `readSignals` and `readSignalHistory`)
-- `signals:write` (required for `recordSignal`, `manageSignal`, and
-  `manageSignalEntry`)
+- `signals:read` (required for `readSignals`, `readSignalHistory`, and
+  `readScorecards`)
+- `signals:write` (required for `recordSignal`, `manageSignal`,
+  `manageSignalEntry`, and `manageScorecard`)
 
 Supported resource scope:
 
@@ -87,3 +88,5 @@ hierarchical tags; reads can filter by a tag subtree. Activity goals support
 rolling recency timers as well as daily or weekly completion targets. Activity
 signals can request structured weight, reps, sets, duration, and distance data;
 agents can read, update, or delete those history entries through MCP.
+Scorecards compose required and optional signals into a single completion
+ratio; `readScorecards` and `manageScorecard` use the same signal scopes.

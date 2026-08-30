@@ -133,7 +133,17 @@ export const signalAttention = v.union(
   v.literal("unknown"),
 );
 
-export const signalSource = v.union(v.literal("mobile"), v.literal("mcp"));
+export const signalSource = v.union(
+  v.literal("mobile"),
+  v.literal("mcp"),
+  v.literal("import"),
+);
+
+export const signalProvenance = v.object({
+  system: v.literal("dailies"),
+  entityId: v.string(),
+  eventId: v.string(),
+});
 
 export const inventoryThreshold = v.object({
   value: v.number(),
@@ -190,6 +200,16 @@ export const signalModel = v.union(
     nextFlowAt: v.optional(v.number()),
   }),
 );
+
+export const scorecardMemberRole = v.union(
+  v.literal("required"),
+  v.literal("optional"),
+);
+
+export const scorecardMember = v.object({
+  signalId: v.id("signals"),
+  role: scorecardMemberRole,
+});
 
 export const signalEntryOperation = v.union(
   v.object({
@@ -373,10 +393,24 @@ export default defineSchema({
     recordedAt: v.number(),
     updatedAt: v.optional(v.number()),
     source: signalSource,
+    provenance: v.optional(signalProvenance),
     idempotencyKey: v.string(),
     operation: signalEntryOperation,
   })
     .index("by_signal_effective_at", ["signalId", "effectiveAt"])
     .index("by_user_effective_at", ["userId", "effectiveAt"])
     .index("by_user_idempotency_key", ["userId", "idempotencyKey"]),
+
+  scorecards: defineTable({
+    userId: v.string(),
+    name: v.string(),
+    tagIds: v.array(v.id("tags")),
+    members: v.array(scorecardMember),
+    optionalQuota: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_archived", ["userId", "archivedAt"]),
 });
