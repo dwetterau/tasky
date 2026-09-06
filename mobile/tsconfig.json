@@ -1,0 +1,27 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "tasky-convex/*": [
+        "./vendor/tasky-convex/*",
+        "../convex/*",
+        "../../tasky/convex/*"
+      ],
+      "@/*": [
+        "./*"
+      ] 
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "vendor/tasky-convex/**/*.test.ts",
+    "vendor/tasky-convex/test.setup.ts"
+  ]
+}

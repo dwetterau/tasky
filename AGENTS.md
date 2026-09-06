@@ -12,7 +12,12 @@ A Next.js + Convex personal task/note/capture manager with auth, hierarchical ta
 
 ## Directory structure
 
+The Expo iOS app lives in `mobile/` (moved from the Dailies repo). It is a
+separate package with its own `package.json`; it talks to this repo's Convex
+backend via `mobile/scripts/link-tasky-convex.js`.
+
 ```
+mobile/                   # Expo / React Native iOS client
 src/
   app/
     page.tsx              # Home - redirects or shows captures

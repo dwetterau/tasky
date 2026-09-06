@@ -1,0 +1,5 @@
+{
+  "BACKEND_ENV": "development",
+  "EXPO_PUBLIC_TASKY_CONVEX_URL": "https://courteous-bat-217.convex.cloud",
+  "EXPO_PUBLIC_TASKY_CONVEX_SITE_URL": "https://courteous-bat-217.convex.site"
+}
