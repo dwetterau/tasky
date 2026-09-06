@@ -1,0 +1,5 @@
+{
+  "BACKEND_ENV": "production",
+  "EXPO_PUBLIC_TASKY_CONVEX_URL": "https://pleasant-nightingale-894.convex.cloud",
+  "EXPO_PUBLIC_TASKY_CONVEX_SITE_URL": "https://pleasant-nightingale-894.convex.site"
+}
