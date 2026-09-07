@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { PillButton } from "@/components/PillButton";
 import { SignalRow } from "@/components/SignalRow";
+import { TagFilterRow } from "@/components/TagFilterRow";
 import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   createSignalIdempotencyKey,
@@ -18,7 +19,7 @@ import {
   type SignalDashboardItem,
   useSignalClock,
 } from "@/lib/signals";
-import { sortTaskyTags, taskyTagPath, type TaskyTagId } from "@/lib/taskyTags";
+import { type TaskyTagId } from "@/lib/taskyTags";
 import {
   taskyApi,
   useTaskyAuth,
@@ -67,15 +68,6 @@ export default function SignalsPage() {
   );
   const tags = useTaskyQuery(taskyApi.tags.list, taskyEnabled ? {} : "skip");
   const recordSignal = useTaskyMutation(taskyApi.signals.record);
-  const orderedTags = useMemo(
-    () => sortTaskyTags(tags.data ?? []),
-    [tags.data],
-  );
-  const tagsById = useMemo(
-    () =>
-      new Map((tags.data ?? []).map((tag) => [String(tag._id), tag] as const)),
-    [tags.data],
-  );
   useEffect(() => {
     if (
       selectedTagId !== null &&
@@ -184,60 +176,11 @@ export default function SignalsPage() {
         contentContainerStyle={sharedStyles.screenContent}
         {...automaticKeyboardInsets}
       >
-        {orderedTags.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-          >
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                selectedTagId === null && styles.filterChipSelected,
-              ]}
-              onPress={() => setSelectedTagId(null)}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  selectedTagId === null && styles.filterChipTextSelected,
-                ]}
-              >
-                All
-              </Text>
-            </TouchableOpacity>
-            {orderedTags.map((tag) => {
-              const selected = selectedTagId === tag._id;
-              return (
-                <TouchableOpacity
-                  key={tag._id}
-                  style={[
-                    styles.filterChip,
-                    selected && styles.filterChipSelected,
-                  ]}
-                  onPress={() => setSelectedTagId(tag._id)}
-                >
-                  <View
-                    style={[
-                      styles.filterDot,
-                      {
-                        backgroundColor: tag.color ?? colors.systemGray,
-                      },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      selected && styles.filterChipTextSelected,
-                    ]}
-                  >
-                    {taskyTagPath(tag, tagsById)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        ) : null}
+        <TagFilterRow
+          tags={tags.data ?? []}
+          selectedTagId={selectedTagId}
+          onChange={setSelectedTagId}
+        />
 
         {!taskyEnabled || signals.isLoading ? (
           <View style={sharedStyles.inlineLoading}>
@@ -305,35 +248,6 @@ const styles = StyleSheet.create({
   },
   attentionGroup: {
     gap: spacing.sm,
-  },
-  filterRow: {
-    gap: spacing.sm,
-    paddingRight: spacing.lg,
-  },
-  filterChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    height: 32,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.secondarySystemGroupedBackground,
-  },
-  filterChipSelected: {
-    backgroundColor: colors.systemBlue,
-  },
-  filterDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.pill,
-  },
-  filterChipText: {
-    color: colors.secondaryLabel,
-    fontSize: fontSize.small,
-    fontWeight: "600",
-  },
-  filterChipTextSelected: {
-    color: "white",
   },
   listCard: {
     overflow: "hidden",
