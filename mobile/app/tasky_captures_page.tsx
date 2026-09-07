@@ -61,6 +61,14 @@ const PRIORITY_LABELS: Record<TaskPriority, string> = {
   urgent: "Urgent",
 };
 
+const PRIORITY_ORDER: TaskPriority[] = [
+  "triage",
+  "low",
+  "medium",
+  "high",
+  "urgent",
+];
+
 const PRIORITY_COLORS: Record<TaskPriority, unknown> = {
   triage: colors.systemGray,
   low: colors.systemTeal,
@@ -277,31 +285,164 @@ function CaptureRow({
   );
 }
 
-function TaskRow({ task }: { task: Task }) {
+function ChoiceChip({
+  label,
+  selected,
+  color,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  color: string;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.taskRow}>
-      <PriorityDot priority={task.priority} />
-      <View style={styles.taskMain}>
-        <Text style={styles.taskTitle} numberOfLines={2}>
-          {getTaskFirstLine(task.content)}
-        </Text>
-        <View style={styles.taskMetaRow}>
-          {task.priority !== "triage" ? (
-            <Text style={styles.taskMetaLabel}>
-              {PRIORITY_LABELS[task.priority]}
-            </Text>
-          ) : null}
-          {task.dueDate ? (
-            <Text style={styles.taskMetaLabel}>Due {task.dueDate}</Text>
-          ) : null}
-          {task.tags.slice(0, 3).map((tag: TaskTag) => (
-            <View key={tag._id} style={styles.tagChip}>
-              <Text style={styles.tagChipText}>{tag.name}</Text>
+    <TouchableOpacity
+      style={[
+        styles.choiceChip,
+        selected && { backgroundColor: color, borderColor: color },
+      ]}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityState={{ selected, disabled: Boolean(disabled) }}
+      disabled={disabled}
+      onPress={onPress}
+    >
+      <Text
+        style={[
+          styles.choiceChipText,
+          selected && styles.choiceChipTextSelected,
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function TaskRow({
+  task,
+  expanded,
+  isSaving,
+  onToggle,
+  onStatusChange,
+  onPriorityChange,
+}: {
+  task: Task;
+  expanded: boolean;
+  isSaving: boolean;
+  onToggle: () => void;
+  onStatusChange: (status: TaskStatus) => void;
+  onPriorityChange: (priority: TaskPriority) => void;
+}) {
+  const firstLine = getTaskFirstLine(task.content);
+  const trimmedContent = task.content.trim();
+
+  return (
+    <View style={expanded ? styles.taskRowExpanded : undefined}>
+      <TouchableOpacity
+        style={styles.taskRow}
+        activeOpacity={0.7}
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={firstLine}
+      >
+        <PriorityDot priority={task.priority} />
+        <View style={styles.taskMain}>
+          <Text
+            style={styles.taskTitle}
+            numberOfLines={expanded ? undefined : 2}
+          >
+            {expanded ? trimmedContent || firstLine : firstLine}
+          </Text>
+          {!expanded ? (
+            <View style={styles.taskMetaRow}>
+              {task.priority !== "triage" ? (
+                <Text style={styles.taskMetaLabel}>
+                  {PRIORITY_LABELS[task.priority]}
+                </Text>
+              ) : null}
+              {task.dueDate ? (
+                <Text style={styles.taskMetaLabel}>Due {task.dueDate}</Text>
+              ) : null}
+              {task.tags.slice(0, 3).map((tag: TaskTag) => (
+                <View key={tag._id} style={styles.tagChip}>
+                  <Text style={styles.tagChipText}>{tag.name}</Text>
+                </View>
+              ))}
             </View>
-          ))}
+          ) : null}
         </View>
-      </View>
-      <StatusPill status={task.status} />
+        <View style={styles.taskTrailing}>
+          <StatusPill status={task.status} />
+          <Text style={styles.taskChevron}>{expanded ? "⌃" : "›"}</Text>
+        </View>
+      </TouchableOpacity>
+      {expanded ? (
+        <View style={styles.taskDetails}>
+          {task.dueDate ? (
+            <Text style={styles.taskDetailLabel}>Due {task.dueDate}</Text>
+          ) : null}
+          <View style={styles.taskMetaRow}>
+            {task.tags.length === 0 ? (
+              <Text style={styles.taskDetailMuted}>No tags</Text>
+            ) : (
+              task.tags.map((tag: TaskTag) => (
+                <View key={tag._id} style={styles.tagChip}>
+                  {tag.color ? (
+                    <View
+                      style={[
+                        styles.tagDot,
+                        { backgroundColor: tag.color },
+                      ]}
+                    />
+                  ) : null}
+                  <Text style={styles.tagChipText}>{tag.name}</Text>
+                </View>
+              ))
+            )}
+          </View>
+          <View style={styles.taskField}>
+            <Text style={styles.taskFieldLabel}>Status</Text>
+            <View style={styles.choiceRow}>
+              {STATUS_ORDER.map((status) => (
+                <ChoiceChip
+                  key={status}
+                  label={STATUS_LABELS[status]}
+                  selected={task.status === status}
+                  color={STATUS_COLORS[status] as unknown as string}
+                  disabled={isSaving}
+                  onPress={() => onStatusChange(status)}
+                />
+              ))}
+            </View>
+          </View>
+          <View style={styles.taskField}>
+            <Text style={styles.taskFieldLabel}>Priority</Text>
+            <View style={styles.choiceRow}>
+              {PRIORITY_ORDER.map((priority) => (
+                <ChoiceChip
+                  key={priority}
+                  label={PRIORITY_LABELS[priority]}
+                  selected={task.priority === priority}
+                  color={PRIORITY_COLORS[priority] as unknown as string}
+                  disabled={isSaving}
+                  onPress={() => onPriorityChange(priority)}
+                />
+              ))}
+            </View>
+          </View>
+          {isSaving ? (
+            <View style={styles.taskSaving}>
+              <ActivityIndicator size="small" />
+              <Text style={sharedStyles.muted}>Saving…</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -352,7 +493,9 @@ export default function TaskyCapturesPage() {
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
@@ -371,6 +514,8 @@ export default function TaskyCapturesPage() {
   const createCapture = useTaskyMutation(taskyApi.captures.create);
   const updateCapture = useTaskyMutation(taskyApi.captures.update);
   const toggleCapture = useTaskyMutation(taskyApi.captures.toggle);
+  const updateTaskStatus = useTaskyMutation(taskyApi.tasks.updateStatus);
+  const updateTaskPriority = useTaskyMutation(taskyApi.tasks.updatePriority);
 
   const sortedCaptures: Capture[] = captures.data ?? [];
   const openTasks = useMemo<Task[]>(
@@ -463,6 +608,43 @@ export default function TaskyCapturesPage() {
       );
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleTaskStatusChange = async (task: Task, status: TaskStatus) => {
+    if (task.status === status) return;
+    setSavingTaskId(task._id);
+    setError(null);
+    try {
+      await updateTaskStatus({ id: task._id, status });
+    } catch (statusError) {
+      setError(
+        statusError instanceof Error
+          ? statusError.message
+          : "Failed to update status",
+      );
+    } finally {
+      setSavingTaskId(null);
+    }
+  };
+
+  const handleTaskPriorityChange = async (
+    task: Task,
+    priority: TaskPriority,
+  ) => {
+    if (task.priority === priority) return;
+    setSavingTaskId(task._id);
+    setError(null);
+    try {
+      await updateTaskPriority({ id: task._id, priority });
+    } catch (priorityError) {
+      setError(
+        priorityError instanceof Error
+          ? priorityError.message
+          : "Failed to update priority",
+      );
+    } finally {
+      setSavingTaskId(null);
     }
   };
 
@@ -628,7 +810,22 @@ export default function TaskyCapturesPage() {
                 {group.items.map((task, index) => (
                   <View key={task._id}>
                     {index > 0 ? <View style={styles.listDivider} /> : null}
-                    <TaskRow task={task} />
+                    <TaskRow
+                      task={task}
+                      expanded={expandedTaskId === task._id}
+                      isSaving={savingTaskId === task._id}
+                      onToggle={() =>
+                        setExpandedTaskId((current) =>
+                          current === task._id ? null : task._id,
+                        )
+                      }
+                      onStatusChange={(status) =>
+                        void handleTaskStatusChange(task, status)
+                      }
+                      onPriorityChange={(priority) =>
+                        void handleTaskPriorityChange(task, priority)
+                      }
+                    />
                   </View>
                 ))}
               </View>
@@ -832,6 +1029,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
+  taskRowExpanded: {
+    paddingBottom: spacing.md,
+  },
   taskMain: {
     flex: 1,
     gap: spacing.xs,
@@ -851,6 +1051,65 @@ const styles = StyleSheet.create({
     fontSize: fontSize.caption,
     color: colors.secondaryLabel,
   },
+  taskTrailing: {
+    alignItems: "flex-end",
+    gap: spacing.xs,
+  },
+  taskChevron: {
+    fontSize: 18,
+    fontWeight: "300",
+    color: colors.tertiaryLabel,
+    lineHeight: 20,
+  },
+  taskDetails: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  taskDetailLabel: {
+    fontSize: fontSize.caption,
+    color: colors.secondaryLabel,
+  },
+  taskDetailMuted: {
+    fontSize: fontSize.caption,
+    color: colors.tertiaryLabel,
+  },
+  taskField: {
+    gap: spacing.sm,
+  },
+  taskFieldLabel: {
+    fontSize: fontSize.caption,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    color: colors.secondaryLabel,
+    textTransform: "uppercase",
+  },
+  choiceRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  choiceChip: {
+    height: 32,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.separator,
+    backgroundColor: colors.tertiarySystemGroupedBackground,
+  },
+  choiceChipText: {
+    fontSize: fontSize.small,
+    fontWeight: "600",
+    color: colors.secondaryLabel,
+  },
+  choiceChipTextSelected: {
+    color: "white",
+  },
+  taskSaving: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
   priorityDot: {
     width: 8,
     height: 8,
@@ -858,10 +1117,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   tagChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: radius.pill,
     backgroundColor: colors.tertiarySystemGroupedBackground,
+  },
+  tagDot: {
+    width: 6,
+    height: 6,
+    borderRadius: radius.pill,
   },
   tagChipText: {
     fontSize: fontSize.micro,

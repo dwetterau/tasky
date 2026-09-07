@@ -12,6 +12,8 @@ import { PillButton } from "@/components/PillButton";
 import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   getSignalPeriodBounds,
+  memberContributionCount,
+  scorecardHeadline,
   SIGNAL_SOON_WINDOW_MS,
   type ScorecardItem,
   useSignalClock,
@@ -39,32 +41,18 @@ function formatPercent(ratio: number): string {
 
 function ScorecardRow({ scorecard }: { scorecard: ScorecardItem }) {
   const router = useRouter();
-  const required = scorecard.members.filter(
-    (member) => member.role === "required",
-  );
-  const optional = scorecard.members.filter(
-    (member) => member.role === "optional",
-  );
-  const optionalDone = optional.filter(
-    (member) => member.evaluation.isComplete,
-  ).length;
-  const optionalNames = [...optional]
-    .sort((left, right) => {
-      if (left.evaluation.isComplete === right.evaluation.isComplete) {
-        return 0;
-      }
-      return left.evaluation.isComplete ? 1 : -1;
-    })
+  const headline = scorecardHeadline(scorecard);
+  const counted = scorecard.targetCount !== undefined;
+  const members = counted
+    ? scorecard.members
+    : scorecard.members.filter((member) => member.role === "required");
+  const extras = counted
+    ? []
+    : scorecard.members.filter((member) => member.role === "optional");
+  const extraNames = extras
+    .filter((member) => memberContributionCount(member) > 0)
     .map((member) => member.name)
     .join(" · ");
-  const subtitle =
-    scorecard.targetCount !== undefined
-      ? `${scorecard.evaluation.count} of ${scorecard.targetCount}`
-      : scorecard.optionalQuota > 0
-        ? `${scorecard.evaluation.optionalDoneCount} of ${scorecard.optionalQuota} optionals`
-        : required.length > 0
-          ? `${required.length} required`
-          : undefined;
 
   return (
     <TouchableOpacity
@@ -75,11 +63,7 @@ function ScorecardRow({ scorecard }: { scorecard: ScorecardItem }) {
       <View style={styles.cardHeader}>
         <View style={styles.cardHeaderText}>
           <Text style={styles.cardTitle}>{scorecard.name}</Text>
-          {scorecard.evaluation.isComplete || subtitle ? (
-            <Text style={styles.cardSubtitle}>
-              {scorecard.evaluation.isComplete ? "Done" : subtitle}
-            </Text>
-          ) : null}
+          <Text style={styles.cardSubtitle}>{headline}</Text>
         </View>
         <Text style={styles.percent}>
           {formatPercent(scorecard.evaluation.ratio)}
@@ -98,35 +82,31 @@ function ScorecardRow({ scorecard }: { scorecard: ScorecardItem }) {
           ]}
         />
       </View>
-      {required.length > 0 ? (
+      {members.length > 0 ? (
         <View style={styles.members}>
-          {required.map((member) => (
-            <Text
-              key={
-                member.type === "scorecard"
-                  ? member.scorecardId
-                  : member.signalId
-              }
-              style={[
-                styles.member,
-                member.evaluation.isComplete && styles.memberDone,
-              ]}
-            >
-              {member.evaluation.isComplete ? "✓ " : "○ "}
-              {member.name}
-            </Text>
-          ))}
+          {members.map((member) => {
+            const count = memberContributionCount(member);
+            const done = counted ? count > 0 : member.evaluation.isComplete;
+            return (
+              <Text
+                key={
+                  member.type === "scorecard"
+                    ? member.scorecardId
+                    : member.signalId
+                }
+                style={[styles.member, done && styles.memberDone]}
+              >
+                {done ? "✓ " : "○ "}
+                {member.name}
+                {counted && count > 1 ? ` · ${count}` : ""}
+              </Text>
+            );
+          })}
         </View>
-      ) : null}
-      {optional.length > 0 ? (
-        <View style={styles.optionalBlock}>
-          <Text style={styles.optionalTitle}>
-            Optional · {optionalDone} of {optional.length} done
-          </Text>
-          <Text style={styles.optionalNames} numberOfLines={2}>
-            {optionalNames}
-          </Text>
-        </View>
+      ) : extraNames ? (
+        <Text style={styles.optionalNames} numberOfLines={2}>
+          {extraNames}
+        </Text>
       ) : null}
     </TouchableOpacity>
   );
@@ -287,14 +267,6 @@ const styles = StyleSheet.create({
   },
   memberDone: {
     color: colors.label,
-  },
-  optionalBlock: {
-    gap: 2,
-  },
-  optionalTitle: {
-    color: colors.secondaryLabel,
-    fontSize: fontSize.small,
-    fontWeight: "600",
   },
   optionalNames: {
     color: colors.tertiaryLabel,

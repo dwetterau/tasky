@@ -20,7 +20,7 @@ import {
   SIGNAL_SOON_WINDOW_MS,
   useSignalClock,
 } from "@/lib/signals";
-import type { TaskyTagId } from "@/lib/taskyTags";
+import type { TaskyTag, TaskyTagId } from "@/lib/taskyTags";
 import {
   taskyApi,
   useTaskyAuth,
@@ -40,6 +40,29 @@ function memberKey(member: DraftMember): string {
   return member.type === "scorecard"
     ? `scorecard:${member.scorecardId}`
     : `signal:${member.signalId}`;
+}
+
+function tagSubtreeIds(
+  selected: TaskyTagId[],
+  tags: TaskyTag[],
+): Set<string> {
+  const byId = new Map(tags.map((tag) => [String(tag._id), tag] as const));
+  const ids = new Set<string>();
+  for (const tagId of selected) {
+    ids.add(String(tagId));
+    const tag = byId.get(String(tagId));
+    for (const childId of tag?.childrenRecursive ?? []) {
+      ids.add(String(childId));
+    }
+  }
+  return ids;
+}
+
+function sharesSelectedTag(
+  itemTagIds: readonly string[],
+  allowed: Set<string>,
+): boolean {
+  return itemTagIds.some((tagId) => allowed.has(String(tagId)));
 }
 
 export default function ScorecardEditPage() {
@@ -150,11 +173,36 @@ export default function ScorecardEditPage() {
     [members],
   );
 
-  const otherScorecards = useMemo(
-    () =>
-      (scorecards.data ?? []).filter((card) => card.id !== scorecardId),
-    [scorecardId, scorecards.data],
+  const allowedTagIds = useMemo(
+    () => tagSubtreeIds(tagIds, tags.data ?? []),
+    [tagIds, tags.data],
   );
+
+  const visibleSignals = useMemo(() => {
+    const listed = signals.data ?? [];
+    if (tagIds.length === 0) {
+      return listed;
+    }
+    return listed.filter(
+      (signal) =>
+        memberIds.has(`signal:${signal.id}`) ||
+        sharesSelectedTag(signal.tagIds, allowedTagIds),
+    );
+  }, [allowedTagIds, memberIds, signals.data, tagIds.length]);
+
+  const otherScorecards = useMemo(() => {
+    const listed = (scorecards.data ?? []).filter(
+      (card) => card.id !== scorecardId,
+    );
+    if (tagIds.length === 0) {
+      return listed;
+    }
+    return listed.filter(
+      (card) =>
+        memberIds.has(`scorecard:${card.id}`) ||
+        sharesSelectedTag(card.tagIds, allowedTagIds),
+    );
+  }, [allowedTagIds, memberIds, scorecardId, scorecards.data, tagIds.length]);
 
   const toggleSignal = (signalId: SignalId) => {
     const key = `signal:${signalId}`;
@@ -308,7 +356,7 @@ export default function ScorecardEditPage() {
           <Text style={sharedStyles.muted}>
             Required members must all be done. Optional members can fill a quota.
           </Text>
-          {(signals.data ?? []).map((signal) => {
+          {visibleSignals.map((signal) => {
             const key = `signal:${signal.id}`;
             const selected = memberIds.has(key);
             const member = members.find((item) => memberKey(item) === key);
@@ -337,8 +385,12 @@ export default function ScorecardEditPage() {
               </View>
             );
           })}
-          {(signals.data ?? []).length === 0 ? (
-            <Text style={sharedStyles.muted}>Create a signal first.</Text>
+          {visibleSignals.length === 0 ? (
+            <Text style={sharedStyles.muted}>
+              {tagIds.length > 0
+                ? "No signals match these tags."
+                : "Create a signal first."}
+            </Text>
           ) : null}
         </View>
 
@@ -379,9 +431,11 @@ export default function ScorecardEditPage() {
           })}
           {otherScorecards.length === 0 ? (
             <Text style={sharedStyles.muted}>
-              {scorecardId
-                ? "No other scorecards to nest."
-                : "Create another scorecard to nest it here."}
+              {tagIds.length > 0
+                ? "No scorecards match these tags."
+                : scorecardId
+                  ? "No other scorecards to nest."
+                  : "Create another scorecard to nest it here."}
             </Text>
           ) : null}
         </View>

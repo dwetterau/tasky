@@ -15,17 +15,31 @@ import { colors, fontSize, radius, spacing } from "@/lib/theme";
 
 type SignalAttention = SignalDashboardItem["evaluation"]["attention"];
 
-export function signalAttentionColor(attention: SignalAttention): ColorValue {
-  switch (attention) {
+export type StatusDotKind =
+  | SignalAttention
+  | "required"
+  | "behind"
+  | "idle";
+
+export function statusDotColor(kind: StatusDotKind): ColorValue {
+  switch (kind) {
+    case "ok":
+      return colors.systemGreen;
+    case "required":
+      return colors.systemRed;
     case "due":
+    case "behind":
       return colors.systemOrange;
     case "soon":
       return colors.systemBlue;
     case "unknown":
+    case "idle":
       return colors.systemGray;
-    case "ok":
-      return colors.systemGreen;
   }
+}
+
+export function signalAttentionColor(attention: SignalAttention): ColorValue {
+  return statusDotColor(attention);
 }
 
 export function SignalRow({
@@ -37,6 +51,7 @@ export function SignalRow({
   isSaving,
   compact = false,
   showsDisclosure = true,
+  statusDot,
 }: {
   signal: SignalDashboardItem;
   now: number;
@@ -46,8 +61,11 @@ export function SignalRow({
   isSaving?: boolean;
   compact?: boolean;
   showsDisclosure?: boolean;
+  statusDot?: StatusDotKind;
 }) {
-  const attentionColor = signalAttentionColor(signal.evaluation.attention);
+  const attentionColor = statusDotColor(
+    statusDot ?? signal.evaluation.attention,
+  );
   const detail = [
     signalPrimaryText(signal, now),
     signalSecondaryText(signal, now),

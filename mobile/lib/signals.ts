@@ -263,6 +263,66 @@ export function formatFuture(timestamp: number, now: number): string {
   return `due in ${days}d`;
 }
 
+export function memberContributionCount(
+  member: ScorecardItem["members"][number],
+): number {
+  if (member.evaluation.count !== undefined) {
+    return member.evaluation.count;
+  }
+  if (member.evaluation.periodProgress) {
+    return member.evaluation.periodProgress.completedCount;
+  }
+  return member.evaluation.isComplete ? 1 : 0;
+}
+
+export function scorecardHeadline(scorecard: ScorecardItem): string {
+  if (scorecard.targetCount !== undefined) {
+    return `${scorecard.evaluation.count} of ${scorecard.targetCount}`;
+  }
+  if (scorecard.optionalQuota > 0) {
+    const sessions = scorecard.evaluation.count;
+    const remainder =
+      scorecard.evaluation.optionalDoneCount % scorecard.optionalQuota;
+    const inBundle =
+      remainder === 0 && sessions > 0 ? scorecard.optionalQuota : remainder;
+    return `${sessions} this week · ${inBundle}/${scorecard.optionalQuota}`;
+  }
+  if (scorecard.evaluation.isComplete) {
+    return "Done";
+  }
+  const required = scorecard.members.filter(
+    (member) => member.role === "required",
+  );
+  if (required.length > 0) {
+    const done = required.filter((member) => member.evaluation.isComplete).length;
+    return `${done} of ${required.length}`;
+  }
+  return "Not done";
+}
+
+export function scorecardMemberDot(
+  member: ScorecardItem["members"][number],
+): "ok" | "required" | "behind" | "idle" {
+  if (member.evaluation.isComplete) {
+    return "ok";
+  }
+  const contributed = memberContributionCount(member) > 0;
+  if (member.role === "required") {
+    return contributed ? "behind" : "required";
+  }
+  return contributed ? "behind" : "idle";
+}
+
+export function nestedScorecardDetail(
+  member: ScorecardItem["members"][number],
+): string {
+  const count = memberContributionCount(member);
+  if (count > 0) {
+    return count === 1 ? "1 this week" : `${count} this week`;
+  }
+  return member.evaluation.isComplete ? "Done" : "None this week";
+}
+
 export function signalPrimaryText(
   signal: SignalDashboardItem,
   now: number,

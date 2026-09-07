@@ -33,7 +33,7 @@ const ATTENTION_ORDER: SignalAttention[] = ["due", "soon", "unknown", "ok"];
 const ATTENTION_TITLES: Record<SignalAttention, string> = {
   due: "Due",
   soon: "Coming up",
-  unknown: "New",
+  unknown: "Idle",
   ok: "On track",
 };
 
@@ -272,11 +272,7 @@ export default function SignalsPage() {
                       onPress={() => openSignal(signal.id)}
                       onQuickAction={() => void handleQuickAction(signal)}
                       quickActionLabel={
-                        signal.model.kind === "activity"
-                          ? (signal.model.measurementFields?.length ?? 0) > 0
-                            ? "Log"
-                            : "Done"
-                          : "Update"
+                        signal.model.kind === "activity" ? "Done" : "Update"
                       }
                       isSaving={savingId === signal.id}
                     />

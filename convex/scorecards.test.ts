@@ -507,7 +507,10 @@ describe("scorecards backend", () => {
           type: "scorecard",
           scorecardId: strengthId,
           name: "Lifting session",
-          evaluation: expect.objectContaining({ isComplete: true }),
+          evaluation: expect.objectContaining({
+            isComplete: true,
+            reason: "3 of 3",
+          }),
         }),
       ]),
     );

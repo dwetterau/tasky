@@ -9,11 +9,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SignalRow } from "@/components/SignalRow";
+import { SignalRow, statusDotColor } from "@/components/SignalRow";
 import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
+  nestedScorecardDetail,
+  scorecardHeadline,
+  scorecardMemberDot,
   SIGNAL_SOON_WINDOW_MS,
   type ScorecardItem,
   type SignalDashboardItem,
@@ -87,10 +90,17 @@ function MemberRow({
     return (
       <TouchableOpacity style={styles.fallbackRow} onPress={onOpen}>
         <Text style={styles.fallbackTitle}>{member.name}</Text>
-        <Text style={styles.fallbackDetail}>
-          {member.evaluation.reason ??
-            (member.evaluation.isComplete ? "Done" : "Not complete")}
-        </Text>
+        <View style={styles.fallbackDetailRow}>
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: statusDotColor(scorecardMemberDot(member)) },
+            ]}
+          />
+          <Text style={styles.fallbackDetail}>
+            {nestedScorecardDetail(member)}
+          </Text>
+        </View>
       </TouchableOpacity>
     );
   }
@@ -99,14 +109,11 @@ function MemberRow({
     <SignalRow
       signal={signal}
       now={now}
+      statusDot={scorecardMemberDot(member)}
       onPress={onOpen}
       onQuickAction={() => onQuickAction(signal)}
       quickActionLabel={
-        signal.model.kind === "activity"
-          ? (signal.model.measurementFields?.length ?? 0) > 0
-            ? "Log"
-            : "Done"
-          : "Update"
+        signal.model.kind === "activity" ? "Done" : "Update"
       }
       isSaving={savingId === signal.id}
     />
@@ -136,7 +143,7 @@ function MemberSection({
 
   return (
     <View style={styles.section}>
-      <Text style={sharedStyles.sectionTitle}>{title}</Text>
+      {title ? <Text style={sharedStyles.sectionTitle}>{title}</Text> : null}
       <View style={styles.listCard}>
         {members.map((member, index) => (
           <View key={memberKey(member)}>
@@ -212,12 +219,16 @@ export default function ScorecardPage() {
     [scorecard.data?.members],
   );
 
+  const openSignal = (signalId: string) => {
+    router.push(signalDetailsRoute(signalId));
+  };
+
   const openMember = (member: ScorecardItem["members"][number]) => {
     if (member.type === "scorecard") {
       router.push(scorecardDetailRoute(member.scorecardId));
       return;
     }
-    router.push(signalDetailsRoute(member.signalId));
+    openSignal(member.signalId);
   };
 
   const handleQuickAction = async (signal: SignalDashboardItem) => {
@@ -276,13 +287,8 @@ export default function ScorecardPage() {
     );
   }
 
-  const quota = card.optionalQuota;
-  const blocking =
-    card.targetCount !== undefined
-      ? `${card.evaluation.count} of ${card.targetCount}`
-      : quota > 0
-        ? `${card.evaluation.optionalDoneCount} of ${quota} optionals`
-        : undefined;
+  const counted = card.targetCount !== undefined;
+  const listedMembers = counted ? card.members : [...required, ...optional];
 
   return (
     <>
@@ -316,7 +322,7 @@ export default function ScorecardPage() {
         <View style={sharedStyles.card}>
           <View style={styles.summaryHeader}>
             <Text style={styles.summaryStatus}>
-              {card.evaluation.isComplete ? "Done" : (blocking ?? "Not done")}
+              {scorecardHeadline(card)}
             </Text>
             <Text style={styles.percent}>
               {formatPercent(card.evaluation.ratio)}
@@ -337,28 +343,38 @@ export default function ScorecardPage() {
           </View>
         </View>
 
-        <MemberSection
-          title="Required"
-          members={required}
-          signalById={signalById}
-          now={now}
-          savingId={savingId}
-          onOpen={openMember}
-          onQuickAction={(signal) => void handleQuickAction(signal)}
-        />
-        <MemberSection
-          title={
-            optional.length > 0
-              ? `Optional · ${optional.filter((member) => member.evaluation.isComplete).length} of ${optional.length} done`
-              : "Optional"
-          }
-          members={optional}
-          signalById={signalById}
-          now={now}
-          savingId={savingId}
-          onOpen={openMember}
-          onQuickAction={(signal) => void handleQuickAction(signal)}
-        />
+        {counted ? (
+          <MemberSection
+            title=""
+            members={listedMembers}
+            signalById={signalById}
+            now={now}
+            savingId={savingId}
+            onOpen={openMember}
+            onQuickAction={(signal) => void handleQuickAction(signal)}
+          />
+        ) : (
+          <>
+            <MemberSection
+              title={required.length > 0 ? "Required" : ""}
+              members={required}
+              signalById={signalById}
+              now={now}
+              savingId={savingId}
+              onOpen={openMember}
+              onQuickAction={(signal) => void handleQuickAction(signal)}
+            />
+            <MemberSection
+              title=""
+              members={optional}
+              signalById={signalById}
+              now={now}
+              savingId={savingId}
+              onOpen={openMember}
+              onQuickAction={(signal) => void handleQuickAction(signal)}
+            />
+          </>
+        )}
 
         {error || scorecard.error || signals.error ? (
           <Text style={sharedStyles.error}>
@@ -430,6 +446,16 @@ const styles = StyleSheet.create({
     color: colors.label,
     fontSize: fontSize.body,
     fontWeight: "600",
+  },
+  fallbackDetailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs + 2,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: radius.pill,
   },
   fallbackDetail: {
     color: colors.secondaryLabel,

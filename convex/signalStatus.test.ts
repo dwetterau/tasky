@@ -114,7 +114,7 @@ describe("signal status evaluation", () => {
     };
 
     expect(evaluateSignal(model, 10 * DAY_MS, DAY_MS, progress)).toMatchObject({
-      attention: "ok",
+      attention: "unknown",
       reason: "No activity this week",
       ratio: 0,
       isComplete: false,
