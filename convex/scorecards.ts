@@ -9,8 +9,19 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
-import { activityPeriod, scorecardMember, signalAttention } from "./schema";
+import {
+  activityPeriod,
+  scorecardMemberInput,
+  signalAttention,
+} from "./schema";
 import { evaluateScorecard } from "./lib/scorecardStatus";
+import {
+  isNestedMember,
+  memberKey,
+  normalizeMember,
+  type LooseScorecardMember,
+  type NormalizedScorecardMember,
+} from "./lib/scorecardMembers";
 import {
   DAY_MS,
   evaluateSignal,
@@ -68,22 +79,35 @@ const signalEvaluationValidator = v.object({
   confirmedAt: v.optional(v.number()),
   isProjected: v.optional(v.boolean()),
   nextFlowAt: v.optional(v.number()),
+  count: v.optional(v.number()),
   ratio: v.number(),
   isComplete: v.boolean(),
 });
 
-const scorecardMemberItemValidator = v.object({
-  signalId: v.id("signals"),
-  role: v.union(v.literal("required"), v.literal("optional")),
-  name: v.string(),
-  archived: v.boolean(),
-  evaluation: signalEvaluationValidator,
-});
+const scorecardMemberItemValidator = v.union(
+  v.object({
+    type: v.literal("signal"),
+    signalId: v.id("signals"),
+    role: v.union(v.literal("required"), v.literal("optional")),
+    name: v.string(),
+    archived: v.boolean(),
+    evaluation: signalEvaluationValidator,
+  }),
+  v.object({
+    type: v.literal("scorecard"),
+    scorecardId: v.id("scorecards"),
+    role: v.union(v.literal("required"), v.literal("optional")),
+    name: v.string(),
+    archived: v.boolean(),
+    evaluation: signalEvaluationValidator,
+  }),
+);
 
 const scorecardEvaluationValidator = v.object({
   ratio: v.number(),
   isComplete: v.boolean(),
   optionalDoneCount: v.number(),
+  count: v.number(),
 });
 
 const scorecardItemValidator = v.object({
@@ -94,6 +118,7 @@ const scorecardItemValidator = v.object({
   tags: v.array(scorecardTagValidator),
   members: v.array(scorecardMemberItemValidator),
   optionalQuota: v.number(),
+  targetCount: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
   archivedAt: v.optional(v.number()),
@@ -105,16 +130,18 @@ const manageOperationInput = v.union(
     type: v.literal("scorecard.create"),
     name: v.string(),
     tagIds: v.array(v.id("tags")),
-    members: v.array(scorecardMember),
+    members: v.array(scorecardMemberInput),
     optionalQuota: v.number(),
+    targetCount: v.optional(v.number()),
   }),
   v.object({
     type: v.literal("scorecard.update"),
     scorecardId: v.id("scorecards"),
     name: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
-    members: v.optional(v.array(scorecardMember)),
+    members: v.optional(v.array(scorecardMemberInput)),
     optionalQuota: v.optional(v.number()),
+    targetCount: v.optional(v.union(v.number(), v.null())),
   }),
   v.object({
     type: v.literal("scorecard.archive"),
@@ -128,22 +155,18 @@ type ManageOperationInput =
       type: "scorecard.create";
       name: string;
       tagIds: Id<"tags">[];
-      members: Array<{
-        signalId: Id<"signals">;
-        role: "required" | "optional";
-      }>;
+      members: LooseScorecardMember[];
       optionalQuota: number;
+      targetCount?: number;
     }
   | {
       type: "scorecard.update";
       scorecardId: Id<"scorecards">;
       name?: string;
       tagIds?: Id<"tags">[];
-      members?: Array<{
-        signalId: Id<"signals">;
-        role: "required" | "optional";
-      }>;
+      members?: LooseScorecardMember[];
       optionalQuota?: number;
+      targetCount?: number | null;
     }
   | {
       type: "scorecard.archive";
@@ -161,14 +184,26 @@ type ScorecardItem = {
     name: string;
     color?: string;
   }>;
-  members: Array<{
-    signalId: Id<"signals">;
-    role: "required" | "optional";
-    name: string;
-    archived: boolean;
-    evaluation: ReturnType<typeof evaluateSignal>;
-  }>;
+  members: Array<
+    | {
+        type: "signal";
+        signalId: Id<"signals">;
+        role: "required" | "optional";
+        name: string;
+        archived: boolean;
+        evaluation: ReturnType<typeof evaluateSignal> & { count?: number };
+      }
+    | {
+        type: "scorecard";
+        scorecardId: Id<"scorecards">;
+        role: "required" | "optional";
+        name: string;
+        archived: boolean;
+        evaluation: ReturnType<typeof evaluateSignal> & { count?: number };
+      }
+  >;
   optionalQuota: number;
+  targetCount?: number;
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;
@@ -372,45 +407,89 @@ function missingSignalEvaluation() {
   );
 }
 
+async function assertNoScorecardCycle(
+  ctx: QueryCtx | MutationCtx,
+  parentId: Id<"scorecards"> | undefined,
+  members: NormalizedScorecardMember[],
+): Promise<void> {
+  const nestedIds = members
+    .filter(isNestedMember)
+    .map((member) => member.scorecardId);
+  if (parentId !== undefined && nestedIds.includes(parentId)) {
+    throw new Error("A scorecard cannot contain itself");
+  }
+
+  async function walk(
+    scorecardId: Id<"scorecards">,
+    path: Set<Id<"scorecards">>,
+  ): Promise<void> {
+    if (parentId !== undefined && scorecardId === parentId) {
+      throw new Error("Scorecard members cannot form a cycle");
+    }
+    if (path.has(scorecardId)) {
+      return;
+    }
+    const child = await ctx.db.get("scorecards", scorecardId);
+    if (!child) {
+      return;
+    }
+    const nextPath = new Set(path);
+    nextPath.add(scorecardId);
+    for (const member of child.members) {
+      const normalized = normalizeMember(member);
+      if (normalized.type === "scorecard") {
+        await walk(normalized.scorecardId, nextPath);
+      }
+    }
+  }
+
+  const rootPath = new Set<Id<"scorecards">>(
+    parentId === undefined ? [] : [parentId],
+  );
+  for (const scorecardId of nestedIds) {
+    await walk(scorecardId, rootPath);
+  }
+}
+
 async function normalizeMembers(
   ctx: QueryCtx | MutationCtx,
   userId: string,
-  members: Array<{
-    signalId: Id<"signals">;
-    role: "required" | "optional";
-  }>,
+  members: LooseScorecardMember[],
   optionalQuota: number,
-): Promise<
-  Array<{
-    signalId: Id<"signals">;
-    role: "required" | "optional";
-  }>
-> {
+  parentId?: Id<"scorecards">,
+): Promise<NormalizedScorecardMember[]> {
   if (members.length === 0) {
     throw new Error("Scorecard must have at least one member");
   }
-  const seen = new Set<Id<"signals">>();
-  const normalized: Array<{
-    signalId: Id<"signals">;
-    role: "required" | "optional";
-  }> = [];
+  const seen = new Set<string>();
+  const normalized: NormalizedScorecardMember[] = [];
   for (const member of members) {
-    if (seen.has(member.signalId)) {
+    const next = normalizeMember(member);
+    const key = memberKey(next);
+    if (seen.has(key)) {
       throw new Error("Scorecard members must be unique");
     }
-    seen.add(member.signalId);
-    const signal = await ctx.db.get("signals", member.signalId);
-    if (!signal || signal.userId !== userId) {
-      throw new Error("One or more signals are invalid for this user");
+    seen.add(key);
+    if (next.type === "signal") {
+      const signal = await ctx.db.get("signals", next.signalId);
+      if (!signal || signal.userId !== userId) {
+        throw new Error("One or more signals are invalid for this user");
+      }
+      if (signal.archivedAt !== undefined) {
+        throw new Error("Archived signals cannot be added to a scorecard");
+      }
+    } else {
+      const child = await ctx.db.get("scorecards", next.scorecardId);
+      if (!child || child.userId !== userId) {
+        throw new Error("One or more scorecards are invalid for this user");
+      }
+      if (child.archivedAt !== undefined) {
+        throw new Error("Archived scorecards cannot be added to a scorecard");
+      }
     }
-    if (signal.archivedAt !== undefined) {
-      throw new Error("Archived signals cannot be added to a scorecard");
-    }
-    normalized.push({
-      signalId: member.signalId,
-      role: member.role,
-    });
+    normalized.push(next);
   }
+  await assertNoScorecardCycle(ctx, parentId, normalized);
   const optionalCount = normalized.filter(
     (member) => member.role === "optional",
   ).length;
@@ -422,6 +501,31 @@ async function normalizeMembers(
     throw new Error("optionalQuota cannot exceed the number of optional members");
   }
   return normalized;
+}
+
+function normalizeTargetCount(
+  targetCount: number | null | undefined,
+): number | undefined {
+  if (targetCount === undefined || targetCount === null) {
+    return undefined;
+  }
+  assertFiniteNumber(targetCount, "targetCount");
+  if (!Number.isInteger(targetCount) || targetCount < 1) {
+    throw new Error("targetCount must be a positive integer");
+  }
+  return targetCount;
+}
+
+function memberContributionCount(
+  evaluation: ReturnType<typeof evaluateSignal> & { count?: number },
+): number {
+  if (evaluation.count !== undefined && Number.isFinite(evaluation.count)) {
+    return Math.max(0, evaluation.count);
+  }
+  if (evaluation.periodProgress) {
+    return evaluation.periodProgress.completedCount;
+  }
+  return evaluation.isComplete ? 1 : 0;
 }
 
 async function hydrateTags(
@@ -441,6 +545,27 @@ async function hydrateTags(
     }));
 }
 
+function nestedMemberEvaluation(
+  name: string,
+  evaluation: ReturnType<typeof evaluateScorecard>,
+  optionalQuota: number,
+  targetCount?: number,
+): ReturnType<typeof evaluateSignal> & { count?: number } {
+  return {
+    attention: evaluation.isComplete ? "ok" : "due",
+    reason: evaluation.isComplete
+      ? `${name} is complete`
+      : targetCount !== undefined
+        ? `${evaluation.count} of ${targetCount} sessions done`
+        : optionalQuota > 0
+          ? `${evaluation.optionalDoneCount} of ${optionalQuota} optionals done`
+          : `${name} is not complete`,
+    count: evaluation.count,
+    ratio: evaluation.ratio,
+    isComplete: evaluation.isComplete,
+  };
+}
+
 async function toScorecardItem(
   ctx: QueryCtx | MutationCtx,
   userId: string,
@@ -448,35 +573,86 @@ async function toScorecardItem(
   now: number,
   soonWindowMs: number,
   periodBounds: PeriodBounds,
+  visiting: Set<Id<"scorecards">> = new Set(),
 ): Promise<ScorecardItem> {
   const tags = await hydrateTags(ctx, userId, scorecard.tagIds);
+  const nextVisiting = new Set(visiting);
+  nextVisiting.add(scorecard._id);
   const members = await Promise.all(
     scorecard.members.map(async (member) => {
-      const signal = await ctx.db.get("signals", member.signalId);
-      if (!signal || signal.userId !== userId) {
+      const normalized = normalizeMember(member);
+      if (normalized.type === "signal") {
+        const signal = await ctx.db.get("signals", normalized.signalId);
+        if (!signal || signal.userId !== userId) {
+          return {
+            type: "signal" as const,
+            signalId: normalized.signalId,
+            role: normalized.role,
+            name: "Unknown signal",
+            archived: true,
+            evaluation: missingSignalEvaluation(),
+          };
+        }
+        const periodProgress = await getActivityPeriodProgress(
+          ctx,
+          signal,
+          periodBounds,
+        );
         return {
-          signalId: member.signalId,
-          role: member.role,
-          name: "Unknown signal",
+          type: "signal" as const,
+          signalId: signal._id,
+          role: normalized.role,
+          name: signal.name,
+          archived: signal.archivedAt !== undefined,
+          evaluation: evaluateSignal(
+            signal.model,
+            now,
+            soonWindowMs,
+            periodProgress,
+          ),
+        };
+      }
+      if (nextVisiting.has(normalized.scorecardId)) {
+        return {
+          type: "scorecard" as const,
+          scorecardId: normalized.scorecardId,
+          role: normalized.role,
+          name: "Cyclic scorecard",
           archived: true,
           evaluation: missingSignalEvaluation(),
         };
       }
-      const periodProgress = await getActivityPeriodProgress(
+      const child = await ctx.db.get("scorecards", normalized.scorecardId);
+      if (!child || child.userId !== userId) {
+        return {
+          type: "scorecard" as const,
+          scorecardId: normalized.scorecardId,
+          role: normalized.role,
+          name: "Unknown scorecard",
+          archived: true,
+          evaluation: missingSignalEvaluation(),
+        };
+      }
+      const childItem = await toScorecardItem(
         ctx,
-        signal,
+        userId,
+        child,
+        now,
+        soonWindowMs,
         periodBounds,
+        nextVisiting,
       );
       return {
-        signalId: signal._id,
-        role: member.role,
-        name: signal.name,
-        archived: signal.archivedAt !== undefined,
-        evaluation: evaluateSignal(
-          signal.model,
-          now,
-          soonWindowMs,
-          periodProgress,
+        type: "scorecard" as const,
+        scorecardId: child._id,
+        role: normalized.role,
+        name: child.name,
+        archived: child.archivedAt !== undefined,
+        evaluation: nestedMemberEvaluation(
+          child.name,
+          childItem.evaluation,
+          child.optionalQuota,
+          child.targetCount,
         ),
       };
     }),
@@ -489,6 +665,7 @@ async function toScorecardItem(
     tags,
     members,
     optionalQuota: scorecard.optionalQuota,
+    targetCount: scorecard.targetCount,
     createdAt: scorecard.createdAt,
     updatedAt: scorecard.updatedAt,
     archivedAt: scorecard.archivedAt,
@@ -496,8 +673,10 @@ async function toScorecardItem(
       members.map((member) => ({
         role: member.role,
         ratio: member.evaluation.ratio,
+        count: memberContributionCount(member.evaluation),
       })),
       scorecard.optionalQuota,
+      scorecard.targetCount,
     ),
   };
 }
@@ -574,11 +753,9 @@ async function createScorecardForUser(
     userId: string;
     name: string;
     tagIds: Id<"tags">[];
-    members: Array<{
-      signalId: Id<"signals">;
-      role: "required" | "optional";
-    }>;
+    members: LooseScorecardMember[];
     optionalQuota: number;
+    targetCount?: number;
     tagRootId?: Id<"tags">;
     now: number;
   },
@@ -597,12 +774,14 @@ async function createScorecardForUser(
     args.members,
     args.optionalQuota,
   );
+  const targetCount = normalizeTargetCount(args.targetCount);
   return await ctx.db.insert("scorecards", {
     userId: args.userId,
     name,
     tagIds,
     members,
     optionalQuota: args.optionalQuota,
+    ...(targetCount !== undefined ? { targetCount } : {}),
     createdAt: args.now,
     updatedAt: args.now,
   });
@@ -615,11 +794,9 @@ async function updateScorecardForUser(
     scorecardId: Id<"scorecards">;
     name?: string;
     tagIds?: Id<"tags">[];
-    members?: Array<{
-      signalId: Id<"signals">;
-      role: "required" | "optional";
-    }>;
+    members?: LooseScorecardMember[];
     optionalQuota?: number;
+    targetCount?: number | null;
     tagRootId?: Id<"tags">;
     now: number;
   },
@@ -656,12 +833,18 @@ async function updateScorecardForUser(
     args.userId,
     membersInput,
     optionalQuota,
+    args.scorecardId,
   );
+  const targetCount =
+    args.targetCount === undefined
+      ? scorecard.targetCount
+      : normalizeTargetCount(args.targetCount);
   await ctx.db.patch("scorecards", scorecard._id, {
     name,
     tagIds,
     members,
     optionalQuota,
+    targetCount,
     updatedAt: args.now,
   });
 }
@@ -779,8 +962,9 @@ export const create = mutation({
   args: {
     name: v.string(),
     tagIds: v.array(v.id("tags")),
-    members: v.array(scorecardMember),
+    members: v.array(scorecardMemberInput),
     optionalQuota: v.number(),
+    targetCount: v.optional(v.number()),
   },
   returns: v.id("scorecards"),
   handler: async (ctx, args) => {
@@ -801,8 +985,9 @@ export const update = mutation({
     scorecardId: v.id("scorecards"),
     name: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
-    members: v.optional(v.array(scorecardMember)),
+    members: v.optional(v.array(scorecardMemberInput)),
     optionalQuota: v.optional(v.number()),
+    targetCount: v.optional(v.union(v.number(), v.null())),
   },
   returns: v.null(),
   handler: async (ctx, args) => {

@@ -63,6 +63,30 @@ export const backfillTaskTagLinksAndHasTags = migrations.define({
   },
 });
 
+export const backfillScorecardMemberType = migrations.define({
+  table: "scorecards",
+  batchSize: 50,
+  migrateOne: (_ctx, scorecard) => {
+    let changed = false;
+    const members = scorecard.members.map((member) => {
+      if (member.type === "signal" || member.type === "scorecard") {
+        return member;
+      }
+      const legacy = member as {
+        signalId: import("./_generated/dataModel").Id<"signals">;
+        role: "required" | "optional";
+      };
+      changed = true;
+      return {
+        type: "signal" as const,
+        signalId: legacy.signalId,
+        role: legacy.role,
+      };
+    });
+    return changed ? { members } : undefined;
+  },
+});
+
 // General-purpose runner - can run any migration by name
 // Usage: npx convex run migrations:run '{"fn": "migrations:backfillTaskTagLinksAndHasTags"}'
 export const run = migrations.runner();
@@ -72,4 +96,5 @@ export const run = migrations.runner();
 export const runAll = migrations.runner([
   internal.migrations.backfillTaskStatusUpdatedAt,
   internal.migrations.backfillTaskTagLinksAndHasTags,
+  internal.migrations.backfillScorecardMemberType,
 ]);

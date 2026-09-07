@@ -10,6 +10,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
+import { normalizeMember } from "./lib/scorecardMembers";
 import {
   activityMeasurementField,
   activityMeasurements,
@@ -689,13 +690,17 @@ async function loadScorecardMemberships(
   >();
   for (const scorecard of scorecards) {
     for (const member of scorecard.members) {
-      const existing = memberships.get(member.signalId) ?? [];
+      const normalized = normalizeMember(member);
+      if (normalized.type !== "signal") {
+        continue;
+      }
+      const existing = memberships.get(normalized.signalId) ?? [];
       existing.push({
         id: scorecard._id,
         name: scorecard.name,
-        role: member.role,
+        role: normalized.role,
       });
-      memberships.set(member.signalId, existing);
+      memberships.set(normalized.signalId, existing);
     }
   }
   return memberships;

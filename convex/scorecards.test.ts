@@ -354,4 +354,346 @@ describe("scorecards backend", () => {
       }),
     ).rejects.toThrow(/authorized tag root/);
   });
+
+  it("nests scorecards, rejects cycles, and writes type on legacy input", async () => {
+    const t = convexTest(schema, modules);
+    const periodBounds = {
+      day: { startAt: 10 * DAY_MS, endAt: 11 * DAY_MS },
+      week: { startAt: 7 * DAY_MS, endAt: 14 * DAY_MS },
+    };
+    const squat = await createActivity(t, "Squats", {
+      type: "period",
+      period: "week",
+      targetCount: 0,
+    });
+    const bench = await createActivity(t, "Bench", {
+      type: "period",
+      period: "week",
+      targetCount: 0,
+    });
+    const row = await createActivity(t, "Row", {
+      type: "period",
+      period: "week",
+      targetCount: 0,
+    });
+    const run = await createActivity(t, "Run", {
+      type: "period",
+      period: "week",
+      targetCount: 0,
+    });
+
+    const { scorecardId: strengthId } = await t.mutation(
+      internal.scorecards.manageFromMcp,
+      {
+        userId: "user-1",
+        now: 10 * DAY_MS,
+        operation: {
+          type: "scorecard.create",
+          name: "Lifting session",
+          tagIds: [],
+          members: [
+            { type: "signal", signalId: squat.signalId, role: "optional" },
+            { type: "signal", signalId: bench.signalId, role: "optional" },
+            { type: "signal", signalId: row.signalId, role: "optional" },
+          ],
+          optionalQuota: 3,
+        },
+      },
+    );
+    const { scorecardId: exerciseId } = await t.mutation(
+      internal.scorecards.manageFromMcp,
+      {
+        userId: "user-1",
+        now: 10 * DAY_MS,
+        operation: {
+          type: "scorecard.create",
+          name: "Exercise",
+          tagIds: [],
+          members: [
+            { type: "signal", signalId: run.signalId, role: "optional" },
+            { type: "scorecard", scorecardId: strengthId, role: "optional" },
+          ],
+          optionalQuota: 1,
+        },
+      },
+    );
+
+    await expect(
+      t.mutation(internal.scorecards.manageFromMcp, {
+        userId: "user-1",
+        now: 10 * DAY_MS,
+        operation: {
+          type: "scorecard.update",
+          scorecardId: strengthId,
+          members: [
+            { type: "scorecard", scorecardId: exerciseId, role: "optional" },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/cycle/);
+
+    await expect(
+      t.mutation(internal.scorecards.manageFromMcp, {
+        userId: "user-1",
+        now: 10 * DAY_MS,
+        operation: {
+          type: "scorecard.update",
+          scorecardId: exerciseId,
+          members: [
+            { type: "scorecard", scorecardId: exerciseId, role: "optional" },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/itself/);
+
+    const stored = await t.run(async (ctx) => {
+      return await ctx.db.get("scorecards", strengthId);
+    });
+    expect(stored?.members).toEqual([
+      { type: "signal", signalId: squat.signalId, role: "optional" },
+      { type: "signal", signalId: bench.signalId, role: "optional" },
+      { type: "signal", signalId: row.signalId, role: "optional" },
+    ]);
+
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: squat.signalId,
+      idempotencyKey: "squat-1",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: bench.signalId,
+      idempotencyKey: "bench-1",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: row.signalId,
+      idempotencyKey: "row-1",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+
+    const listed = await t.query(internal.scorecards.listForMcp, {
+      userId: "user-1",
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    const exercise = listed.scorecards.find((card) => card.id === exerciseId);
+    const strength = listed.scorecards.find((card) => card.id === strengthId);
+    expect(strength?.evaluation).toMatchObject({
+      isComplete: true,
+      optionalDoneCount: 3,
+      count: 1,
+    });
+    expect(exercise?.evaluation).toMatchObject({
+      isComplete: true,
+      optionalDoneCount: 1,
+      count: 1,
+    });
+    expect(exercise?.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "scorecard",
+          scorecardId: strengthId,
+          name: "Lifting session",
+          evaluation: expect.objectContaining({ isComplete: true }),
+        }),
+      ]),
+    );
+
+    const { scorecardId: legacyCreateId } = await t.mutation(
+      internal.scorecards.manageFromMcp,
+      {
+        userId: "user-1",
+        now: 10 * DAY_MS,
+        operation: {
+          type: "scorecard.create",
+          name: "Legacy input",
+          tagIds: [],
+          members: [{ signalId: run.signalId, role: "required" }],
+          optionalQuota: 0,
+        },
+      },
+    );
+    const written = await t.run(async (ctx) => {
+      return await ctx.db.get("scorecards", legacyCreateId);
+    });
+    expect(written?.members).toEqual([
+      { type: "signal", signalId: run.signalId, role: "required" },
+    ]);
+  });
+
+  it("sums period and nested counts against targetCount", async () => {
+    const t = convexTest(schema, modules);
+    const periodBounds = {
+      day: { startAt: 10 * DAY_MS, endAt: 11 * DAY_MS },
+      week: { startAt: 7 * DAY_MS, endAt: 14 * DAY_MS },
+    };
+    const run = await createActivity(t, "Run", {
+      type: "period",
+      period: "week",
+      targetCount: 2,
+    });
+    const climb = await createActivity(t, "Climb", {
+      type: "period",
+      period: "week",
+      targetCount: 0,
+    });
+    const squat = await createActivity(t, "Squats", {
+      type: "period",
+      period: "week",
+      targetCount: 0,
+    });
+    const bench = await createActivity(t, "Bench", {
+      type: "period",
+      period: "week",
+      targetCount: 0,
+    });
+    const row = await createActivity(t, "Row", {
+      type: "period",
+      period: "week",
+      targetCount: 0,
+    });
+
+    const { scorecardId: liftingId } = await t.mutation(
+      internal.scorecards.manageFromMcp,
+      {
+        userId: "user-1",
+        now: 10 * DAY_MS,
+        operation: {
+          type: "scorecard.create",
+          name: "Lifting session",
+          tagIds: [],
+          members: [
+            { type: "signal", signalId: squat.signalId, role: "optional" },
+            { type: "signal", signalId: bench.signalId, role: "optional" },
+            { type: "signal", signalId: row.signalId, role: "optional" },
+          ],
+          optionalQuota: 3,
+        },
+      },
+    );
+    const { scorecardId: exerciseId } = await t.mutation(
+      internal.scorecards.manageFromMcp,
+      {
+        userId: "user-1",
+        now: 10 * DAY_MS,
+        operation: {
+          type: "scorecard.create",
+          name: "Exercise",
+          tagIds: [],
+          members: [
+            { type: "signal", signalId: run.signalId, role: "optional" },
+            { type: "signal", signalId: climb.signalId, role: "optional" },
+            { type: "scorecard", scorecardId: liftingId, role: "optional" },
+          ],
+          optionalQuota: 0,
+          targetCount: 5,
+        },
+      },
+    );
+
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: run.signalId,
+      idempotencyKey: "run-1",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: run.signalId,
+      idempotencyKey: "run-2",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS + 1,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: climb.signalId,
+      idempotencyKey: "climb-1",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: squat.signalId,
+      idempotencyKey: "squat-1",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: bench.signalId,
+      idempotencyKey: "bench-1",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: row.signalId,
+      idempotencyKey: "row-1",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+
+    const listed = await t.query(internal.scorecards.listForMcp, {
+      userId: "user-1",
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    const exercise = listed.scorecards.find((card) => card.id === exerciseId);
+    expect(exercise?.targetCount).toBe(5);
+    expect(exercise?.evaluation).toMatchObject({
+      isComplete: false,
+      count: 4,
+      ratio: 4 / 5,
+    });
+
+    await t.mutation(internal.signals.recordFromMcp, {
+      userId: "user-1",
+      signalId: run.signalId,
+      idempotencyKey: "run-3",
+      operation: { type: "activity.occurred" },
+      now: 10 * DAY_MS + 2,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    const complete = await t.query(internal.scorecards.listForMcp, {
+      userId: "user-1",
+      now: 10 * DAY_MS,
+      soonWindowMs: DAY_MS,
+      periodBounds,
+    });
+    expect(
+      complete.scorecards.find((card) => card.id === exerciseId)?.evaluation,
+    ).toMatchObject({
+      isComplete: true,
+      count: 5,
+      ratio: 1,
+    });
+  });
 });

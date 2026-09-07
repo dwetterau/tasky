@@ -58,11 +58,13 @@ function ScorecardRow({ scorecard }: { scorecard: ScorecardItem }) {
     .map((member) => member.name)
     .join(" · ");
   const subtitle =
-    scorecard.optionalQuota > 0
-      ? `${scorecard.evaluation.optionalDoneCount} of ${scorecard.optionalQuota} optionals`
-      : required.length > 0
-        ? `${required.length} required`
-        : undefined;
+    scorecard.targetCount !== undefined
+      ? `${scorecard.evaluation.count} of ${scorecard.targetCount}`
+      : scorecard.optionalQuota > 0
+        ? `${scorecard.evaluation.optionalDoneCount} of ${scorecard.optionalQuota} optionals`
+        : required.length > 0
+          ? `${required.length} required`
+          : undefined;
 
   return (
     <TouchableOpacity
@@ -100,7 +102,11 @@ function ScorecardRow({ scorecard }: { scorecard: ScorecardItem }) {
         <View style={styles.members}>
           {required.map((member) => (
             <Text
-              key={member.signalId}
+              key={
+                member.type === "scorecard"
+                  ? member.scorecardId
+                  : member.signalId
+              }
               style={[
                 styles.member,
                 member.evaluation.isComplete && styles.memberDone,
