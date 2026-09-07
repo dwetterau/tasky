@@ -1,6 +1,14 @@
-# Dailies 
+# Tasky mobile
 
-This is a react-native app that allows for updating the dailies information in Convex.
+Expo / React Native iOS client for Tasky. Run it from `tasky/mobile`.
+
+```bash
+npm install
+cd ios && pod install && cd ..
+npm run ios:dev
+```
+
+`pod install` is required after a fresh checkout (or after moving this folder). CocoaPods bakes in absolute paths.
 
 ## Dev:
 

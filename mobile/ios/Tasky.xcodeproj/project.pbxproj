@@ -12,24 +12,24 @@
 		300B2AA99C4ADBF2C5BE4076 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D5B475847A6A82776C7E0820 /* PrivacyInfo.xcprivacy */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		EE615BD67D6806852442BD64 /* libPods-Dailiesexpo.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B09E570CC66183DCB45B36D9 /* libPods-Dailiesexpo.a */; };
+		EE615BD67D6806852442BD64 /* libPods-Tasky.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B09E570CC66183DCB45B36D9 /* libPods-Tasky.a */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		13B07F961A680F5B00A75B9A /* Dailiesexpo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dailiesexpo.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Dailiesexpo/Images.xcassets; sourceTree = "<group>"; };
-		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Dailiesexpo/Info.plist; sourceTree = "<group>"; };
-		4A054668BCD4993E8F5CBD6C /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Dailiesexpo/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		65DE0FBA0360C760EF1FA418 /* Pods-Dailiesexpo.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dailiesexpo.debug.xcconfig"; path = "Target Support Files/Pods-Dailiesexpo/Pods-Dailiesexpo.debug.xcconfig"; sourceTree = "<group>"; };
-		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Dailiesexpo/SplashScreen.storyboard; sourceTree = "<group>"; };
-		B09E570CC66183DCB45B36D9 /* libPods-Dailiesexpo.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Dailiesexpo.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		13B07F961A680F5B00A75B9A /* Tasky.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tasky.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Tasky/Images.xcassets; sourceTree = "<group>"; };
+		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Tasky/Info.plist; sourceTree = "<group>"; };
+		4A054668BCD4993E8F5CBD6C /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Tasky/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		65DE0FBA0360C760EF1FA418 /* Pods-Tasky.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Tasky.debug.xcconfig"; path = "Target Support Files/Pods-Tasky/Pods-Tasky.debug.xcconfig"; sourceTree = "<group>"; };
+		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Tasky/SplashScreen.storyboard; sourceTree = "<group>"; };
+		B09E570CC66183DCB45B36D9 /* libPods-Tasky.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Tasky.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		C9D0ABA99E839704F0348B23 /* Pods-Dailiesexpo.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dailiesexpo.release.xcconfig"; path = "Target Support Files/Pods-Dailiesexpo/Pods-Dailiesexpo.release.xcconfig"; sourceTree = "<group>"; };
-		D5B475847A6A82776C7E0820 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Dailiesexpo/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		C9D0ABA99E839704F0348B23 /* Pods-Tasky.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Tasky.release.xcconfig"; path = "Target Support Files/Pods-Tasky/Pods-Tasky.release.xcconfig"; sourceTree = "<group>"; };
+		D5B475847A6A82776C7E0820 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Tasky/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
-		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Dailiesexpo/AppDelegate.swift; sourceTree = "<group>"; };
-		F11748442D0722820044C1D9 /* Dailiesexpo-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Dailiesexpo-Bridging-Header.h"; path = "Dailiesexpo/Dailiesexpo-Bridging-Header.h"; sourceTree = "<group>"; };
+		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Tasky/AppDelegate.swift; sourceTree = "<group>"; };
+		F11748442D0722820044C1D9 /* Tasky-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Tasky-Bridging-Header.h"; path = "Tasky/Tasky-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -37,49 +37,49 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EE615BD67D6806852442BD64 /* libPods-Dailiesexpo.a in Frameworks */,
+				EE615BD67D6806852442BD64 /* libPods-Tasky.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		13B07FAE1A68108700A75B9A /* Dailiesexpo */ = {
+		13B07FAE1A68108700A75B9A /* Tasky */ = {
 			isa = PBXGroup;
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
-				F11748442D0722820044C1D9 /* Dailiesexpo-Bridging-Header.h */,
+				F11748442D0722820044C1D9 /* Tasky-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
 				D5B475847A6A82776C7E0820 /* PrivacyInfo.xcprivacy */,
 			);
-			name = Dailiesexpo;
+			name = Tasky;
 			sourceTree = "<group>";
 		};
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				B09E570CC66183DCB45B36D9 /* libPods-Dailiesexpo.a */,
+				B09E570CC66183DCB45B36D9 /* libPods-Tasky.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		6006CD5CB662648A33233FAD /* Dailiesexpo */ = {
+		6006CD5CB662648A33233FAD /* Tasky */ = {
 			isa = PBXGroup;
 			children = (
 				4A054668BCD4993E8F5CBD6C /* ExpoModulesProvider.swift */,
 			);
-			name = Dailiesexpo;
+			name = Tasky;
 			sourceTree = "<group>";
 		};
 		697F7313069322CE09B5ED5E /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				65DE0FBA0360C760EF1FA418 /* Pods-Dailiesexpo.debug.xcconfig */,
-				C9D0ABA99E839704F0348B23 /* Pods-Dailiesexpo.release.xcconfig */,
+				65DE0FBA0360C760EF1FA418 /* Pods-Tasky.debug.xcconfig */,
+				C9D0ABA99E839704F0348B23 /* Pods-Tasky.release.xcconfig */,
 			);
 			name = Pods;
 			path = Pods;
@@ -88,7 +88,7 @@
 		8208C4589C537D29F11D5C84 /* ExpoModulesProviders */ = {
 			isa = PBXGroup;
 			children = (
-				6006CD5CB662648A33233FAD /* Dailiesexpo */,
+				6006CD5CB662648A33233FAD /* Tasky */,
 			);
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
@@ -103,7 +103,7 @@
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
-				13B07FAE1A68108700A75B9A /* Dailiesexpo */,
+				13B07FAE1A68108700A75B9A /* Tasky */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
@@ -118,7 +118,7 @@
 		83CBBA001A601CBA00E9B192 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				13B07F961A680F5B00A75B9A /* Dailiesexpo.app */,
+				13B07F961A680F5B00A75B9A /* Tasky.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -129,15 +129,15 @@
 				BB2F792C24A3F905000567C9 /* Expo.plist */,
 			);
 			name = Supporting;
-			path = Dailiesexpo/Supporting;
+			path = Tasky/Supporting;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		13B07F861A680F5B00A75B9A /* Dailiesexpo */ = {
+		13B07F861A680F5B00A75B9A /* Tasky */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Dailiesexpo" */;
+			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Tasky" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
 				DF615DA175A075EDFB8D6D5A /* [Expo] Configure project */,
@@ -153,9 +153,9 @@
 			);
 			dependencies = (
 			);
-			name = Dailiesexpo;
-			productName = Dailiesexpo;
-			productReference = 13B07F961A680F5B00A75B9A /* Dailiesexpo.app */;
+			name = Tasky;
+			productName = Tasky;
+			productReference = 13B07F961A680F5B00A75B9A /* Tasky.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -173,7 +173,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "Dailiesexpo" */;
+			buildConfigurationList = 83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "Tasky" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -186,7 +186,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				13B07F861A680F5B00A75B9A /* Dailiesexpo */,
+				13B07F861A680F5B00A75B9A /* Tasky */,
 			);
 		};
 /* End PBXProject section */
@@ -238,7 +238,7 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-Dailiesexpo-checkManifestLockResult.txt",
+				"$(DERIVED_FILE_DIR)/Pods-Tasky-checkManifestLockResult.txt",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -266,7 +266,7 @@
 			files = (
 			);
 			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Dailiesexpo/Pods-Dailiesexpo-frameworks.sh",
+				"${PODS_ROOT}/Target Support Files/Pods-Tasky/Pods-Tasky-frameworks.sh",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem.framework/ExpoFileSystem",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFont/ExpoFont.framework/ExpoFont",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesCore/ExpoModulesCore.framework/ExpoModulesCore",
@@ -289,7 +289,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Dailiesexpo/Pods-Dailiesexpo-frameworks.sh\"\n";
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Tasky/Pods-Tasky-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
@@ -298,7 +298,7 @@
 			files = (
 			);
 			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Dailiesexpo/Pods-Dailiesexpo-resources.sh",
+				"${PODS_ROOT}/Target Support Files/Pods-Tasky/Pods-Tasky-resources.sh",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
@@ -361,7 +361,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Dailiesexpo/Pods-Dailiesexpo-resources.sh\"\n";
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Tasky/Pods-Tasky-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		DF615DA175A075EDFB8D6D5A /* [Expo] Configure project */ = {
@@ -375,18 +375,18 @@
 			inputPaths = (
 				"$(SRCROOT)/.xcode.env",
 				"$(SRCROOT)/.xcode.env.local",
-				"$(SRCROOT)/Dailiesexpo/Dailiesexpo.entitlements",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Dailiesexpo/expo-configure-project.sh",
+				"$(SRCROOT)/Tasky/Tasky.entitlements",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Tasky/expo-configure-project.sh",
 			);
 			name = "[Expo] Configure project";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Dailiesexpo/ExpoModulesProvider.swift",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Tasky/ExpoModulesProvider.swift",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Dailiesexpo/expo-configure-project.sh\"\n";
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Tasky/expo-configure-project.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -405,11 +405,11 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 65DE0FBA0360C760EF1FA418 /* Pods-Dailiesexpo.debug.xcconfig */;
+			baseConfigurationReference = 65DE0FBA0360C760EF1FA418 /* Pods-Tasky.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = Dailiesexpo/Dailiesexpo.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Tasky/Tasky.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -419,7 +419,7 @@
 					"$(inherited)",
 					"FB_SONARKIT_ENABLED=1",
 				);
-				INFOPLIST_FILE = Dailiesexpo/Info.plist;
+				INFOPLIST_FILE = Tasky/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -434,9 +434,9 @@
 					"-lz",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.dailies-react-native";
-				PRODUCT_NAME = Dailiesexpo;
-				SWIFT_OBJC_BRIDGING_HEADER = "Dailiesexpo/Dailiesexpo-Bridging-Header.h";
+				PRODUCT_BUNDLE_IDENTIFIER = tech.davidw.tasky;
+				PRODUCT_NAME = Tasky;
+				SWIFT_OBJC_BRIDGING_HEADER = "Tasky/Tasky-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -446,16 +446,16 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = C9D0ABA99E839704F0348B23 /* Pods-Dailiesexpo.release.xcconfig */;
+			baseConfigurationReference = C9D0ABA99E839704F0348B23 /* Pods-Tasky.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = Dailiesexpo/Dailiesexpo.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Tasky/Tasky.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = A528B8ZZF3;
-				INFOPLIST_FILE = Dailiesexpo/Info.plist;
+				INFOPLIST_FILE = Tasky/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -470,9 +470,9 @@
 					"-lz",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.dailies-react-native";
-				PRODUCT_NAME = Dailiesexpo;
-				SWIFT_OBJC_BRIDGING_HEADER = "Dailiesexpo/Dailiesexpo-Bridging-Header.h";
+				PRODUCT_BUNDLE_IDENTIFIER = tech.davidw.tasky;
+				PRODUCT_NAME = Tasky;
+				SWIFT_OBJC_BRIDGING_HEADER = "Tasky/Tasky-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
@@ -618,7 +618,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Dailiesexpo" */ = {
+		13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Tasky" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				13B07F941A680F5B00A75B9A /* Debug */,
@@ -627,7 +627,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "Dailiesexpo" */ = {
+		83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "Tasky" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				83CBBA201A601CBA00E9B192 /* Debug */,
