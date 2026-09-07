@@ -205,11 +205,7 @@ function SignalsCard() {
                 onPress={() => openSignal(signal.id)}
                 onQuickAction={() => void handleQuickAction(signal)}
                 quickActionLabel={
-                  signal.model.kind === "activity"
-                    ? (signal.model.measurementFields?.length ?? 0) > 0
-                      ? "Log"
-                      : "Done"
-                    : "Update"
+                  signal.model.kind === "activity" ? "Done" : "Update"
                 }
                 isSaving={savingId === signal.id}
               />
@@ -248,7 +244,17 @@ function TodayCard() {
         }
       : "skip",
   );
-  const items = scorecards.data ?? [];
+  const items = useMemo(() => {
+    const listed = scorecards.data ?? [];
+    const nestedIds = new Set(
+      listed.flatMap((scorecard) =>
+        scorecard.members.flatMap((member) =>
+          member.type === "scorecard" ? [member.scorecardId] : [],
+        ),
+      ),
+    );
+    return listed.filter((scorecard) => !nestedIds.has(scorecard.id));
+  }, [scorecards.data]);
 
   if (!taskyAuth.isAuthenticated) {
     return (
@@ -679,7 +685,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   dailiesBarLabel: {
-    width: 70,
+    width: 112,
     fontSize: fontSize.small,
     fontWeight: "600",
     color: colors.label,

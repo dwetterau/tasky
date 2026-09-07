@@ -546,20 +546,20 @@ async function hydrateTags(
 }
 
 function nestedMemberEvaluation(
-  name: string,
   evaluation: ReturnType<typeof evaluateScorecard>,
   optionalQuota: number,
   targetCount?: number,
 ): ReturnType<typeof evaluateSignal> & { count?: number } {
   return {
     attention: evaluation.isComplete ? "ok" : "due",
-    reason: evaluation.isComplete
-      ? `${name} is complete`
-      : targetCount !== undefined
-        ? `${evaluation.count} of ${targetCount} sessions done`
+    reason:
+      targetCount !== undefined
+        ? `${evaluation.count} of ${targetCount}`
         : optionalQuota > 0
-          ? `${evaluation.optionalDoneCount} of ${optionalQuota} optionals done`
-          : `${name} is not complete`,
+          ? `${evaluation.optionalDoneCount} of ${optionalQuota}`
+          : evaluation.isComplete
+            ? "Done"
+            : "Not done",
     count: evaluation.count,
     ratio: evaluation.ratio,
     isComplete: evaluation.isComplete,
@@ -649,7 +649,6 @@ async function toScorecardItem(
         name: child.name,
         archived: child.archivedAt !== undefined,
         evaluation: nestedMemberEvaluation(
-          child.name,
           childItem.evaluation,
           child.optionalQuota,
           child.targetCount,

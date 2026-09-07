@@ -124,6 +124,8 @@ export default function SignalHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [backdatedAt, setBackdatedAt] = useState("");
   const [backdatedDate, setBackdatedDate] = useState<Date>(() => new Date());
+  const [showCustomTime, setShowCustomTime] = useState(false);
+  const [timeModified, setTimeModified] = useState(false);
   const [activityNote, setActivityNote] = useState("");
   const [activityMeasurements, setActivityMeasurements] =
     useState<ActivityMeasurementDraft>(() => emptyActivityMeasurementDraft());
@@ -227,7 +229,22 @@ export default function SignalHistoryPage() {
     }
   };
 
-  const handleActivityRecord = async (occurredAt?: number) => {
+  const handleActivityRecord = async () => {
+    let occurredAt: number | undefined;
+    if (showCustomTime && timeModified) {
+      occurredAt =
+        Platform.OS === "ios"
+          ? backdatedDate.getTime()
+          : parseLocalDateTime(backdatedAt);
+      if (occurredAt === null) {
+        setError("Use a local date and time such as 2026-08-23 09:30");
+        return;
+      }
+      if (occurredAt > Date.now()) {
+        setError("Activity time cannot be in the future");
+        return;
+      }
+    }
     try {
       const measurements = parseActivityMeasurements(
         measurementFields,
@@ -246,22 +263,6 @@ export default function SignalHistoryPage() {
           : "Invalid exercise measurements",
       );
     }
-  };
-
-  const handleBackdatedActivity = async () => {
-    const occurredAt =
-      Platform.OS === "ios"
-        ? backdatedDate.getTime()
-        : parseLocalDateTime(backdatedAt);
-    if (occurredAt === null) {
-      setError("Use a local date and time such as 2026-08-23 09:30");
-      return;
-    }
-    if (occurredAt > Date.now()) {
-      setError("Activity time cannot be in the future");
-      return;
-    }
-    await handleActivityRecord(occurredAt);
   };
 
   const handleInventory = async (mode: "adjust" | "set") => {
@@ -487,45 +488,63 @@ export default function SignalHistoryPage() {
                   placeholderTextColor={colors.tertiaryLabel}
                   returnKeyType="done"
                 />
-                <PillButton
-                  variant="primary"
-                  label="Done now"
-                  onPress={() => void handleActivityRecord()}
-                  loading={isSaving}
-                />
-                <View style={styles.divider} />
-                <Text style={styles.fieldLabel}>Earlier time</Text>
-                <View style={styles.inlineRow}>
-                  {Platform.OS === "ios" ? (
-                    <>
+                {showCustomTime ? (
+                  <>
+                    <Text style={styles.fieldLabel}>Time</Text>
+                    {Platform.OS === "ios" ? (
                       <DateTimePicker
                         value={backdatedDate}
                         mode="datetime"
                         display="compact"
                         maximumDate={new Date()}
                         onChange={(_event, date) => {
-                          if (date) setBackdatedDate(date);
+                          if (date) {
+                            setBackdatedDate(date);
+                            setTimeModified(true);
+                          }
                         }}
                       />
-                      <View style={styles.inlineSpacer} />
-                    </>
-                  ) : (
-                    <TextInput
-                      style={[styles.input, styles.inlineInput]}
-                      value={backdatedAt}
-                      onChangeText={setBackdatedAt}
-                      placeholder="YYYY-MM-DD HH:mm"
-                      placeholderTextColor={colors.tertiaryLabel}
-                      autoCapitalize="none"
-                    />
-                  )}
-                  <PillButton
-                    variant="tinted"
-                    label="Record"
-                    onPress={() => void handleBackdatedActivity()}
-                    disabled={isSaving}
-                  />
-                </View>
+                    ) : (
+                      <TextInput
+                        style={styles.input}
+                        value={backdatedAt}
+                        onChangeText={(value) => {
+                          setBackdatedAt(value);
+                          setTimeModified(value.trim().length > 0);
+                        }}
+                        placeholder="YYYY-MM-DD HH:mm"
+                        placeholderTextColor={colors.tertiaryLabel}
+                        autoCapitalize="none"
+                      />
+                    )}
+                    <TouchableOpacity
+                      onPress={() => {
+                        setShowCustomTime(false);
+                        setTimeModified(false);
+                        setBackdatedAt("");
+                        setBackdatedDate(new Date());
+                      }}
+                    >
+                      <Text style={styles.timeToggle}>Use current time</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setBackdatedDate(new Date());
+                      setTimeModified(false);
+                      setShowCustomTime(true);
+                    }}
+                  >
+                    <Text style={styles.timeToggle}>Change time</Text>
+                  </TouchableOpacity>
+                )}
+                <PillButton
+                  variant="primary"
+                  label="Record"
+                  onPress={() => void handleActivityRecord()}
+                  loading={isSaving}
+                />
               </View>
             ) : (
               <View style={styles.actionCard}>
@@ -732,6 +751,11 @@ const styles = StyleSheet.create({
     fontSize: fontSize.small,
     fontWeight: "600",
   },
+  timeToggle: {
+    color: colors.systemBlue,
+    fontSize: fontSize.small,
+    fontWeight: "600",
+  },
   input: {
     height: 44,
     paddingHorizontal: spacing.md,
@@ -739,17 +763,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.tertiarySystemGroupedBackground,
     color: colors.label,
     fontSize: fontSize.body,
-  },
-  inlineRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  inlineInput: {
-    flex: 1,
-  },
-  inlineSpacer: {
-    flex: 1,
   },
   buttonRow: {
     flexDirection: "row",

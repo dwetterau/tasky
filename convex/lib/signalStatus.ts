@@ -192,18 +192,24 @@ function evaluateActivity(
             : Math.max(0, now - model.lastOccurredAt),
       };
     }
+    const hasTarget = periodProgress.targetCount > 0;
     const targetMet =
-      periodProgress.targetCount <= 0 ||
-      periodProgress.completedCount >= periodProgress.targetCount;
-    const reason =
-      periodProgress.targetCount <= 0
-        ? periodProgress.completedCount > 0
-          ? `Recorded this ${periodProgress.period}`
-          : `No activity this ${periodProgress.period}`
-        : `${periodProgress.completedCount} of ${periodProgress.targetCount} completed this ${periodProgress.period}`;
+      hasTarget && periodProgress.completedCount >= periodProgress.targetCount;
+    const loggedThisPeriod = periodProgress.completedCount > 0;
+    const reason = hasTarget
+      ? `${periodProgress.completedCount} of ${periodProgress.targetCount} completed this ${periodProgress.period}`
+      : loggedThisPeriod
+        ? `Recorded this ${periodProgress.period}`
+        : `No activity this ${periodProgress.period}`;
     return {
-      attention: targetMet ? "ok" : "due",
-      actionAt: targetMet ? undefined : periodProgress.endAt,
+      attention: targetMet
+        ? "ok"
+        : hasTarget
+          ? "due"
+          : loggedThisPeriod
+            ? "ok"
+            : "unknown",
+      actionAt: hasTarget && !targetMet ? periodProgress.endAt : undefined,
       reason,
       elapsedMs:
         model.lastOccurredAt === undefined
