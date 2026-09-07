@@ -264,7 +264,7 @@ function TodayCard() {
         onPress={() => router.push("/settings_page")}
       >
         <CardHeader
-          title="Today"
+          title="Scorecards"
           trailing={<Text style={styles.connectLink}>Connect</Text>}
         />
       </TouchableOpacity>
@@ -277,7 +277,7 @@ function TodayCard() {
         activeOpacity={0.7}
         onPress={() => router.push("/scorecards_page" as Href)}
       >
-        <CardHeader title="Today" />
+        <CardHeader title="Scorecards" />
       </TouchableOpacity>
       {!taskyEnabled || scorecards.isLoading ? (
         <View style={sharedStyles.inlineLoading}>
@@ -583,8 +583,8 @@ export default function HomePage() {
           },
         ]}
       >
-        <SignalsCard />
         <TodayCard />
+        <SignalsCard />
         <TaskyCard />
         <PortfolioCard />
       </ScrollView>

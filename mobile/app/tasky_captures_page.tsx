@@ -1,6 +1,6 @@
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import type { FunctionReturnType } from "convex/server";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,85 +12,29 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { TagFilterRow } from "@/components/TagFilterRow";
+import {
+  PRIORITY_RANK,
+  STATUS_LABELS,
+  STATUS_ORDER,
+  TaskRow,
+  type Task,
+  type TaskStatus,
+  useTaskFieldUpdates,
+} from "@/components/TaskRow";
 import {
   taskyApi,
   useTaskyAuth,
   useTaskyMutation,
   useTaskyQuery,
 } from "@/lib/tasky";
+import { tagSubtreeIds, type TaskyTagId } from "@/lib/taskyTags";
 import { colors, fontSize, radius, sharedStyles, spacing } from "@/lib/theme";
 import { automaticKeyboardInsets } from "@/lib/headerItems";
 
 type Capture = FunctionReturnType<typeof taskyApi.captures.list>[number];
-type Task = FunctionReturnType<typeof taskyApi.tasks.list>[number];
-type TaskStatus = Task["status"];
-type TaskPriority = Task["priority"];
-type TaskTag = Task["tags"][number];
 
 type Tab = "captures" | "tasks";
-
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  not_started: "Not started",
-  in_progress: "In progress",
-  agent_running: "Agent running",
-  blocked: "Blocked",
-  closed: "Closed",
-};
-
-const STATUS_ORDER: TaskStatus[] = [
-  "in_progress",
-  "agent_running",
-  "blocked",
-  "not_started",
-  "closed",
-];
-
-const STATUS_COLORS: Record<TaskStatus, unknown> = {
-  not_started: colors.secondaryLabel,
-  in_progress: colors.systemBlue,
-  agent_running: colors.systemPurple,
-  blocked: colors.systemOrange,
-  closed: colors.systemGreen,
-};
-
-const PRIORITY_LABELS: Record<TaskPriority, string> = {
-  triage: "Triage",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  urgent: "Urgent",
-};
-
-const PRIORITY_ORDER: TaskPriority[] = [
-  "triage",
-  "low",
-  "medium",
-  "high",
-  "urgent",
-];
-
-const PRIORITY_COLORS: Record<TaskPriority, unknown> = {
-  triage: colors.systemGray,
-  low: colors.systemTeal,
-  medium: colors.systemBlue,
-  high: colors.systemOrange,
-  urgent: colors.systemRed,
-};
-
-const PRIORITY_RANK: Record<TaskPriority, number> = {
-  urgent: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-  triage: 4,
-};
-
-function getTaskFirstLine(content: string): string {
-  const trimmed = content.trim();
-  if (!trimmed) return "(untitled task)";
-  const newline = trimmed.indexOf("\n");
-  return newline === -1 ? trimmed : trimmed.slice(0, newline);
-}
 
 function formatRelative(ts: number): string {
   const diff = Date.now() - ts;
@@ -177,41 +121,6 @@ function Checkbox({
   );
 }
 
-function PriorityDot({ priority }: { priority: TaskPriority }) {
-  return (
-    <View
-      style={[
-        styles.priorityDot,
-        {
-          backgroundColor: PRIORITY_COLORS[priority] as unknown as string,
-        },
-      ]}
-    />
-  );
-}
-
-function StatusPill({ status }: { status: TaskStatus }) {
-  return (
-    <View
-      style={[
-        styles.statusPill,
-        {
-          borderColor: STATUS_COLORS[status] as unknown as string,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          styles.statusPillText,
-          { color: STATUS_COLORS[status] as unknown as string },
-        ]}
-      >
-        {STATUS_LABELS[status]}
-      </Text>
-    </View>
-  );
-}
-
 function CaptureRow({
   capture,
   isEditing,
@@ -285,168 +194,6 @@ function CaptureRow({
   );
 }
 
-function ChoiceChip({
-  label,
-  selected,
-  color,
-  disabled,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  color: string;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={[
-        styles.choiceChip,
-        selected && { backgroundColor: color, borderColor: color },
-      ]}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityState={{ selected, disabled: Boolean(disabled) }}
-      disabled={disabled}
-      onPress={onPress}
-    >
-      <Text
-        style={[
-          styles.choiceChipText,
-          selected && styles.choiceChipTextSelected,
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-function TaskRow({
-  task,
-  expanded,
-  isSaving,
-  onToggle,
-  onStatusChange,
-  onPriorityChange,
-}: {
-  task: Task;
-  expanded: boolean;
-  isSaving: boolean;
-  onToggle: () => void;
-  onStatusChange: (status: TaskStatus) => void;
-  onPriorityChange: (priority: TaskPriority) => void;
-}) {
-  const firstLine = getTaskFirstLine(task.content);
-  const trimmedContent = task.content.trim();
-
-  return (
-    <View style={expanded ? styles.taskRowExpanded : undefined}>
-      <TouchableOpacity
-        style={styles.taskRow}
-        activeOpacity={0.7}
-        onPress={onToggle}
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        accessibilityLabel={firstLine}
-      >
-        <PriorityDot priority={task.priority} />
-        <View style={styles.taskMain}>
-          <Text
-            style={styles.taskTitle}
-            numberOfLines={expanded ? undefined : 2}
-          >
-            {expanded ? trimmedContent || firstLine : firstLine}
-          </Text>
-          {!expanded ? (
-            <View style={styles.taskMetaRow}>
-              {task.priority !== "triage" ? (
-                <Text style={styles.taskMetaLabel}>
-                  {PRIORITY_LABELS[task.priority]}
-                </Text>
-              ) : null}
-              {task.dueDate ? (
-                <Text style={styles.taskMetaLabel}>Due {task.dueDate}</Text>
-              ) : null}
-              {task.tags.slice(0, 3).map((tag: TaskTag) => (
-                <View key={tag._id} style={styles.tagChip}>
-                  <Text style={styles.tagChipText}>{tag.name}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-        </View>
-        <View style={styles.taskTrailing}>
-          <StatusPill status={task.status} />
-          <Text style={styles.taskChevron}>{expanded ? "⌃" : "›"}</Text>
-        </View>
-      </TouchableOpacity>
-      {expanded ? (
-        <View style={styles.taskDetails}>
-          {task.dueDate ? (
-            <Text style={styles.taskDetailLabel}>Due {task.dueDate}</Text>
-          ) : null}
-          <View style={styles.taskMetaRow}>
-            {task.tags.length === 0 ? (
-              <Text style={styles.taskDetailMuted}>No tags</Text>
-            ) : (
-              task.tags.map((tag: TaskTag) => (
-                <View key={tag._id} style={styles.tagChip}>
-                  {tag.color ? (
-                    <View
-                      style={[
-                        styles.tagDot,
-                        { backgroundColor: tag.color },
-                      ]}
-                    />
-                  ) : null}
-                  <Text style={styles.tagChipText}>{tag.name}</Text>
-                </View>
-              ))
-            )}
-          </View>
-          <View style={styles.taskField}>
-            <Text style={styles.taskFieldLabel}>Status</Text>
-            <View style={styles.choiceRow}>
-              {STATUS_ORDER.map((status) => (
-                <ChoiceChip
-                  key={status}
-                  label={STATUS_LABELS[status]}
-                  selected={task.status === status}
-                  color={STATUS_COLORS[status] as unknown as string}
-                  disabled={isSaving}
-                  onPress={() => onStatusChange(status)}
-                />
-              ))}
-            </View>
-          </View>
-          <View style={styles.taskField}>
-            <Text style={styles.taskFieldLabel}>Priority</Text>
-            <View style={styles.choiceRow}>
-              {PRIORITY_ORDER.map((priority) => (
-                <ChoiceChip
-                  key={priority}
-                  label={PRIORITY_LABELS[priority]}
-                  selected={task.priority === priority}
-                  color={PRIORITY_COLORS[priority] as unknown as string}
-                  disabled={isSaving}
-                  onPress={() => onPriorityChange(priority)}
-                />
-              ))}
-            </View>
-          </View>
-          {isSaving ? (
-            <View style={styles.taskSaving}>
-              <ActivityIndicator size="small" />
-              <Text style={sharedStyles.muted}>Saving…</Text>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 function NotConnected({
   onConnect,
   isConnecting,
@@ -489,15 +236,19 @@ function NotConnected({
 
 export default function TaskyCapturesPage() {
   const taskyAuth = useTaskyAuth();
-  const [tab, setTab] = useState<Tab>("captures");
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>(
+    params.tab === "tasks" ? "tasks" : "captures",
+  );
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [selectedTagId, setSelectedTagId] = useState<TaskyTagId | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const taskUpdates = useTaskFieldUpdates();
 
   const taskyEnabled =
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
@@ -510,22 +261,38 @@ export default function TaskyCapturesPage() {
     taskyApi.tasks.list,
     taskyEnabled ? { closedAfter } : "skip",
   );
+  const tags = useTaskyQuery(taskyApi.tags.list, taskyEnabled ? {} : "skip");
 
   const createCapture = useTaskyMutation(taskyApi.captures.create);
   const updateCapture = useTaskyMutation(taskyApi.captures.update);
   const toggleCapture = useTaskyMutation(taskyApi.captures.toggle);
-  const updateTaskStatus = useTaskyMutation(taskyApi.tasks.updateStatus);
-  const updateTaskPriority = useTaskyMutation(taskyApi.tasks.updatePriority);
 
   const sortedCaptures: Capture[] = captures.data ?? [];
   const openTasks = useMemo<Task[]>(
     () => (tasks.data ?? []).filter((task: Task) => task.status !== "closed"),
     [tasks.data],
   );
+  const filteredTasks = useMemo<Task[]>(() => {
+    if (selectedTagId === null) return openTasks;
+    const allowed = tagSubtreeIds([selectedTagId], tags.data ?? []);
+    return openTasks.filter((task) =>
+      task.tags.some((tag) => allowed.has(String(tag._id))),
+    );
+  }, [openTasks, selectedTagId, tags.data]);
+
+  useEffect(() => {
+    if (
+      selectedTagId !== null &&
+      tags.data &&
+      !tags.data.some((tag) => tag._id === selectedTagId)
+    ) {
+      setSelectedTagId(null);
+    }
+  }, [selectedTagId, tags.data]);
 
   const groupedTasks = useMemo(() => {
     const byStatus = new Map<TaskStatus, Task[]>();
-    for (const task of openTasks) {
+    for (const task of filteredTasks) {
       const bucket = byStatus.get(task.status) ?? [];
       bucket.push(task);
       byStatus.set(task.status, bucket);
@@ -544,7 +311,7 @@ export default function TaskyCapturesPage() {
         items: byStatus.get(status)!,
       }),
     );
-  }, [openTasks]);
+  }, [filteredTasks]);
 
   const handleConnect = async () => {
     setIsConnecting(true);
@@ -608,43 +375,6 @@ export default function TaskyCapturesPage() {
       );
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleTaskStatusChange = async (task: Task, status: TaskStatus) => {
-    if (task.status === status) return;
-    setSavingTaskId(task._id);
-    setError(null);
-    try {
-      await updateTaskStatus({ id: task._id, status });
-    } catch (statusError) {
-      setError(
-        statusError instanceof Error
-          ? statusError.message
-          : "Failed to update status",
-      );
-    } finally {
-      setSavingTaskId(null);
-    }
-  };
-
-  const handleTaskPriorityChange = async (
-    task: Task,
-    priority: TaskPriority,
-  ) => {
-    if (task.priority === priority) return;
-    setSavingTaskId(task._id);
-    setError(null);
-    try {
-      await updateTaskPriority({ id: task._id, priority });
-    } catch (priorityError) {
-      setError(
-        priorityError instanceof Error
-          ? priorityError.message
-          : "Failed to update priority",
-      );
-    } finally {
-      setSavingTaskId(null);
     }
   };
 
@@ -784,58 +514,84 @@ export default function TaskyCapturesPage() {
               </View>
             )}
           </>
-        ) : tasks.isLoading ? (
-          <View style={sharedStyles.inlineLoading}>
-            <ActivityIndicator />
-            <Text style={sharedStyles.muted}>Loading tasks…</Text>
-          </View>
-        ) : openTasks.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No open tasks</Text>
-            <Text style={sharedStyles.muted}>
-              You&rsquo;re all caught up. New tasks land here as you triage
-              captures from the web app.
-            </Text>
-          </View>
         ) : (
-          groupedTasks.map((group) => (
-            <View key={group.status} style={styles.taskGroup}>
-              <View style={styles.taskGroupHeader}>
-                <Text style={styles.taskGroupTitle}>
-                  {STATUS_LABELS[group.status]}
+          <>
+            <TagFilterRow
+              tags={tags.data ?? []}
+              selectedTagId={selectedTagId}
+              onChange={setSelectedTagId}
+            />
+            {tasks.isLoading ? (
+              <View style={sharedStyles.inlineLoading}>
+                <ActivityIndicator />
+                <Text style={sharedStyles.muted}>Loading tasks…</Text>
+              </View>
+            ) : filteredTasks.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>
+                  {selectedTagId ? "No matching tasks" : "No open tasks"}
                 </Text>
-                <Text style={styles.taskGroupCount}>{group.items.length}</Text>
+                <Text style={sharedStyles.muted}>
+                  {selectedTagId
+                    ? "Nothing open with this tag."
+                    : "You're all caught up. New tasks land here as you triage captures from the web app."}
+                </Text>
               </View>
-              <View style={styles.listCard}>
-                {group.items.map((task, index) => (
-                  <View key={task._id}>
-                    {index > 0 ? <View style={styles.listDivider} /> : null}
-                    <TaskRow
-                      task={task}
-                      expanded={expandedTaskId === task._id}
-                      isSaving={savingTaskId === task._id}
-                      onToggle={() =>
-                        setExpandedTaskId((current) =>
-                          current === task._id ? null : task._id,
-                        )
-                      }
-                      onStatusChange={(status) =>
-                        void handleTaskStatusChange(task, status)
-                      }
-                      onPriorityChange={(priority) =>
-                        void handleTaskPriorityChange(task, priority)
-                      }
-                    />
+            ) : (
+              groupedTasks.map((group) => (
+                <View key={group.status} style={styles.taskGroup}>
+                  <View style={styles.taskGroupHeader}>
+                    <Text style={styles.taskGroupTitle}>
+                      {STATUS_LABELS[group.status]}
+                    </Text>
+                    <Text style={styles.taskGroupCount}>
+                      {group.items.length}
+                    </Text>
                   </View>
-                ))}
-              </View>
-            </View>
-          ))
+                  <View style={styles.listCard}>
+                    {group.items.map((task, index) => (
+                      <View key={task._id}>
+                        {index > 0 ? (
+                          <View style={styles.listDivider} />
+                        ) : null}
+                        <TaskRow
+                          task={task}
+                          expanded={expandedTaskId === task._id}
+                          isSaving={taskUpdates.savingTaskId === task._id}
+                          onToggle={() =>
+                            setExpandedTaskId((current) =>
+                              current === task._id ? null : task._id,
+                            )
+                          }
+                          onStatusChange={(status) =>
+                            void taskUpdates.updateStatus(task, status)
+                          }
+                          onPriorityChange={(priority) =>
+                            void taskUpdates.updatePriority(task, priority)
+                          }
+                        />
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ))
+            )}
+          </>
         )}
 
-        {(error || taskyAuth.error || captures.error || tasks.error) && (
+        {(error ||
+          taskUpdates.error ||
+          taskyAuth.error ||
+          captures.error ||
+          tasks.error ||
+          tags.error) && (
           <Text style={sharedStyles.error}>
-            {error ?? taskyAuth.error ?? captures.error ?? tasks.error}
+            {error ??
+              taskUpdates.error ??
+              taskyAuth.error ??
+              captures.error ??
+              tasks.error ??
+              tags.error}
           </Text>
         )}
       </ScrollView>
@@ -1021,131 +777,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.caption,
     color: colors.tertiaryLabel,
     fontVariant: ["tabular-nums"],
-  },
-  taskRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  taskRowExpanded: {
-    paddingBottom: spacing.md,
-  },
-  taskMain: {
-    flex: 1,
-    gap: spacing.xs,
-  },
-  taskTitle: {
-    fontSize: fontSize.body,
-    color: colors.label,
-    lineHeight: 21,
-  },
-  taskMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  taskMetaLabel: {
-    fontSize: fontSize.caption,
-    color: colors.secondaryLabel,
-  },
-  taskTrailing: {
-    alignItems: "flex-end",
-    gap: spacing.xs,
-  },
-  taskChevron: {
-    fontSize: 18,
-    fontWeight: "300",
-    color: colors.tertiaryLabel,
-    lineHeight: 20,
-  },
-  taskDetails: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
-  },
-  taskDetailLabel: {
-    fontSize: fontSize.caption,
-    color: colors.secondaryLabel,
-  },
-  taskDetailMuted: {
-    fontSize: fontSize.caption,
-    color: colors.tertiaryLabel,
-  },
-  taskField: {
-    gap: spacing.sm,
-  },
-  taskFieldLabel: {
-    fontSize: fontSize.caption,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    color: colors.secondaryLabel,
-    textTransform: "uppercase",
-  },
-  choiceRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  choiceChip: {
-    height: 32,
-    justifyContent: "center",
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.separator,
-    backgroundColor: colors.tertiarySystemGroupedBackground,
-  },
-  choiceChipText: {
-    fontSize: fontSize.small,
-    fontWeight: "600",
-    color: colors.secondaryLabel,
-  },
-  choiceChipTextSelected: {
-    color: "white",
-  },
-  taskSaving: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  priorityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.pill,
-    marginTop: 8,
-  },
-  tagChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.pill,
-    backgroundColor: colors.tertiarySystemGroupedBackground,
-  },
-  tagDot: {
-    width: 6,
-    height: 6,
-    borderRadius: radius.pill,
-  },
-  tagChipText: {
-    fontSize: fontSize.micro,
-    color: colors.secondaryLabel,
-    fontWeight: "600",
-  },
-  statusPill: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    alignSelf: "flex-start",
-  },
-  statusPillText: {
-    fontSize: fontSize.micro,
-    fontWeight: "700",
-    letterSpacing: 0.3,
   },
   emptyState: {
     paddingVertical: spacing.xxl,

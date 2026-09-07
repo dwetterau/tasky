@@ -25,6 +25,22 @@ export function taskyTagPath(
   return names.join(" › ");
 }
 
+export function tagSubtreeIds(
+  selected: TaskyTagId[],
+  tags: TaskyTag[],
+): Set<string> {
+  const byId = new Map(tags.map((tag) => [String(tag._id), tag] as const));
+  const ids = new Set<string>();
+  for (const tagId of selected) {
+    ids.add(String(tagId));
+    const tag = byId.get(String(tagId));
+    for (const childId of tag?.childrenRecursive ?? []) {
+      ids.add(String(childId));
+    }
+  }
+  return ids;
+}
+
 export function sortTaskyTags(tags: TaskyTag[]): TaskyTag[] {
   const tagsById = new Map(tags.map((tag) => [String(tag._id), tag]));
   return [...tags].sort((left, right) =>
