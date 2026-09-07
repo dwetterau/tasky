@@ -25,7 +25,7 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '16.4'
 
 prepare_react_native_project!
 
-target 'Dailiesexpo' do
+target 'Tasky' do
   use_expo_modules!
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
@@ -69,7 +69,7 @@ target 'Dailiesexpo' do
     # Add it to the generated app target so the final link succeeds in Xcode.
     installer.aggregate_targets.each do |aggregate_target|
       aggregate_target.user_project.native_targets.each do |native_target|
-        next unless native_target.name == 'Dailiesexpo'
+        next unless native_target.name == 'Tasky'
 
         native_target.build_configurations.each do |build_config|
           flags = build_config.build_settings['OTHER_LDFLAGS'] || ['$(inherited)']

@@ -23,7 +23,7 @@ const sourceRoot = sourceCandidates.find((candidate) =>
 
 if (!sourceRoot) {
   console.warn(
-    "Skipping tasky-convex link. Clone tasky beside dailies, then run npm run link-tasky-convex.",
+    "Skipping tasky-convex link. Run this from tasky/mobile after convex/_generated exists.",
   );
   process.exit(0);
 }

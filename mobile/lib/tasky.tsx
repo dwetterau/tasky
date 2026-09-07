@@ -28,7 +28,7 @@ import {
 } from "react";
 import { Platform } from "react-native";
 
-const APP_SCHEME = "myapp";
+const APP_SCHEME = "tasky";
 
 // Release builds must statically import this so Metro bundles it for
 // @better-auth/expo's dynamic import() during OAuth.

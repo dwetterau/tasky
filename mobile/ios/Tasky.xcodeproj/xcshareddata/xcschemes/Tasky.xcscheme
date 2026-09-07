@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "Dailiesexpo.app"
-               BlueprintName = "Dailiesexpo"
-               ReferencedContainer = "container:Dailiesexpo.xcodeproj">
+               BuildableName = "Tasky.app"
+               BlueprintName = "Tasky"
+               ReferencedContainer = "container:Tasky.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "00E356ED1AD99517003FC87E"
-               BuildableName = "DailiesexpoTests.xctest"
-               BlueprintName = "DailiesexpoTests"
-               ReferencedContainer = "container:Dailiesexpo.xcodeproj">
+               BuildableName = "TaskyTests.xctest"
+               BlueprintName = "TaskyTests"
+               ReferencedContainer = "container:Tasky.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -55,9 +55,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "Dailiesexpo.app"
-            BlueprintName = "Dailiesexpo"
-            ReferencedContainer = "container:Dailiesexpo.xcodeproj">
+            BuildableName = "Tasky.app"
+            BlueprintName = "Tasky"
+            ReferencedContainer = "container:Tasky.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "Dailiesexpo.app"
-            BlueprintName = "Dailiesexpo"
-            ReferencedContainer = "container:Dailiesexpo.xcodeproj">
+            BuildableName = "Tasky.app"
+            BlueprintName = "Tasky"
+            ReferencedContainer = "container:Tasky.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

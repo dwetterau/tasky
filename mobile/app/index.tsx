@@ -34,7 +34,7 @@ function LoginScreen() {
   return (
     <View style={styles.loginContainer}>
       <View style={styles.loginContent}>
-        <Text style={styles.loginTitle}>Dailies</Text>
+        <Text style={styles.loginTitle}>Tasky</Text>
         <Text style={styles.loginSubtitle}>
           A single home for your daily activities, tasks, and portfolio.
         </Text>

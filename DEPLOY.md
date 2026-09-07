@@ -12,7 +12,7 @@
 
 - Also Prod has its own GitHub OAuth app credentials for Convex auth.
 - Convex needs `SITE_URL` + `CONVEX_SITE_URL` for cross-domain auth and trusted origins.
-- Mobile app OAuth needs `MOBILE_APP_ORIGIN=myapp://` on each Convex deployment (dev and prod).
+- Mobile app OAuth needs `MOBILE_APP_ORIGIN=tasky://` on each Convex deployment (dev and prod).
 
 ## MCP/OAuth verification checklist
 

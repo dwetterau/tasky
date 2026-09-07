@@ -211,7 +211,7 @@ export default function SettingsPage() {
           <Text style={styles.metaValue}>
             {Array.isArray(Constants.expoConfig?.scheme)
               ? Constants.expoConfig?.scheme[0]
-              : (Constants.expoConfig?.scheme ?? "myapp")}
+              : (Constants.expoConfig?.scheme ?? "tasky")}
           </Text>
         </View>
       </View>

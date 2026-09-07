@@ -28,7 +28,7 @@ if (typeof urlWithCanParse.canParse !== "function") {
 export const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
 // CONVEX_SITE_URL is where Better Auth is hosted (Convex HTTP endpoints)
 const convexSiteUrl = process.env.CONVEX_SITE_URL!;
-const mobileAppOrigin = process.env.MOBILE_APP_ORIGIN ?? "myapp://";
+const mobileAppOrigin = process.env.MOBILE_APP_ORIGIN ?? "tasky://";
 const mcpResourceUrl = `${convexSiteUrl}/api/mcp`;
 const oauthLoginPage = `${siteUrl}/oauth/login`;
 const oauthConsentPage = `${siteUrl}/oauth/consent`;
