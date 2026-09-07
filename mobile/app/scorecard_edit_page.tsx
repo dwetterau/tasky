@@ -32,6 +32,15 @@ import { colors, fontSize, radius, sharedStyles, spacing } from "@/lib/theme";
 type ScorecardId = FunctionArgs<typeof taskyApi.scorecards.get>["scorecardId"];
 type SignalId = FunctionArgs<typeof taskyApi.signals.get>["signalId"];
 type MemberRole = "required" | "optional";
+type DraftMember =
+  | { type: "signal"; signalId: SignalId; role: MemberRole }
+  | { type: "scorecard"; scorecardId: ScorecardId; role: MemberRole };
+
+function memberKey(member: DraftMember): string {
+  return member.type === "scorecard"
+    ? `scorecard:${member.scorecardId}`
+    : `signal:${member.signalId}`;
+}
 
 export default function ScorecardEditPage() {
   const router = useRouter();
@@ -48,10 +57,9 @@ export default function ScorecardEditPage() {
 
   const [name, setName] = useState("");
   const [tagIds, setTagIds] = useState<TaskyTagId[]>([]);
-  const [members, setMembers] = useState<
-    Array<{ signalId: SignalId; role: MemberRole }>
-  >([]);
+  const [members, setMembers] = useState<DraftMember[]>([]);
   const [optionalQuota, setOptionalQuota] = useState("0");
+  const [targetCount, setTargetCount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -76,6 +84,16 @@ export default function ScorecardEditPage() {
         }
       : "skip",
   );
+  const scorecards = useTaskyQuery(
+    taskyApi.scorecards.list,
+    taskyEnabled
+      ? {
+          now,
+          soonWindowMs: SIGNAL_SOON_WINDOW_MS,
+          periodBounds,
+        }
+      : "skip",
+  );
   const tags = useTaskyQuery(taskyApi.tags.list, taskyEnabled ? {} : "skip");
   const createScorecard = useTaskyMutation(taskyApi.scorecards.create);
   const updateScorecard = useTaskyMutation(taskyApi.scorecards.update);
@@ -88,52 +106,96 @@ export default function ScorecardEditPage() {
     setName(scorecard.data.name);
     setTagIds(scorecard.data.tagIds);
     setMembers(
-      scorecard.data.members.map((member) => ({
-        signalId: member.signalId,
-        role: member.role,
-      })),
+      scorecard.data.members.map((member) =>
+        member.type === "scorecard"
+          ? {
+              type: "scorecard" as const,
+              scorecardId: member.scorecardId,
+              role: member.role,
+            }
+          : {
+              type: "signal" as const,
+              signalId: member.signalId,
+              role: member.role,
+            },
+      ),
     );
     setOptionalQuota(String(scorecard.data.optionalQuota));
+    setTargetCount(
+      scorecard.data.targetCount !== undefined
+        ? String(scorecard.data.targetCount)
+        : "",
+    );
   }, [scorecard.data]);
 
   const optionalCount = members.filter(
     (member) => member.role === "optional",
   ).length;
   const parsedQuota = Number.parseInt(optionalQuota, 10);
+  const trimmedTarget = targetCount.trim();
+  const parsedTarget = Number.parseInt(trimmedTarget, 10);
+  const targetValid =
+    trimmedTarget.length === 0 ||
+    (Number.isInteger(parsedTarget) && parsedTarget >= 1);
   const canSave =
     name.trim().length > 0 &&
     members.length > 0 &&
     Number.isInteger(parsedQuota) &&
     parsedQuota >= 0 &&
-    parsedQuota <= optionalCount;
+    parsedQuota <= optionalCount &&
+    targetValid;
 
   const memberIds = useMemo(
-    () => new Set(members.map((member) => member.signalId)),
+    () => new Set(members.map(memberKey)),
     [members],
   );
 
-  const toggleMember = (signalId: SignalId) => {
+  const otherScorecards = useMemo(
+    () =>
+      (scorecards.data ?? []).filter((card) => card.id !== scorecardId),
+    [scorecardId, scorecards.data],
+  );
+
+  const toggleSignal = (signalId: SignalId) => {
+    const key = `signal:${signalId}`;
     setMembers((current) => {
-      if (current.some((member) => member.signalId === signalId)) {
-        return current.filter((member) => member.signalId !== signalId);
+      if (current.some((member) => memberKey(member) === key)) {
+        return current.filter((member) => memberKey(member) !== key);
       }
-      return [...current, { signalId, role: "required" }];
+      return [...current, { type: "signal", signalId, role: "required" }];
     });
   };
 
-  const setRole = (signalId: SignalId, role: MemberRole) => {
+  const toggleScorecard = (childId: ScorecardId) => {
+    const key = `scorecard:${childId}`;
+    setMembers((current) => {
+      if (current.some((member) => memberKey(member) === key)) {
+        return current.filter((member) => memberKey(member) !== key);
+      }
+      return [
+        ...current,
+        { type: "scorecard", scorecardId: childId, role: "required" },
+      ];
+    });
+  };
+
+  const setRole = (key: string, role: MemberRole) => {
     setMembers((current) =>
       current.map((member) =>
-        member.signalId === signalId ? { ...member, role } : member,
+        memberKey(member) === key ? { ...member, role } : member,
       ),
     );
   };
 
   const handleSave = async () => {
     if (!canSave) {
-      setError("Add a name, at least one signal, and a valid optional quota.");
+      setError(
+        "Add a name, at least one member, and a valid optional quota or session target.",
+      );
       return;
     }
+    const nextTargetCount =
+      trimmedTarget.length === 0 ? null : parsedTarget;
     setSaving(true);
     setError(null);
     try {
@@ -144,6 +206,7 @@ export default function ScorecardEditPage() {
           tagIds,
           members,
           optionalQuota: parsedQuota,
+          targetCount: nextTargetCount,
         });
       } else {
         await createScorecard({
@@ -151,6 +214,7 @@ export default function ScorecardEditPage() {
           tagIds,
           members,
           optionalQuota: parsedQuota,
+          ...(nextTargetCount !== null ? { targetCount: nextTargetCount } : {}),
         });
       }
       router.back();
@@ -242,16 +306,17 @@ export default function ScorecardEditPage() {
         <View style={sharedStyles.card}>
           <Text style={styles.label}>Signals</Text>
           <Text style={sharedStyles.muted}>
-            Required signals must all be done. Optional signals can fill a quota.
+            Required members must all be done. Optional members can fill a quota.
           </Text>
           {(signals.data ?? []).map((signal) => {
-            const selected = memberIds.has(signal.id);
-            const member = members.find((item) => item.signalId === signal.id);
+            const key = `signal:${signal.id}`;
+            const selected = memberIds.has(key);
+            const member = members.find((item) => memberKey(item) === key);
             return (
               <View key={signal.id} style={styles.signalRow}>
                 <TouchableOpacity
                   style={styles.signalToggle}
-                  onPress={() => toggleMember(signal.id)}
+                  onPress={() => toggleSignal(signal.id)}
                 >
                   <Text style={styles.signalName}>{signal.name}</Text>
                   <Text style={styles.signalMeta}>
@@ -264,7 +329,7 @@ export default function ScorecardEditPage() {
                     <Switch
                       value={member.role === "optional"}
                       onValueChange={(value) =>
-                        setRole(signal.id, value ? "optional" : "required")
+                        setRole(key, value ? "optional" : "required")
                       }
                     />
                   </View>
@@ -278,9 +343,53 @@ export default function ScorecardEditPage() {
         </View>
 
         <View style={sharedStyles.card}>
+          <Text style={styles.label}>Scorecards</Text>
+          <Text style={sharedStyles.muted}>
+            A nested scorecard counts as one member. Its own optional quota
+            decides when it is complete.
+          </Text>
+          {otherScorecards.map((card) => {
+            const key = `scorecard:${card.id}`;
+            const selected = memberIds.has(key);
+            const member = members.find((item) => memberKey(item) === key);
+            return (
+              <View key={card.id} style={styles.signalRow}>
+                <TouchableOpacity
+                  style={styles.signalToggle}
+                  onPress={() => toggleScorecard(card.id)}
+                >
+                  <Text style={styles.signalName}>{card.name}</Text>
+                  <Text style={styles.signalMeta}>
+                    {selected ? "Added" : "Add"}
+                  </Text>
+                </TouchableOpacity>
+                {selected && member ? (
+                  <View style={styles.roleRow}>
+                    <Text style={styles.roleLabel}>Optional</Text>
+                    <Switch
+                      value={member.role === "optional"}
+                      onValueChange={(value) =>
+                        setRole(key, value ? "optional" : "required")
+                      }
+                    />
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+          {otherScorecards.length === 0 ? (
+            <Text style={sharedStyles.muted}>
+              {scorecardId
+                ? "No other scorecards to nest."
+                : "Create another scorecard to nest it here."}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={sharedStyles.card}>
           <Text style={styles.label}>Optional quota</Text>
           <Text style={sharedStyles.muted}>
-            How many optional signals must be fully done. 0 means optionals never
+            How many optional members must be fully done. 0 means optionals never
             block completion.
           </Text>
           <TextInput
@@ -290,9 +399,24 @@ export default function ScorecardEditPage() {
             keyboardType="number-pad"
           />
           <Text style={sharedStyles.muted}>
-            {optionalCount} optional signal{optionalCount === 1 ? "" : "s"}{" "}
+            {optionalCount} optional member{optionalCount === 1 ? "" : "s"}{" "}
             selected
           </Text>
+        </View>
+
+        <View style={sharedStyles.card}>
+          <Text style={styles.label}>Session target</Text>
+          <Text style={sharedStyles.muted}>
+            Sum member occurrences (and nested card counts) toward this goal.
+            Leave empty to use optional quota instead.
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={targetCount}
+            onChangeText={setTargetCount}
+            keyboardType="number-pad"
+            placeholder="None"
+          />
         </View>
 
         {error ? <Text style={sharedStyles.error}>{error}</Text> : null}

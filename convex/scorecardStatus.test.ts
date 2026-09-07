@@ -16,6 +16,7 @@ describe("scorecard evaluation", () => {
       ratio: 1,
       isComplete: true,
       optionalDoneCount: 0,
+      count: 1,
     });
   });
 
@@ -32,6 +33,7 @@ describe("scorecard evaluation", () => {
       ratio: 0.5,
       isComplete: false,
       optionalDoneCount: 1,
+      count: 0,
     });
   });
 
@@ -49,6 +51,7 @@ describe("scorecard evaluation", () => {
       ratio: (1 + 1.5) / 3,
       isComplete: false,
       optionalDoneCount: 1,
+      count: 0,
     });
     expect(
       evaluateScorecard(
@@ -63,6 +66,7 @@ describe("scorecard evaluation", () => {
       ratio: 1,
       isComplete: true,
       optionalDoneCount: 2,
+      count: 1,
     });
   });
 
@@ -79,6 +83,7 @@ describe("scorecard evaluation", () => {
       ratio: 1,
       isComplete: true,
       optionalDoneCount: 1,
+      count: 1,
     });
     expect(
       evaluateScorecard([{ role: "optional", ratio: 0.4 }], 0),
@@ -86,6 +91,7 @@ describe("scorecard evaluation", () => {
       ratio: 0.4,
       isComplete: false,
       optionalDoneCount: 0,
+      count: 0,
     });
   });
 
@@ -102,6 +108,7 @@ describe("scorecard evaluation", () => {
       ratio: 0.7,
       isComplete: false,
       optionalDoneCount: 0,
+      count: 0,
     });
     expect(
       evaluateScorecard(
@@ -115,6 +122,81 @@ describe("scorecard evaluation", () => {
       ratio: 1,
       isComplete: true,
       optionalDoneCount: 1,
+      count: 1,
+    });
+  });
+
+  it("keeps required members as a gate under a session target", () => {
+    expect(
+      evaluateScorecard(
+        [
+          { role: "required", ratio: 0.5, count: 0 },
+          { role: "optional", ratio: 1, count: 5 },
+        ],
+        0,
+        5,
+      ),
+    ).toEqual({
+      ratio: 5 / 5,
+      isComplete: false,
+      optionalDoneCount: 1,
+      count: 5,
+    });
+  });
+
+  it("sums member counts against a session target", () => {
+    expect(
+      evaluateScorecard(
+        [
+          { role: "optional", ratio: 1, count: 2 },
+          { role: "optional", ratio: 0, count: 1 },
+          { role: "optional", ratio: 1, count: 1 },
+        ],
+        2,
+        5,
+      ),
+    ).toEqual({
+      ratio: 4 / 5,
+      isComplete: false,
+      optionalDoneCount: 2,
+      count: 4,
+    });
+    expect(
+      evaluateScorecard(
+        [
+          { role: "optional", ratio: 1, count: 2 },
+          { role: "optional", ratio: 1, count: 2 },
+          { role: "optional", ratio: 1, count: 1 },
+        ],
+        2,
+        5,
+      ),
+    ).toEqual({
+      ratio: 1,
+      isComplete: true,
+      optionalDoneCount: 3,
+      count: 5,
+    });
+  });
+
+  it("counts floor(optionalDone / quota) bundles", () => {
+    expect(
+      evaluateScorecard(
+        [
+          { role: "optional", ratio: 1 },
+          { role: "optional", ratio: 1 },
+          { role: "optional", ratio: 1 },
+          { role: "optional", ratio: 1 },
+          { role: "optional", ratio: 1 },
+          { role: "optional", ratio: 1 },
+        ],
+        3,
+      ),
+    ).toEqual({
+      ratio: 1,
+      isComplete: true,
+      optionalDoneCount: 6,
+      count: 2,
     });
   });
 });

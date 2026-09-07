@@ -212,10 +212,31 @@ export const scorecardMemberRole = v.union(
   v.literal("optional"),
 );
 
-export const scorecardMember = v.object({
-  signalId: v.id("signals"),
-  role: scorecardMemberRole,
-});
+export const scorecardMemberInput = v.union(
+  v.object({
+    type: v.optional(v.literal("signal")),
+    signalId: v.id("signals"),
+    role: scorecardMemberRole,
+  }),
+  v.object({
+    type: v.literal("scorecard"),
+    scorecardId: v.id("scorecards"),
+    role: scorecardMemberRole,
+  }),
+);
+
+export const scorecardMember = v.union(
+  v.object({
+    type: v.literal("signal"),
+    signalId: v.id("signals"),
+    role: scorecardMemberRole,
+  }),
+  v.object({
+    type: v.literal("scorecard"),
+    scorecardId: v.id("scorecards"),
+    role: scorecardMemberRole,
+  }),
+);
 
 export const signalEntryOperation = v.union(
   v.object({
@@ -413,6 +434,7 @@ export default defineSchema({
     tagIds: v.array(v.id("tags")),
     members: v.array(scorecardMember),
     optionalQuota: v.number(),
+    targetCount: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     archivedAt: v.optional(v.number()),

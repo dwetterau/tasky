@@ -260,18 +260,27 @@ occurrences. Each returned signal includes `evaluation.ratio`,
 
 Returns the authenticated user's active scorecards with member breakdowns and
 rollup completion (`evaluation.ratio`, `evaluation.isComplete`,
-`optionalDoneCount`). Optional `scorecardId` reads one scorecard (including
-archived). Optional `tagId` includes scorecards tagged with that tag or any
-descendant. `now` and `soonWindowMs` can be supplied for deterministic
-evaluation. A scorecard is complete when every required member is complete and
-at least `optionalQuota` optional members are complete.
+`optionalDoneCount`, `count`). Without `targetCount`, `count` is
+`floor(optionalDoneCount / optionalQuota)` when quota is greater than 0,
+otherwise 1 if the card is complete, and the card is complete when every
+required member is complete and at least `optionalQuota` optional members are
+complete. With `targetCount`, each member contributes its period
+`completedCount`, nested card `count`, or 1 if complete; the card is complete
+when requireds are done and the sum reaches `targetCount`, and `count` is that
+sum. Optional `scorecardId` reads one scorecard (including archived). Optional
+`tagId` includes scorecards tagged with that tag or any descendant. `now` and
+`soonWindowMs` can be supplied for deterministic evaluation. Members may be
+signals or other scorecards.
 
 ### `manageScorecard` (`signals:write`)
 
 Creates, updates, archives, or restores a scorecard. Creates require `name`,
-`tagIds`, `members`, and `optionalQuota`. Members are an ordered list of
-`{ signalId, role: "required" | "optional" }`. Updates may replace name, tags,
-members, or quota. `optionalQuota` cannot exceed the number of optional
+`tagIds`, `members`, and `optionalQuota`. Optional `targetCount` is a session
+goal (positive integer). Members are an ordered list of
+`{ type?: "signal", signalId, role }` or
+`{ type: "scorecard", scorecardId, role }`. Nested scorecards cannot form a
+cycle. Updates may replace name, tags, members, quota, or `targetCount`
+(`null` clears it). `optionalQuota` cannot exceed the number of optional
 members. Tag-root tokens constrain list/create to that subtree and prevent
 updates from leaving it.
 

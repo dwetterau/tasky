@@ -11,10 +11,17 @@ const DEFAULT_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type ScorecardMemberRole = "required" | "optional";
 
-type ScorecardMemberInput = {
-  signalId: Id<"signals">;
-  role: ScorecardMemberRole;
-};
+type ScorecardMemberInput =
+  | {
+      type: "signal";
+      signalId: Id<"signals">;
+      role: ScorecardMemberRole;
+    }
+  | {
+      type: "scorecard";
+      scorecardId: Id<"scorecards">;
+      role: ScorecardMemberRole;
+    };
 
 type ManageScorecardOperation =
   | {
@@ -23,6 +30,7 @@ type ManageScorecardOperation =
       tagIds: Id<"tags">[];
       members: ScorecardMemberInput[];
       optionalQuota: number;
+      targetCount?: number;
     }
   | {
       type: "scorecard.update";
@@ -31,6 +39,7 @@ type ManageScorecardOperation =
       tagIds?: Id<"tags">[];
       members?: ScorecardMemberInput[];
       optionalQuota?: number;
+      targetCount?: number | null;
     }
   | {
       type: "scorecard.archive";
@@ -72,13 +81,28 @@ const membersSchema = {
   type: "array",
   minItems: 1,
   items: {
-    type: "object",
-    additionalProperties: false,
-    required: ["signalId", "role"],
-    properties: {
-      signalId: { type: "string", minLength: 1 },
-      role: { type: "string", enum: ["required", "optional"] },
-    },
+    oneOf: [
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["signalId", "role"],
+        properties: {
+          type: { const: "signal" },
+          signalId: { type: "string", minLength: 1 },
+          role: { type: "string", enum: ["required", "optional"] },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "scorecardId", "role"],
+        properties: {
+          type: { const: "scorecard" },
+          scorecardId: { type: "string", minLength: 1 },
+          role: { type: "string", enum: ["required", "optional"] },
+        },
+      },
+    ],
   },
 };
 
@@ -86,7 +110,7 @@ export const scorecardToolDescriptors: McpToolDescriptor[] = [
   {
     name: "readScorecards",
     description:
-      "Read the authenticated user's scorecards with member completion and rollup progress. A scorecard is complete when every required signal is complete and at least optionalQuota optional signals are complete. Each signal evaluation includes ratio and isComplete.",
+      "Read the authenticated user's scorecards with member completion and rollup progress. Without targetCount, a scorecard is complete when every required member is complete and at least optionalQuota optional members are complete; count is floor(optionalDoneCount / optionalQuota) when quota > 0. With targetCount, members contribute period completedCount (or nested card count, or 1 if complete) and the card is complete when requireds are done and the sum reaches targetCount; count is that sum. Members are signals or other scorecards.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -117,7 +141,7 @@ export const scorecardToolDescriptors: McpToolDescriptor[] = [
   {
     name: "manageScorecard",
     description:
-      "Create, update, archive, or restore a scorecard. Members are an explicit ordered list of signals with required or optional roles. optionalQuota is how many optional members must be fully complete.",
+      "Create, update, archive, or restore a scorecard. Members are an ordered list of signals or other scorecards with required or optional roles. Signal members may omit type or use type: signal. Nested scorecards use type: scorecard and scorecardId. optionalQuota is how many optional members must be fully complete when targetCount is omitted. targetCount is a session goal: member counts are summed (period occurrences, nested card count, or 1 if complete). On update, targetCount null clears it.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -135,6 +159,7 @@ export const scorecardToolDescriptors: McpToolDescriptor[] = [
                 tagIds: tagIdsSchema,
                 members: membersSchema,
                 optionalQuota: { type: "integer", minimum: 0 },
+                targetCount: { type: "integer", minimum: 1 },
               },
             },
             {
@@ -148,6 +173,12 @@ export const scorecardToolDescriptors: McpToolDescriptor[] = [
                 tagIds: tagIdsSchema,
                 members: membersSchema,
                 optionalQuota: { type: "integer", minimum: 0 },
+                targetCount: {
+                  anyOf: [
+                    { type: "integer", minimum: 1 },
+                    { type: "null" },
+                  ],
+                },
               },
             },
             {
@@ -255,6 +286,36 @@ function parseTagIds(
   return { value: tagIds };
 }
 
+function parseOptionalTargetCount(
+  rpcId: unknown,
+  value: unknown,
+  allowNull: boolean,
+): { value?: number | null; error?: Response } {
+  if (value === undefined) {
+    return {};
+  }
+  if (value === null) {
+    if (!allowNull) {
+      return {
+        error: mcpError(rpcId, -32602, "targetCount must be a positive integer"),
+      };
+    }
+    return { value: null };
+  }
+  const parsed = parseFiniteNumber(rpcId, value, "targetCount", { minimum: 1 });
+  if (parsed.error || parsed.value === undefined) {
+    return {
+      error: parsed.error ?? mcpError(rpcId, -32602, "Invalid targetCount"),
+    };
+  }
+  if (!Number.isInteger(parsed.value)) {
+    return {
+      error: mcpError(rpcId, -32602, "targetCount must be an integer"),
+    };
+  }
+  return { value: parsed.value };
+}
+
 function parseMembers(
   rpcId: unknown,
   value: unknown,
@@ -271,17 +332,16 @@ function parseMembers(
   }
   const members: ScorecardMemberInput[] = [];
   for (const item of value) {
-    const parsed = parseStrictObject(rpcId, item, ["signalId", "role"], "member");
+    const parsed = parseStrictObject(
+      rpcId,
+      item,
+      ["type", "signalId", "scorecardId", "role"],
+      "member",
+    );
     if (parsed.error || !parsed.value) {
       return {
         error: parsed.error ?? mcpError(rpcId, -32602, "Invalid member"),
       };
-    }
-    if (
-      typeof parsed.value.signalId !== "string" ||
-      !parsed.value.signalId.trim()
-    ) {
-      return { error: mcpError(rpcId, -32602, "member.signalId is required") };
     }
     if (
       parsed.value.role !== "required" &&
@@ -289,7 +349,34 @@ function parseMembers(
     ) {
       return { error: mcpError(rpcId, -32602, "member.role is invalid") };
     }
+    const memberType = parsed.value.type;
+    if (memberType === "scorecard") {
+      if (
+        typeof parsed.value.scorecardId !== "string" ||
+        !parsed.value.scorecardId.trim()
+      ) {
+        return {
+          error: mcpError(rpcId, -32602, "member.scorecardId is required"),
+        };
+      }
+      members.push({
+        type: "scorecard",
+        scorecardId: parsed.value.scorecardId as Id<"scorecards">,
+        role: parsed.value.role,
+      });
+      continue;
+    }
+    if (memberType !== undefined && memberType !== "signal") {
+      return { error: mcpError(rpcId, -32602, "member.type is invalid") };
+    }
+    if (
+      typeof parsed.value.signalId !== "string" ||
+      !parsed.value.signalId.trim()
+    ) {
+      return { error: mcpError(rpcId, -32602, "member.signalId is required") };
+    }
     members.push({
+      type: "signal",
       signalId: parsed.value.signalId as Id<"signals">,
       role: parsed.value.role,
     });
@@ -310,6 +397,7 @@ function parseManageOperation(
       "tagIds",
       "members",
       "optionalQuota",
+      "targetCount",
       "scorecardId",
       "archived",
     ],
@@ -351,6 +439,14 @@ function parseManageOperation(
         error: mcpError(rpcId, -32602, "optionalQuota must be an integer"),
       };
     }
+    const targetCount = parseOptionalTargetCount(
+      rpcId,
+      parsed.value.targetCount,
+      false,
+    );
+    if (targetCount.error) {
+      return { error: targetCount.error };
+    }
     return {
       value: {
         type: "scorecard.create",
@@ -358,6 +454,7 @@ function parseManageOperation(
         tagIds: tagIds.value,
         members: members.value,
         optionalQuota: quota.value,
+        targetCount: targetCount.value ?? undefined,
       },
     };
   }
@@ -405,6 +502,14 @@ function parseManageOperation(
       }
       optionalQuota = quota.value;
     }
+    const targetCount = parseOptionalTargetCount(
+      rpcId,
+      parsed.value.targetCount,
+      true,
+    );
+    if (targetCount.error) {
+      return { error: targetCount.error };
+    }
     return {
       value: {
         type: "scorecard.update",
@@ -413,6 +518,7 @@ function parseManageOperation(
         tagIds: tagIds.value,
         members: members.value,
         optionalQuota,
+        targetCount: targetCount.value,
       },
     };
   }

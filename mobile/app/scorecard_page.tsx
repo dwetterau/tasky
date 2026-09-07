@@ -38,6 +38,17 @@ function scorecardEditRoute(scorecardId: string) {
   } as unknown as Href;
 }
 
+function scorecardDetailRoute(scorecardId: string) {
+  return {
+    pathname: "/scorecard_page" as const,
+    params: { scorecardId },
+  } as unknown as Href;
+}
+
+function memberKey(member: ScorecardItem["members"][number]): string {
+  return member.type === "scorecard" ? member.scorecardId : member.signalId;
+}
+
 function formatPercent(ratio: number): string {
   return `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;
 }
@@ -74,13 +85,13 @@ function MemberRow({
 }) {
   if (!signal) {
     return (
-      <View style={styles.fallbackRow}>
+      <TouchableOpacity style={styles.fallbackRow} onPress={onOpen}>
         <Text style={styles.fallbackTitle}>{member.name}</Text>
         <Text style={styles.fallbackDetail}>
           {member.evaluation.reason ??
             (member.evaluation.isComplete ? "Done" : "Not complete")}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   }
 
@@ -116,7 +127,7 @@ function MemberSection({
   signalById: Map<string, SignalDashboardItem>;
   now: number;
   savingId: string | null;
-  onOpen: (signalId: string) => void;
+  onOpen: (member: ScorecardItem["members"][number]) => void;
   onQuickAction: (signal: SignalDashboardItem) => void;
 }) {
   if (members.length === 0) {
@@ -128,14 +139,18 @@ function MemberSection({
       <Text style={sharedStyles.sectionTitle}>{title}</Text>
       <View style={styles.listCard}>
         {members.map((member, index) => (
-          <View key={member.signalId}>
+          <View key={memberKey(member)}>
             {index > 0 ? <View style={styles.divider} /> : null}
             <MemberRow
               member={member}
-              signal={signalById.get(member.signalId)}
+              signal={
+                member.type === "signal"
+                  ? signalById.get(member.signalId)
+                  : undefined
+              }
               now={now}
               savingId={savingId}
-              onOpen={() => onOpen(member.signalId)}
+              onOpen={() => onOpen(member)}
               onQuickAction={onQuickAction}
             />
           </View>
@@ -197,8 +212,12 @@ export default function ScorecardPage() {
     [scorecard.data?.members],
   );
 
-  const openSignal = (signalId: string) => {
-    router.push(signalDetailsRoute(signalId));
+  const openMember = (member: ScorecardItem["members"][number]) => {
+    if (member.type === "scorecard") {
+      router.push(scorecardDetailRoute(member.scorecardId));
+      return;
+    }
+    router.push(signalDetailsRoute(member.signalId));
   };
 
   const handleQuickAction = async (signal: SignalDashboardItem) => {
@@ -259,9 +278,11 @@ export default function ScorecardPage() {
 
   const quota = card.optionalQuota;
   const blocking =
-    quota > 0
-      ? `${card.evaluation.optionalDoneCount} of ${quota} optionals`
-      : undefined;
+    card.targetCount !== undefined
+      ? `${card.evaluation.count} of ${card.targetCount}`
+      : quota > 0
+        ? `${card.evaluation.optionalDoneCount} of ${quota} optionals`
+        : undefined;
 
   return (
     <>
@@ -322,7 +343,7 @@ export default function ScorecardPage() {
           signalById={signalById}
           now={now}
           savingId={savingId}
-          onOpen={openSignal}
+          onOpen={openMember}
           onQuickAction={(signal) => void handleQuickAction(signal)}
         />
         <MemberSection
@@ -335,7 +356,7 @@ export default function ScorecardPage() {
           signalById={signalById}
           now={now}
           savingId={savingId}
-          onOpen={openSignal}
+          onOpen={openMember}
           onQuickAction={(signal) => void handleQuickAction(signal)}
         />
 

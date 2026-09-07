@@ -3,12 +3,14 @@ export type ScorecardMemberRole = "required" | "optional";
 export type ScorecardMemberInput = {
   role: ScorecardMemberRole;
   ratio: number;
+  count?: number;
 };
 
 export type ScorecardEvaluation = {
   ratio: number;
   isComplete: boolean;
   optionalDoneCount: number;
+  count: number;
 };
 
 function clampedRatio(ratio: number): number {
@@ -18,9 +20,17 @@ function clampedRatio(ratio: number): number {
   return Math.min(1, ratio);
 }
 
+function memberCount(member: ScorecardMemberInput): number {
+  if (member.count !== undefined && Number.isFinite(member.count)) {
+    return Math.max(0, member.count);
+  }
+  return clampedRatio(member.ratio) >= 1 ? 1 : 0;
+}
+
 export function evaluateScorecard(
   members: ScorecardMemberInput[],
   optionalQuota: number,
+  targetCount?: number,
 ): ScorecardEvaluation {
   const requiredRatios: number[] = [];
   const optionalRatios: number[] = [];
@@ -36,6 +46,18 @@ export function evaluateScorecard(
   const optionalDoneCount = optionalRatios.filter((ratio) => ratio >= 1).length;
   const requiredComplete = requiredRatios.every((ratio) => ratio >= 1);
   const requiredCount = requiredRatios.length;
+
+  if (targetCount !== undefined && targetCount > 0) {
+    const count = members.reduce((sum, member) => sum + memberCount(member), 0);
+    const isComplete = requiredComplete && count >= targetCount;
+    return {
+      ratio: isComplete ? 1 : Math.min(1, count / targetCount),
+      isComplete,
+      optionalDoneCount,
+      count,
+    };
+  }
+
   const slots = requiredCount + optionalQuota;
 
   let isComplete = requiredComplete && optionalDoneCount >= optionalQuota;
@@ -62,9 +84,17 @@ export function evaluateScorecard(
     ratio = 1;
   }
 
+  const count =
+    optionalQuota > 0
+      ? Math.floor(optionalDoneCount / optionalQuota)
+      : isComplete
+        ? 1
+        : 0;
+
   return {
     ratio,
     isComplete,
     optionalDoneCount,
+    count,
   };
 }

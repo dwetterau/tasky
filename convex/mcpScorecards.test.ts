@@ -160,11 +160,37 @@ describe("scorecard MCP tools", () => {
           name: "Exercise",
           tagIds: ["tag-1"],
           members: [
-            { signalId: "signal-1", role: "required" },
-            { signalId: "signal-2", role: "optional" },
+            { type: "signal", signalId: "signal-1", role: "required" },
+            { type: "signal", signalId: "signal-2", role: "optional" },
           ],
           optionalQuota: 1,
         },
+      }),
+    );
+
+    const withTarget = await handlers.manageScorecard(
+      61,
+      "user-1",
+      scopes(SIGNALS_WRITE_SCOPE),
+      {
+        operation: {
+          type: "scorecard.create",
+          name: "Exercise week",
+          tagIds: [],
+          members: [{ signalId: "signal-1", role: "optional" }],
+          optionalQuota: 0,
+          targetCount: 5,
+        },
+      },
+    );
+    expect((await responseBody(withTarget)).error).toBeUndefined();
+    expect(manage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: expect.objectContaining({
+          type: "scorecard.create",
+          name: "Exercise week",
+          targetCount: 5,
+        }),
       }),
     );
 
@@ -177,8 +203,17 @@ describe("scorecard MCP tools", () => {
           type: "scorecard.update",
           scorecardId: "scorecard-1",
           optionalQuota: 0,
+          targetCount: null,
         },
       },
+    );
+    expect(manage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: expect.objectContaining({
+          type: "scorecard.update",
+          targetCount: null,
+        }),
+      }),
     );
     expect((await responseBody(updated)).error).toBeUndefined();
 
@@ -195,6 +230,41 @@ describe("scorecard MCP tools", () => {
       },
     );
     expect((await responseBody(archived)).error).toBeUndefined();
+
+    const nested = await handlers.manageScorecard(
+      71,
+      "user-1",
+      scopes(SIGNALS_WRITE_SCOPE),
+      {
+        operation: {
+          type: "scorecard.create",
+          name: "Exercise",
+          tagIds: [],
+          members: [
+            {
+              type: "scorecard",
+              scorecardId: "scorecard-2",
+              role: "optional",
+            },
+          ],
+          optionalQuota: 1,
+        },
+      },
+    );
+    expect((await responseBody(nested)).error).toBeUndefined();
+    expect(manage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        operation: expect.objectContaining({
+          members: [
+            {
+              type: "scorecard",
+              scorecardId: "scorecard-2",
+              role: "optional",
+            },
+          ],
+        }),
+      }),
+    );
   });
 
   it("forwards tag-root scope on reads", async () => {

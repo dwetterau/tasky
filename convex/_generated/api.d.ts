@@ -17,6 +17,7 @@ import type * as events from "../events.js";
 import type * as githubRepos from "../githubRepos.js";
 import type * as http from "../http.js";
 import type * as lib_portfolioHistory from "../lib/portfolioHistory.js";
+import type * as lib_scorecardMembers from "../lib/scorecardMembers.js";
 import type * as lib_scorecardStatus from "../lib/scorecardStatus.js";
 import type * as lib_signalStatus from "../lib/signalStatus.js";
 import type * as linearIssues from "../linearIssues.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   githubRepos: typeof githubRepos;
   http: typeof http;
   "lib/portfolioHistory": typeof lib_portfolioHistory;
+  "lib/scorecardMembers": typeof lib_scorecardMembers;
   "lib/scorecardStatus": typeof lib_scorecardStatus;
   "lib/signalStatus": typeof lib_signalStatus;
   linearIssues: typeof linearIssues;
