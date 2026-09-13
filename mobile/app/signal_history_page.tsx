@@ -158,18 +158,26 @@ export default function SignalHistoryPage() {
           "none"
         }:${measurementFields.join(",")}`;
   const appliedMeasurementPrefillKey = useRef<string | undefined>(undefined);
+  const didPrefillInventory = useRef(false);
+
+  useEffect(() => {
+    didPrefillInventory.current = false;
+    setInventoryValue("");
+  }, [signalId]);
 
   useEffect(() => {
     if (
-      signal.data?.model.kind === "inventory" &&
-      inventoryValue.trim() === ""
+      signal.data?.model.kind !== "inventory" ||
+      didPrefillInventory.current
     ) {
-      const current =
-        signal.data.evaluation.projectedQuantity ??
-        signal.data.model.confirmedQuantity;
-      setInventoryValue(formatSignalQuantity(current));
+      return;
     }
-  }, [inventoryValue, signal.data]);
+    didPrefillInventory.current = true;
+    const current =
+      signal.data.evaluation.projectedQuantity ??
+      signal.data.model.confirmedQuantity;
+    setInventoryValue(formatSignalQuantity(current));
+  }, [signal.data]);
 
   useEffect(() => {
     if (
@@ -266,7 +274,12 @@ export default function SignalHistoryPage() {
   };
 
   const handleInventory = async (mode: "adjust" | "set") => {
-    const value = Number(inventoryValue);
+    const trimmed = inventoryValue.trim();
+    if (trimmed === "") {
+      setError("Enter a valid number");
+      return;
+    }
+    const value = Number(trimmed);
     if (!Number.isFinite(value)) {
       setError("Enter a valid number");
       return;

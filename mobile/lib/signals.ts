@@ -263,6 +263,42 @@ export function formatFuture(timestamp: number, now: number): string {
   return `due in ${days}d`;
 }
 
+const ATTENTION_RANK: Record<
+  SignalDashboardItem["evaluation"]["attention"],
+  number
+> = {
+  due: 0,
+  soon: 1,
+  unknown: 2,
+  ok: 3,
+};
+
+export function leftoverSignals(
+  signals: SignalDashboardItem[],
+  scorecards: ScorecardItem[],
+): SignalDashboardItem[] {
+  const assignedIds = new Set<string>();
+  for (const scorecard of scorecards) {
+    for (const member of scorecard.members) {
+      if (member.type === "signal") {
+        assignedIds.add(member.signalId);
+      }
+    }
+  }
+  return signals
+    .filter((signal) => !assignedIds.has(signal.id))
+    .slice()
+    .sort((left, right) => {
+      const attentionDelta =
+        ATTENTION_RANK[left.evaluation.attention] -
+        ATTENTION_RANK[right.evaluation.attention];
+      if (attentionDelta !== 0) {
+        return attentionDelta;
+      }
+      return left.name.localeCompare(right.name);
+    });
+}
+
 export function memberContributionCount(
   member: ScorecardItem["members"][number],
 ): number {

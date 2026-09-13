@@ -103,9 +103,6 @@ function SignalsCard() {
       : "skip",
   );
   const recordSignal = useTaskyMutation(taskyApi.signals.record);
-  const dueCount =
-    signals.data?.filter((signal) => signal.evaluation.attention === "due")
-      .length ?? 0;
   const needsAttention = (signals.data ?? [])
     .filter((signal) => signal.evaluation.attention !== "ok")
     .slice(0, 3);
@@ -154,8 +151,7 @@ function SignalsCard() {
         onPress={() => router.push("/settings_page")}
       >
         <CardHeader
-          title="Needs attention"
-          subtitle="Connect Tasky to add life signals"
+          title="Signals"
           trailing={<Text style={styles.connectLink}>Connect</Text>}
         />
       </TouchableOpacity>
@@ -168,18 +164,7 @@ function SignalsCard() {
         activeOpacity={0.7}
         onPress={() => router.push("/signals_page" as Href)}
       >
-        <CardHeader
-          title="Needs attention"
-          subtitle={
-            !taskyEnabled || signals.isLoading
-              ? "Loading signals…"
-              : dueCount > 0
-                ? `${dueCount} signal${dueCount === 1 ? "" : "s"} due`
-                : needsAttention.length > 0
-                  ? `${needsAttention.length} coming up`
-                  : "Everything is on track"
-          }
-        />
+        <CardHeader title="Signals" />
       </TouchableOpacity>
       {!taskyEnabled || signals.isLoading ? (
         <View style={sharedStyles.inlineLoading}>
@@ -362,7 +347,7 @@ function TaskyCard() {
         onPress={() => router.push("/settings_page")}
       >
         <CardHeader
-          title="Tasky"
+          title="Tasks"
           subtitle="Connect to see your captures and tasks"
           trailing={<Text style={styles.connectLink}>Connect</Text>}
         />
@@ -377,7 +362,7 @@ function TaskyCard() {
       onPress={() => router.push("/tasky_captures_page")}
     >
       <CardHeader
-        title="Tasky"
+        title="Tasks"
         subtitle={
           !taskyEnabled
             ? "Refreshing session…"

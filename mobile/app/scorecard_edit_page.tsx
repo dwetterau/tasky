@@ -32,9 +32,46 @@ import { colors, fontSize, radius, sharedStyles, spacing } from "@/lib/theme";
 type ScorecardId = FunctionArgs<typeof taskyApi.scorecards.get>["scorecardId"];
 type SignalId = FunctionArgs<typeof taskyApi.signals.get>["signalId"];
 type MemberRole = "required" | "optional";
+type GoalMode = "members" | "times";
 type DraftMember =
   | { type: "signal"; signalId: SignalId; role: MemberRole }
   | { type: "scorecard"; scorecardId: ScorecardId; role: MemberRole };
+
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <View style={styles.segmented}>
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <TouchableOpacity
+            key={option.value}
+            style={[styles.segment, selected && styles.segmentSelected]}
+            onPress={() => onChange(option.value)}
+            activeOpacity={0.8}
+          >
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.segmentText,
+                selected && styles.segmentTextSelected,
+              ]}
+            >
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
 
 function memberKey(member: DraftMember): string {
   return member.type === "scorecard"
@@ -81,8 +118,8 @@ export default function ScorecardEditPage() {
   const [name, setName] = useState("");
   const [tagIds, setTagIds] = useState<TaskyTagId[]>([]);
   const [members, setMembers] = useState<DraftMember[]>([]);
-  const [optionalQuota, setOptionalQuota] = useState("0");
-  const [targetCount, setTargetCount] = useState("");
+  const [goalMode, setGoalMode] = useState<GoalMode>("members");
+  const [goalCount, setGoalCount] = useState("0");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -143,30 +180,26 @@ export default function ScorecardEditPage() {
             },
       ),
     );
-    setOptionalQuota(String(scorecard.data.optionalQuota));
-    setTargetCount(
-      scorecard.data.targetCount !== undefined
-        ? String(scorecard.data.targetCount)
-        : "",
-    );
+    if (scorecard.data.targetCount !== undefined) {
+      setGoalMode("times");
+      setGoalCount(String(scorecard.data.targetCount));
+    } else {
+      setGoalMode("members");
+      setGoalCount(String(scorecard.data.optionalQuota));
+    }
   }, [scorecard.data]);
 
   const optionalCount = members.filter(
     (member) => member.role === "optional",
   ).length;
-  const parsedQuota = Number.parseInt(optionalQuota, 10);
-  const trimmedTarget = targetCount.trim();
-  const parsedTarget = Number.parseInt(trimmedTarget, 10);
-  const targetValid =
-    trimmedTarget.length === 0 ||
-    (Number.isInteger(parsedTarget) && parsedTarget >= 1);
+  const parsedGoal = Number.parseInt(goalCount, 10);
+  const goalValid =
+    Number.isInteger(parsedGoal) &&
+    (goalMode === "times"
+      ? parsedGoal >= 1
+      : parsedGoal >= 0 && parsedGoal <= optionalCount);
   const canSave =
-    name.trim().length > 0 &&
-    members.length > 0 &&
-    Number.isInteger(parsedQuota) &&
-    parsedQuota >= 0 &&
-    parsedQuota <= optionalCount &&
-    targetValid;
+    name.trim().length > 0 && members.length > 0 && goalValid;
 
   const memberIds = useMemo(
     () => new Set(members.map(memberKey)),
@@ -235,15 +268,25 @@ export default function ScorecardEditPage() {
     );
   };
 
+  const changeGoalMode = (next: GoalMode) => {
+    setGoalMode(next);
+    if (next === "times") {
+      const current = Number.parseInt(goalCount, 10);
+      if (!Number.isInteger(current) || current < 1) {
+        setGoalCount("1");
+      }
+    }
+  };
+
   const handleSave = async () => {
     if (!canSave) {
       setError(
-        "Add a name, at least one member, and a valid optional quota or session target.",
+        "Add a name, at least one member, and a valid completion goal.",
       );
       return;
     }
-    const nextTargetCount =
-      trimmedTarget.length === 0 ? null : parsedTarget;
+    const optionalQuota = goalMode === "members" ? parsedGoal : 0;
+    const targetCount = goalMode === "times" ? parsedGoal : null;
     setSaving(true);
     setError(null);
     try {
@@ -253,16 +296,16 @@ export default function ScorecardEditPage() {
           name: name.trim(),
           tagIds,
           members,
-          optionalQuota: parsedQuota,
-          targetCount: nextTargetCount,
+          optionalQuota,
+          targetCount,
         });
       } else {
         await createScorecard({
           name: name.trim(),
           tagIds,
           members,
-          optionalQuota: parsedQuota,
-          ...(nextTargetCount !== null ? { targetCount: nextTargetCount } : {}),
+          optionalQuota,
+          ...(targetCount !== null ? { targetCount } : {}),
         });
       }
       router.back();
@@ -354,7 +397,8 @@ export default function ScorecardEditPage() {
         <View style={sharedStyles.card}>
           <Text style={styles.label}>Signals</Text>
           <Text style={sharedStyles.muted}>
-            Required members must all be done. Optional members can fill a quota.
+            Required members must all be done. Optional members help fill the
+            goal below.
           </Text>
           {visibleSignals.map((signal) => {
             const key = `signal:${signal.id}`;
@@ -397,8 +441,8 @@ export default function ScorecardEditPage() {
         <View style={sharedStyles.card}>
           <Text style={styles.label}>Scorecards</Text>
           <Text style={sharedStyles.muted}>
-            A nested scorecard counts as one member. Its own optional quota
-            decides when it is complete.
+            A nested scorecard is one member. It uses its own goal to decide
+            when it is complete and how many times it contributes.
           </Text>
           {otherScorecards.map((card) => {
             const key = `scorecard:${card.id}`;
@@ -441,36 +485,41 @@ export default function ScorecardEditPage() {
         </View>
 
         <View style={sharedStyles.card}>
-          <Text style={styles.label}>Optional quota</Text>
-          <Text style={sharedStyles.muted}>
-            How many optional members must be fully done. 0 means optionals never
-            block completion.
-          </Text>
+          <Text style={styles.label}>Done when</Text>
+          <Segmented
+            value={goalMode}
+            onChange={changeGoalMode}
+            options={[
+              { value: "members", label: "Members" },
+              { value: "times", label: "Times" },
+            ]}
+          />
+          {goalMode === "members" ? (
+            <Text style={sharedStyles.muted}>
+              Count finished optional members, not how many times they happened.
+              Required members must still all be done. 0 means optionals never
+              block the card.
+            </Text>
+          ) : (
+            <Text style={sharedStyles.muted}>
+              Count times, not finished members. A signal adds its occurrences
+              this period; a nested card adds its own count. Required members
+              must still all be done.
+            </Text>
+          )}
           <TextInput
             style={styles.input}
-            value={optionalQuota}
-            onChangeText={setOptionalQuota}
+            value={goalCount}
+            onChangeText={setGoalCount}
             keyboardType="number-pad"
+            placeholder={goalMode === "times" ? "1" : "0"}
           />
-          <Text style={sharedStyles.muted}>
-            {optionalCount} optional member{optionalCount === 1 ? "" : "s"}{" "}
-            selected
-          </Text>
-        </View>
-
-        <View style={sharedStyles.card}>
-          <Text style={styles.label}>Session target</Text>
-          <Text style={sharedStyles.muted}>
-            Sum member occurrences (and nested card counts) toward this goal.
-            Leave empty to use optional quota instead.
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={targetCount}
-            onChangeText={setTargetCount}
-            keyboardType="number-pad"
-            placeholder="None"
-          />
+          {goalMode === "members" ? (
+            <Text style={sharedStyles.muted}>
+              {optionalCount} optional member{optionalCount === 1 ? "" : "s"}{" "}
+              selected
+            </Text>
+          ) : null}
         </View>
 
         {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
@@ -546,5 +595,35 @@ const styles = StyleSheet.create({
   roleLabel: {
     color: colors.secondaryLabel,
     fontSize: fontSize.small,
+  },
+  segmented: {
+    flexDirection: "row",
+    height: 36,
+    padding: 2,
+    borderRadius: radius.md,
+    backgroundColor: colors.tertiarySystemGroupedBackground,
+  },
+  segment: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md - 2,
+  },
+  segmentSelected: {
+    backgroundColor: colors.secondarySystemGroupedBackground,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  segmentText: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.small,
+    fontWeight: "600",
+  },
+  segmentTextSelected: {
+    color: colors.label,
   },
 });
