@@ -9,9 +9,11 @@ import {
   View,
 } from "react-native";
 import { PillButton } from "@/components/PillButton";
+import { SignalRow } from "@/components/SignalRow";
 import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   getSignalPeriodBounds,
+  leftoverSignals,
   memberContributionCount,
   scorecardHeadline,
   SIGNAL_SOON_WINDOW_MS,
@@ -32,6 +34,13 @@ function scorecardDetailRoute(scorecardId: string) {
   return {
     pathname: "/scorecard_page" as const,
     params: { scorecardId },
+  } as unknown as Href;
+}
+
+function signalDetailsRoute(signalId: string) {
+  return {
+    pathname: "/signal_history_page" as const,
+    params: { signalId },
   } as unknown as Href;
 }
 
@@ -129,7 +138,23 @@ export default function ScorecardsPage() {
         }
       : "skip",
   );
+  const signals = useTaskyQuery(
+    taskyApi.signals.listDashboard,
+    taskyEnabled
+      ? {
+          now,
+          soonWindowMs: SIGNAL_SOON_WINDOW_MS,
+          periodBounds,
+        }
+      : "skip",
+  );
   const items = useMemo(() => scorecards.data ?? [], [scorecards.data]);
+  const leftovers = useMemo(
+    () => leftoverSignals(signals.data ?? [], items),
+    [items, signals.data],
+  );
+  const isLoading =
+    !taskyEnabled || scorecards.isLoading || signals.isLoading;
 
   if (!taskyAuth.isAuthenticated) {
     return (
@@ -178,12 +203,12 @@ export default function ScorecardsPage() {
         contentContainerStyle={sharedStyles.screenContent}
         {...automaticKeyboardInsets}
       >
-        {!taskyEnabled || scorecards.isLoading ? (
+        {isLoading ? (
           <View style={sharedStyles.inlineLoading}>
             <ActivityIndicator />
             <Text style={sharedStyles.muted}>Loading scorecards…</Text>
           </View>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && leftovers.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No scorecards yet</Text>
             <Text style={sharedStyles.muted}>
@@ -196,12 +221,40 @@ export default function ScorecardsPage() {
             />
           </View>
         ) : (
-          items.map((scorecard) => (
-            <ScorecardRow key={scorecard.id} scorecard={scorecard} />
-          ))
+          <>
+            {items.map((scorecard) => (
+              <ScorecardRow key={scorecard.id} scorecard={scorecard} />
+            ))}
+            {leftovers.length > 0 ? (
+              <View style={styles.leftovers}>
+                <View style={styles.leftoversHeader}>
+                  <Text style={sharedStyles.sectionTitle}>Leftovers</Text>
+                  <Text style={sharedStyles.muted}>
+                    Signals not on a scorecard
+                  </Text>
+                </View>
+                <View style={styles.listCard}>
+                  {leftovers.map((signal, index) => (
+                    <View key={signal.id}>
+                      {index > 0 ? <View style={styles.divider} /> : null}
+                      <SignalRow
+                        signal={signal}
+                        now={now}
+                        onPress={() =>
+                          router.push(signalDetailsRoute(signal.id))
+                        }
+                      />
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </>
         )}
-        {scorecards.error ? (
-          <Text style={sharedStyles.error}>{scorecards.error}</Text>
+        {scorecards.error || signals.error ? (
+          <Text style={sharedStyles.error}>
+            {scorecards.error ?? signals.error}
+          </Text>
         ) : null}
       </ScrollView>
     </>
@@ -271,6 +324,22 @@ const styles = StyleSheet.create({
   optionalNames: {
     color: colors.tertiaryLabel,
     fontSize: fontSize.small,
+  },
+  leftovers: {
+    gap: spacing.sm,
+  },
+  leftoversHeader: {
+    gap: spacing.xs,
+  },
+  listCard: {
+    overflow: "hidden",
+    borderRadius: radius.lg,
+    backgroundColor: colors.secondarySystemGroupedBackground,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: spacing.lg,
+    backgroundColor: colors.separator,
   },
   emptyState: {
     alignItems: "center",
