@@ -137,6 +137,7 @@ export const weatherPayloadSchema = z
             high: z.number(),
             low: z.number(),
             description: text,
+            rainProbability: z.number().min(0).max(100).nullable().optional(),
           })
           .strict(),
       )

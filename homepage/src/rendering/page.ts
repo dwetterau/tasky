@@ -1,6 +1,6 @@
 import { calendar, withFreshness, type Feed } from "@tasky/home-feed";
 import { moduleFor, renderModule } from "../modules/registry";
-import { escapeHtml as e, safeLink, sourceTime } from "./html";
+import { escapeHtml as e, sourceTime } from "./html";
 
 export const styles = `
 :root {
@@ -41,14 +41,14 @@ summary:focus-visible {
 .paper {
   max-width: 1280px;
   margin: auto;
-  padding: 28px 36px;
+  padding: 18px 36px;
 }
 .masthead {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 24px;
-  padding-bottom: 22px;
+  padding-bottom: 12px;
   border-bottom: 4px double var(--ink);
 }
 .masthead h1 {
@@ -69,7 +69,6 @@ button,
 .dateline,
 .section-heading a,
 details,
-.attribution,
 .logged-signals,
 .statline span {
   font-family: system-ui, sans-serif;
@@ -94,7 +93,7 @@ button {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px 18px;
-  padding: 10px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--ink);
   font-size: 11px;
   color: var(--muted);
@@ -104,7 +103,7 @@ button {
   grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr));
   align-items: start;
   gap: 28px;
-  margin-top: 24px;
+  margin-top: 18px;
 }
 .module {
   min-width: 0;
@@ -118,6 +117,73 @@ button {
   font-size: 25px;
   margin: 0 0 3px;
   line-height: 1.2;
+}
+.module-title,
+.module-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.module-actions {
+  font:
+    11px system-ui,
+    sans-serif;
+}
+.module-open {
+  color: var(--accent);
+  white-space: nowrap;
+}
+.module-info {
+  position: relative;
+}
+.info-trigger {
+  opacity: 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+  padding: 4px;
+}
+.module-header:hover .info-trigger,
+.module-info:focus-within .info-trigger {
+  opacity: 1;
+}
+.info-tooltip {
+  display: block;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  width: min(280px, 75vw);
+  padding: 12px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  box-shadow: 0 4px 14px #24282020;
+  z-index: 2;
+  color: var(--muted);
+  font:
+    11px/1.5 system-ui,
+    sans-serif;
+  visibility: hidden;
+  opacity: 0;
+}
+.info-tooltip > span {
+  display: block;
+}
+.info-tooltip > span + span {
+  margin-top: 10px;
+}
+.info-tooltip strong {
+  color: var(--ink);
+}
+.module-info:hover .info-tooltip,
+.module-info:focus-within .info-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+@media (hover: none) {
+  .info-trigger {
+    opacity: 1;
+  }
 }
 h3,
 h4,
@@ -155,6 +221,9 @@ p {
 }
 .scorecard {
   margin-top: 12px;
+}
+.scorecards > .scorecard:first-child {
+  margin-top: 0;
 }
 .scorecard h3 {
   font-size: 16px;
@@ -305,6 +374,18 @@ progress::-moz-progress-bar {
 .forecast-day b {
   white-space: nowrap;
 }
+.forecast-values {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.rain-chance {
+  font:
+    10px system-ui,
+    sans-serif;
+  color: var(--muted);
+  margin-top: 3px;
+}
 .muted {
   color: var(--muted);
   font-weight: 400;
@@ -324,25 +405,26 @@ details {
 summary {
   cursor: pointer;
 }
-.source-details p {
-  margin-top: 6px;
-}
-.attribution {
-  display: inline-block;
-  font-size: 10px;
-  margin-top: 12px;
-  color: var(--muted);
-}
 .portfolio-value {
   font-size: clamp(32px, 3.5vw, 44px);
   letter-spacing: -0.045em;
   line-height: 1.2;
-  margin: 12px 0 4px;
+  margin: 0 0 4px;
   overflow-wrap: anywhere;
 }
 .portfolio-return {
-  font-size: 17px;
-  margin-bottom: 4px;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.portfolio-performance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.portfolio-performance .meta {
+  white-space: nowrap;
+  font-size: 10px;
 }
 .portfolio-return span {
   font-size: 14px;
@@ -406,7 +488,7 @@ summary {
 }
 @media (max-width: 620px) {
   .paper {
-    padding: 20px;
+    padding: 14px 20px;
   }
   .masthead {
     gap: 12px;
@@ -437,7 +519,6 @@ export function shell(
     edition?: number;
     firstName?: string;
     generated?: string;
-    taskyOrigin?: string;
     fixture?: boolean;
     script?: boolean;
     showSignOut?: boolean;
@@ -470,9 +551,6 @@ export function shell(
                   : "Hello"}
               </h1>
               <nav aria-label="Account">
-                ${options.taskyOrigin
-                  ? `<a href="${safeLink(options.taskyOrigin)}">Tasky ↗</a>`
-                  : ""}
                 ${options.showSignOut !== false
                   ? '<form action="/auth/logout" method="post"><button>Sign out</button></form>'
                   : ""}
@@ -534,12 +612,16 @@ export function renderEdition(
         aria-label="${e(module.title)}"
       >
         <div class="module-header">
-          <h2>${e(module.title)}</h2>
+          ${module.renderHeader
+            ? module.renderHeader(snapshot, context)
+            : `<h2>${e(module.title)}</h2>
           <div class="meta ${snapshot.status !== "available" ? "stale" : ""}">
-            ${timestamp === null
-              ? "Awaiting first update"
-              : `${e(label)} ${sourceTime(timestamp, feed.timezone)}`}
-          </div>
+            ${
+              timestamp === null
+                ? "Awaiting first update"
+                : `${e(label)} ${sourceTime(timestamp, feed.timezone)}`
+            }
+          </div>`}
         </div>
         ${snapshot.error && snapshot.error !== "awaiting_data"
           ? '<p class="notice">The latest update failed. The last successful data is shown when available.</p>'
@@ -561,7 +643,6 @@ export function renderEdition(
     edition: dailyEdition(feed.publishedAt, feed.timezone),
     firstName: feed.displayName?.trim().split(/\s+/)[0],
     generated: `<time datetime="${new Date(feed.publishedAt).toISOString()}">${e(new Intl.DateTimeFormat("en-US", { timeZone: feed.timezone, hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(feed.publishedAt))}</time>`,
-    taskyOrigin,
     fixture,
     script: true,
   });

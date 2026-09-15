@@ -2,6 +2,7 @@ import { env as bindings } from "cloudflare:workers";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   collectWeather,
+  normalizeForecast,
   weatherConfigSchema,
   type WeatherState,
 } from "../src/modules/weather/collector";
@@ -28,7 +29,7 @@ const forecast = {
     {
       Date: "2026-09-15T07:00:00-04:00",
       Temperature: { Minimum: { Value: 61 }, Maximum: { Value: 76 } },
-      Day: { IconPhrase: "Sunny" },
+      Day: { IconPhrase: "Sunny", RainProbability: 0 },
     },
   ],
 };
@@ -52,12 +53,16 @@ it("works without a weather key, and never writes credentials to snapshots or du
       "Bearer secret-not-for-feed",
     );
     expect(String(input)).not.toContain("secret-not-for-feed");
+    if (String(input).includes("forecasts/")) {
+      expect(new URL(String(input)).searchParams.get("details")).toBe("true");
+    }
     return Response.json(
       String(input).includes("currentconditions") ? current() : forecast,
     );
   });
   const result = await collectWeather(env, "user-a", config, undefined, save);
   expect(result.snapshot?.status).toBe("available");
+  expect(result.state?.payload?.forecast[0].rainProbability).toBe(0);
   expect(result.state?.payload?.attributionUrl).toBe(
     "https://www.accuweather.com/",
   );
@@ -66,6 +71,32 @@ it("works without a weather key, and never writes credentials to snapshots or du
   const calls = network.mock.calls.length;
   await collectWeather(env, "user-a", config, result.state, save);
   expect(network).toHaveBeenCalledTimes(calls);
+});
+it("upgrades only the forecast without clearing current conditions or the request budget", async () => {
+  const network = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input) => {
+      if (String(input).includes("weather-key"))
+        return Response.json({ apiKey: "secret" });
+      return Response.json(
+        String(input).includes("currentconditions") ? current() : forecast,
+      );
+    });
+  const save = vi.fn(async (_state: WeatherState) => {});
+  const first = await collectWeather(env, "user-a", config, undefined, save);
+  const previous = structuredClone(first.state!);
+  delete previous.forecastVersion;
+  network.mockClear();
+  const next = await collectWeather(env, "user-a", config, previous, save);
+  expect(network).toHaveBeenCalledTimes(2); // credential + forecast only
+  expect(next.state!.requestTimes).toHaveLength(3);
+  expect(next.state!.payload!.current).toEqual(first.state!.payload!.current);
+  const missing = structuredClone(forecast);
+  delete (missing.DailyForecasts[0].Day as { RainProbability?: number })
+    .RainProbability;
+  expect(
+    normalizeForecast(missing, Date.now()).forecast[0].rainProbability,
+  ).toBeNull();
 });
 it("backs off on rate limits, enforces a persisted budget, and keeps original last-good times", async () => {
   let stored: WeatherState | undefined;

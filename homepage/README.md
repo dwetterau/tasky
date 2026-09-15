@@ -114,6 +114,11 @@ persisted accounting and rate-limit backoff. A missing key is rechecked every
 30 minutes. Weather failures do not block Tasky updates. Weather data becomes
 stale after seven hours and is removed after twelve.
 
+Daily rain percentages use AccuWeather's daytime `RainProbability` from detailed
+forecasts; missing values show a dash. The weather header's info control reveals
+collection time, observation time, and the provider's forecast response timestamp.
+The latter comes from `Last-Modified`/`Date`, falling back to collection time.
+
 ## Page loading
 
 HTML is rendered in the background and stays private with `no-store`. The small

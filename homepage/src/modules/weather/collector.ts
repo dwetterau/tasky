@@ -27,6 +27,7 @@ export type WeatherConfig = z.infer<typeof weatherConfigSchema>;
 type Part = "current" | "forecast";
 export type WeatherState = {
   configKey: string;
+  forecastVersion?: number;
   payload: WeatherPayload | null;
   nextCurrent: number;
   nextForecast: number;
@@ -62,7 +63,10 @@ const forecastResponse = z.object({
           Minimum: z.object({ Value: z.number() }),
           Maximum: z.object({ Value: z.number() }),
         }),
-        Day: z.object({ IconPhrase: z.string() }),
+        Day: z.object({
+          IconPhrase: z.string(),
+          RainProbability: z.number().min(0).max(100).nullish(),
+        }),
       }),
     )
     .min(1)
@@ -111,6 +115,7 @@ export function normalizeForecast(raw: unknown, issuedAt: number) {
       high: day.Temperature.Maximum.Value,
       low: day.Temperature.Minimum.Value,
       description: day.Day.IconPhrase.slice(0, 240),
+      rainProbability: day.Day.RainProbability ?? null,
     })),
     forecastObservedAt: issuedAt,
     attributionUrl: providerLink(value.Headline.Link),
@@ -182,6 +187,13 @@ export async function collectWeather(
       nextCheck: 0,
       requestTimes: state?.requestTimes ?? [],
     };
+  // Fetch detailed forecasts once after upgrading, preserving current conditions
+  // and every reserved provider call in the rolling request budget.
+  if (state.forecastVersion !== 1) {
+    state.forecastVersion = 1;
+    state.nextForecast = 0;
+    state.nextCheck = 0;
+  }
   // A rolling window also survives configuration changes; changing location
   // must not buy another day's worth of requests.
   state.requestTimes = state.requestTimes.filter(
@@ -268,7 +280,7 @@ export async function collectWeather(
       const url = new URL(`https://dataservice.accuweather.com/${path}`);
       url.search = new URLSearchParams({
         language: config.language,
-        details: "false",
+        details: String(part === "forecast"),
         ...(part === "forecast"
           ? { metric: String(config.units === "C") }
           : {}),
