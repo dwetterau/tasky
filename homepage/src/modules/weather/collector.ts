@@ -71,7 +71,7 @@ const forecastResponse = z.object({
 function providerLink(value: string) {
   const url = new URL(value);
   if (
-    url.protocol !== "https:" ||
+    !["http:", "https:"].includes(url.protocol) ||
     !(
       url.hostname === "accuweather.com" ||
       url.hostname.endsWith(".accuweather.com")
@@ -80,6 +80,8 @@ function providerLink(value: string) {
     url.password
   )
     throw new Error("Invalid provider link");
+  // AccuWeather still returns HTTP attribution URLs; render their HTTPS versions.
+  url.protocol = "https:";
   return url.toString();
 }
 export function normalizeCurrent(raw: unknown, units: "F" | "C") {
@@ -165,7 +167,8 @@ export async function collectWeather(
   now = Date.now(),
 ): Promise<{ state?: WeatherState; snapshot?: ModuleSnapshot }> {
   if (!config) return { snapshot: missingModule(weatherModule, true) };
-  const configKey = JSON.stringify(config);
+  // Retry data rejected by the older parser while retaining the request budget.
+  const configKey = JSON.stringify({ normalizationVersion: 2, ...config });
   if (!state || state.configKey !== configKey)
     state = {
       configKey,

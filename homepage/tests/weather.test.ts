@@ -19,11 +19,11 @@ const current = () => [
     EpochTime: Math.floor(Date.now() / 1000),
     WeatherText: "Sunny",
     Temperature: { Imperial: { Value: 75 }, Metric: { Value: 24 } },
-    Link: "https://www.accuweather.com/",
+    Link: "http://www.accuweather.com/",
   },
 ];
 const forecast = {
-  Headline: { Link: "https://www.accuweather.com/" },
+  Headline: { Link: "http://www.accuweather.com/" },
   DailyForecasts: [
     {
       Date: "2026-09-15T07:00:00-04:00",
@@ -58,6 +58,9 @@ it("works without a weather key, and never writes credentials to snapshots or du
   });
   const result = await collectWeather(env, "user-a", config, undefined, save);
   expect(result.snapshot?.status).toBe("available");
+  expect(result.state?.payload?.attributionUrl).toBe(
+    "https://www.accuweather.com/",
+  );
   expect(JSON.stringify(result)).not.toContain("secret-not-for-feed");
   expect(JSON.stringify(save.mock.calls)).not.toContain("secret-not-for-feed");
   const calls = network.mock.calls.length;
