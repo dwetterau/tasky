@@ -81,6 +81,8 @@ Sessions last 24 hours by default. Remembered refresh credentials are encrypted
 in a Durable Object and can renew for at most 30 days, subject to provider expiry.
 Renewal checks UserInfo against the original user ID. Logout deletes the
 remembered grant; an already copied session remains valid until its expiry.
+Logout clears the homepage cookies and returns to its sign-in screen. Visiting
+the homepage again requires clicking “Sign in with Tasky” to reconnect.
 Tasky logout and homepage logout are separate.
 
 ## Weather
