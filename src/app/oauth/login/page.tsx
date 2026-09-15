@@ -1,81 +1,61 @@
 "use client";
 
-import { Suspense, useMemo } from "react";
-import { useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { SignIn } from "@/components/SignIn";
 import { TaskyWordmark } from "@/components/TaskyWordmark";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { authClient } from "@/lib/auth-client";
-import { UserIdentity } from "@/components/UserIdentity";
+import { oauthApplicationName, oauthAuthorizeUrl } from "@/lib/oauth";
 
 function OAuthLoginPageContent() {
   const { session, isPending } = useAuthSession();
   const searchParams = useSearchParams();
-  const [isContinuing, setIsContinuing] = useState(false);
   const [continueError, setContinueError] = useState<string | null>(null);
-
+  const userId = session?.user.id;
+  const applicationName = oauthApplicationName(searchParams);
   const continueUrl = useMemo(() => {
-    const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
-    if (!convexSiteUrl) return null;
-    const params = new URLSearchParams(searchParams.toString());
-    const isHomepage = params.get("flow") === "homepage";
-    params.delete("flow");
-    const query = params.toString();
-    if (!query) return null;
-    return `${convexSiteUrl}/api/auth/${isHomepage ? "oauth2" : "mcp"}/authorize?${query}`;
+    const issuer = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
+    return issuer ? oauthAuthorizeUrl(issuer, searchParams.toString()) : null;
   }, [searchParams]);
 
-  const onContinue = async () => {
-    if (!continueUrl) return;
-    setIsContinuing(true);
-    setContinueError(null);
-    try {
-      const betterAuthCookie = authClient.getCookie();
-      const response = await fetch("/api/oauth/mcp/continue", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          authorizeUrl: continueUrl,
-          betterAuthCookie,
-        }),
-      });
+  useEffect(() => {
+    if (!userId || !continueUrl) return;
+    const controller = new AbortController();
 
-      const data = (await response.json()) as {
-        location?: string;
-        error?: string;
-        status?: number;
-      };
-
-      if (!response.ok || !data.location) {
-        throw new Error(data.error ?? "Failed to continue authorization");
+    async function resumeAuthorization() {
+      try {
+        const response = await fetch("/api/oauth/mcp/continue", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            authorizeUrl: continueUrl,
+            betterAuthCookie: authClient.getCookie(),
+          }),
+        });
+        const data = (await response.json()) as { location?: string };
+        if (!response.ok || !data.location) {
+          throw new Error("Could not continue sign-in. Please try again.");
+        }
+        if (!controller.signal.aborted) window.location.replace(data.location);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setContinueError(
+            error instanceof Error
+              ? error.message
+              : "Could not continue sign-in.",
+          );
+        }
       }
-
-      window.location.href = data.location;
-    } catch (error) {
-      setContinueError(
-        error instanceof Error
-          ? error.message
-          : "Failed to continue authorization",
-      );
-    } finally {
-      setIsContinuing(false);
     }
-  };
 
-  if (isPending) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+    void resumeAuthorization();
+    return () => controller.abort();
+  }, [continueUrl, userId]);
 
-  if (!session) {
-    return <SignIn />;
-  }
+  if (isPending) return <Loading />;
+  if (!session) return <SignIn applicationName={applicationName} />;
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
@@ -85,37 +65,29 @@ function OAuthLoginPageContent() {
           imageClassName="h-[1.7rem] w-auto shrink-0"
           textClassName="text-lg"
         />
-        <div className="mb-6">
-          <UserIdentity
-            name={session.user.name}
-            email={session.user.email}
-            image={session.user.image}
-            showEmail
-            imageSize={36}
-          />
-        </div>
-        <h1 className="text-2xl font-semibold mb-2">Signed in</h1>
-        <p className="text-(--muted) mb-6">
-          Continue to authorize the requesting application with your Tasky
-          account.
-        </p>
-        {continueError ? (
-          <p className="mb-4 text-sm text-red-400 border border-red-400/30 rounded-lg px-3 py-2">
-            {continueError}
+        <h1 className="text-2xl font-semibold mb-2">
+          Connecting to {applicationName}
+        </h1>
+        {!continueUrl ? (
+          <p className="text-(--muted)">
+            This sign-in link is incomplete. Open {applicationName} to start
+            again.
           </p>
-        ) : null}
-        {continueUrl ? (
-          <button
-            className="inline-block px-4 py-2 rounded-lg bg-accent hover:bg-(--accent-hover) text-white transition-colors"
-            onClick={() => void onContinue()}
-            disabled={isContinuing}
-          >
-            {isContinuing ? "Continuing..." : "Continue authorization"}
-          </button>
+        ) : continueError ? (
+          <>
+            <p role="alert" className="mb-4 text-sm text-red-400">
+              {continueError}
+            </p>
+            <button
+              className="px-4 py-2 rounded-lg bg-accent text-white"
+              onClick={() => window.location.reload()}
+            >
+              Try again
+            </button>
+          </>
         ) : (
-          <p className="text-sm text-(--muted)">
-            Missing OAuth query parameters. Start authorization again from the
-            requesting application.
+          <p role="status" className="text-(--muted)">
+            You’re signed in. Continuing to {applicationName}…
           </p>
         )}
       </div>
@@ -123,15 +95,17 @@ function OAuthLoginPageContent() {
   );
 }
 
+function Loading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
+
 export default function OAuthLoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
+    <Suspense fallback={<Loading />}>
       <OAuthLoginPageContent />
     </Suspense>
   );

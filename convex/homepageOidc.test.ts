@@ -3,7 +3,8 @@ import { expect, it, vi } from "vitest";
 import { betterAuth } from "better-auth";
 import { memoryAdapter, type MemoryDB } from "better-auth/adapters/memory";
 import { jwt, mcp, withMcpAuth } from "better-auth/plugins";
-import { createLocalJWKSet, jwtVerify } from "jose";
+import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify } from "jose";
+import { symmetricEncrypt } from "better-auth/crypto";
 import { homepageOidc } from "./lib/homepageOidc";
 import { isolateHomepageFromMcp } from "./lib/mcp";
 
@@ -25,6 +26,7 @@ function createAuth(db: MemoryDB, homepageEnabled = true) {
     logger: { disabled: true },
     plugins: [
       jwt({
+        jwks: { keyPairConfig: { alg: "RS256" } },
         jwt: { issuer, audience: `${issuer}/api/mcp` },
         disableSettingJwtHeader: true,
       }),
@@ -108,6 +110,33 @@ async function fixture() {
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
+it("signs homepage identity with an existing Convex RSA key without stored algorithm metadata", async () => {
+  const f = await fixture();
+  const pair = await generateKeyPair("RS256", { extractable: true });
+  // The Convex component stores the key material but its schema omits `alg`.
+  f.db.jwks.push({
+    id: "existing-convex-key",
+    publicKey: JSON.stringify(await exportJWK(pair.publicKey)),
+    privateKey: JSON.stringify(
+      await symmetricEncrypt({
+        key: "fixture-better-auth-secret-at-least-32-characters",
+        data: JSON.stringify(await exportJWK(pair.privateKey)),
+      }),
+    ),
+    createdAt: new Date(),
+  });
+  const issued = await homepageTokens(f);
+  const keys = await (
+    await f.auth.handler(new Request(`${issuer}/api/auth/jwks`))
+  ).json();
+  const verified = await jwtVerify(issued.id_token, createLocalJWKSet(keys), {
+    issuer,
+    audience: clientId,
+    algorithms: ["RS256"],
+  });
+  expect(verified.payload.sub).toBe(f.account.user.id);
+});
+
 async function authorizationCode(
   f: Fixture,
   route = "oauth2",
@@ -123,6 +152,10 @@ async function authorizationCode(
   expect(consentUrl.origin + consentUrl.pathname).toBe(
     `${front}/oauth/consent`,
   );
+  if (route === "oauth2") {
+    expect(consentUrl.searchParams.get("client_name")).toBe("Tasky Homepage");
+    expect(consentUrl.searchParams.get("flow")).toBe("homepage");
+  }
   const consent = await f.auth.handler(
     new Request(`${issuer}/api/auth/oauth2/consent`, {
       method: "POST",

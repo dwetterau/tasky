@@ -125,6 +125,14 @@ export async function handleRequest(
       cookie(LOGIN_COOKIE, browserHandle, 600),
     ]);
   }
+  if (request.method === "GET" && url.pathname === "/auth/error") {
+    return privateResponse(
+      shell(
+        '<main class="preparation"><h2>We couldn’t finish signing you in.</h2><p>Please start again to connect your Tasky account to Tasky Homepage.</p><p><a href="/auth/login">Sign in to Tasky Homepage</a></p></main>',
+      ),
+      401,
+    );
+  }
   if (request.method === "GET" && url.pathname === "/auth/callback") {
     const loginHandle = handle(readCookie(request, LOGIN_COOKIE));
     if (!loginHandle || !url.searchParams.get("state"))
@@ -343,6 +351,10 @@ export default {
       console.warn(
         JSON.stringify({ event: "homepage_request_failed", status }),
       );
+      if (new URL(request.url).pathname === "/auth/callback") {
+        // Never leave an authorization code in the address bar after failure.
+        return redirect("/auth/error", [cookie(LOGIN_COOKIE, "", 0)]);
+      }
       return privateResponse(
         shell(
           `<main class="preparation"><h2>${status === 403 ? "This account is not allowed." : status === 401 ? "Please sign in again." : "Your homepage is temporarily unavailable."}</h2><p><a href="/auth/login">Connect with Tasky</a> · <a href="/">Try again</a></p></main>`,

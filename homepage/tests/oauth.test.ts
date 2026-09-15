@@ -146,6 +146,7 @@ describe("OAuth and remembered grants", () => {
     );
     const response = await worker.fetch(callback, env);
     expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/");
     const sessionCookie = response.headers
       .getSetCookie()
       .find((value) => value.startsWith(SESSION_COOKIE))!
@@ -155,7 +156,41 @@ describe("OAuth and remembered grants", () => {
     expect(
       await objectCall(env.PUBLISHERS, "user-a", "/status", {}),
     ).toMatchObject({ userId: "user-a", state: "preparing" });
-    expect((await worker.fetch(callback, env)).status).toBe(401);
+    const replay = await worker.fetch(callback, env);
+    expect(replay.status).toBe(303);
+    expect(replay.headers.get("location")).toBe("/auth/error");
+  });
+  it("removes the code from the URL when the provider fails during callback", async () => {
+    const login = await worker.fetch(
+      new Request(`${env.HOME_ORIGIN}/auth/login`),
+      env,
+    );
+    const authorization = new URL(login.headers.get("location")!);
+    const loginCookie = login.headers
+      .getSetCookie()
+      .find((value) => value.startsWith(LOGIN_COOKIE))!
+      .split(";")[0];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("Provider unavailable", { status: 500 }),
+    );
+    const response = await worker.fetch(
+      new Request(
+        `${env.HOME_ORIGIN}/auth/callback?code=private-single-use-code&state=${authorization.searchParams.get("state")}`,
+        { headers: { cookie: loginCookie } },
+      ),
+      env,
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/auth/error");
+    expect(response.headers.get("set-cookie")).toContain(`${LOGIN_COOKIE}=;`);
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+    const errorPage = await worker.fetch(
+      new Request(`${env.HOME_ORIGIN}/auth/error`),
+      env,
+    );
+    const html = await errorPage.text();
+    expect(html).toContain("Sign in to Tasky Homepage");
+    expect(html).not.toContain("private-single-use-code");
   });
   it("encrypts refresh credentials, renews only via the provider, and revokes remembered grants", async () => {
     const remember = "A".repeat(43);

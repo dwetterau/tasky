@@ -63,6 +63,9 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     database: authComponent.adapter(ctx),
     plugins: [
       jwt({
+        // Convex stores RSA keys without an `alg` field. Match its signer
+        // instead of Better Auth's default EdDSA algorithm.
+        jwks: { keyPairConfig: { alg: "RS256" } },
         jwt: {
           issuer: oauthIssuer,
           audience: mcpResource,

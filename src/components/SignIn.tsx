@@ -5,8 +5,9 @@ import { useSearchParams, usePathname } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { AUTH_PENDING_KEY } from "@/lib/useAuthSession";
 import { TaskyWordmark } from "@/components/TaskyWordmark";
+import { signInCallbackUrl } from "@/lib/oauth";
 
-export function SignIn() {
+export function SignIn({ applicationName }: { applicationName?: string } = {}) {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [hasPendingAuth, setHasPendingAuth] = useState(() => {
     if (typeof window === "undefined") {
@@ -18,10 +19,12 @@ export function SignIn() {
   const [signInError, setSignInError] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const authErrorParam = searchParams.get("authError") ?? searchParams.get("error");
+  const authErrorParam =
+    searchParams.get("authError") ?? searchParams.get("error");
   const authErrorDescription = searchParams.get("error_description");
   const authFlow =
-    searchParams.get("authFlow") ?? (pathname.startsWith("/oauth/") ? "mcp" : "app");
+    searchParams.get("authFlow") ??
+    (pathname.startsWith("/oauth/") ? "mcp" : "app");
 
   // Check if we're in the middle of an OAuth callback
   // The crossDomain plugin uses /ott route with a token parameter
@@ -75,11 +78,11 @@ export function SignIn() {
     setHasPendingAuth(true);
     // Set a flag so we know to show loading after redirect
     sessionStorage.setItem(AUTH_PENDING_KEY, "true");
-    const callbackURL = `${window.location.origin}${window.location.pathname}`;
+    const callbackURL = signInCallbackUrl(window.location.href);
     const errorCallbackURL = new URL(callbackURL);
     errorCallbackURL.searchParams.set(
       "authFlow",
-      window.location.pathname.startsWith("/oauth/") ? "mcp" : "app"
+      window.location.pathname.startsWith("/oauth/") ? "mcp" : "app",
     );
     try {
       await authClient.signIn.social({
@@ -122,7 +125,11 @@ export function SignIn() {
             imageClassName="h-[2.7rem] w-auto"
             textClassName="text-4xl"
           />
-          <p className="text-(--muted)">Manage your tasks and agents in one place</p>
+          <p className="text-(--muted)">
+            {applicationName
+              ? `Sign in to continue to ${applicationName}`
+              : "Manage your tasks and agents in one place"}
+          </p>
         </div>
         <button
           onClick={() => void handleGitHubSignIn()}
@@ -130,9 +137,24 @@ export function SignIn() {
           className="w-full flex items-center justify-center gap-3 bg-[#24292e] hover:bg-[#2f363d] text-white py-3 px-4 rounded-xl transition-all duration-200 font-medium cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {isSigningIn ? (
-            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            <svg
+              className="w-5 h-5 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
             </svg>
           ) : (
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -142,9 +164,7 @@ export function SignIn() {
           {isSigningIn ? "Signing in..." : "Sign in with GitHub"}
         </button>
         {authError ? (
-          <p className="text-sm text-red-400 mt-3 text-center">
-            {authError}
-          </p>
+          <p className="text-sm text-red-400 mt-3 text-center">{authError}</p>
         ) : null}
       </div>
     </div>
