@@ -20,7 +20,8 @@ function OAuthLoginPageContent() {
     if (!convexSiteUrl) return null;
     const query = searchParams.toString();
     if (!query) return null;
-    return `${convexSiteUrl}/api/auth/mcp/authorize?${query}`;
+    const isHomepage = searchParams.get("client_id") === (process.env.NEXT_PUBLIC_HOMEPAGE_OAUTH_CLIENT_ID ?? "tasky-homepage");
+    return `${convexSiteUrl}/api/auth/${isHomepage ? "oauth2" : "mcp"}/authorize?${query}`;
   }, [searchParams]);
 
   const onContinue = async () => {
@@ -91,7 +92,7 @@ function OAuthLoginPageContent() {
         </div>
         <h1 className="text-2xl font-semibold mb-2">Signed in</h1>
         <p className="text-(--muted) mb-6">
-          Click continue to complete MCP authorization and return to Cursor.
+          Continue to authorize the requesting application with your Tasky account.
         </p>
         {continueError ? (
           <p className="mb-4 text-sm text-red-400 border border-red-400/30 rounded-lg px-3 py-2">{continueError}</p>
@@ -106,7 +107,7 @@ function OAuthLoginPageContent() {
           </button>
         ) : (
           <p className="text-sm text-(--muted)">
-            Missing OAuth query parameters. Start authorization again from Cursor.
+            Missing OAuth query parameters. Start authorization again from the requesting application.
           </p>
         )}
       </div>

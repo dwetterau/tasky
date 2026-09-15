@@ -7,6 +7,8 @@ import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
+import { homepageOidc } from "./lib/homepageOidc";
+import { isolateHomepageFromMcp } from "./lib/homepageMcp";
 
 // Convex runtime may not expose URL.canParse yet. Better Auth OAuth/MCP uses it.
 const urlWithCanParse = URL as unknown as {
@@ -32,6 +34,7 @@ const mobileAppOrigin = process.env.MOBILE_APP_ORIGIN ?? "tasky://";
 const mcpResourceUrl = `${convexSiteUrl}/api/mcp`;
 const oauthLoginPage = `${siteUrl}/oauth/login`;
 const oauthConsentPage = `${siteUrl}/oauth/consent`;
+const homepageClientId = process.env.HOMEPAGE_OAUTH_CLIENT_ID ?? "tasky-homepage";
 
 export const oauthIssuer = convexSiteUrl;
 export const mcpResource = mcpResourceUrl;
@@ -63,7 +66,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
         // MCP clients should use bearer tokens, not session response headers.
         disableSettingJwtHeader: true,
       }),
-      mcp({
+      isolateHomepageFromMcp(mcp({
         loginPage: oauthLoginPage,
         resource: mcpResource,
         oidcConfig: {
@@ -81,7 +84,13 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
             },
           },
         },
-      }),
+      }), homepageClientId),
+      ...(process.env.HOMEPAGE_ORIGIN && process.env.HOMEPAGE_OAUTH_CLIENT_SECRET ? [homepageOidc({
+        origin: process.env.HOMEPAGE_ORIGIN,
+        clientId: homepageClientId,
+        clientSecret: process.env.HOMEPAGE_OAUTH_CLIENT_SECRET,
+        loginPage: oauthLoginPage, consentPage: oauthConsentPage,
+      })] : []),
       expo(),
       // crossDomain redirects users back to the frontend after OAuth
       crossDomain({ siteUrl }),

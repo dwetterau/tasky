@@ -12,7 +12,7 @@ function OAuthConsentPageContent() {
   const { session, isPending } = useAuthSession();
   const searchParams = useSearchParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [didLaunchCursor, setDidLaunchCursor] = useState(false);
+  const [didReturnToApp, setDidReturnToApp] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const clientName = useMemo(() => searchParams.get("client_name") ?? "", [searchParams]);
@@ -64,7 +64,7 @@ function OAuthConsentPageContent() {
         );
       }
 
-      setDidLaunchCursor(true);
+      setDidReturnToApp(true);
       window.location.href = data.redirectURI;
     } catch (submitError) {
       setError(
@@ -108,7 +108,7 @@ function OAuthConsentPageContent() {
         </div>
         <h1 className="text-2xl font-semibold mb-2">Authorize client access</h1>
         <p className="text-(--muted) mb-6">
-          Review and approve the scopes this MCP client is requesting.
+          Review and approve the permissions this application is requesting.
         </p>
         {clientName ? (
           <p className="text-sm text-(--muted) mb-5">
@@ -135,9 +135,9 @@ function OAuthConsentPageContent() {
           <p className="mb-4 text-sm text-red-400 border border-red-400/30 rounded-lg px-3 py-2">{error}</p>
         ) : null}
 
-        {didLaunchCursor ? (
+        {didReturnToApp ? (
           <p className="text-sm text-(--muted) border border-(--card-border) rounded-lg px-3 py-2">
-            Authorization was sent to Cursor. You can close this window.
+            Authorization was sent to the requesting application. You can close this window.
           </p>
         ) : (
           <div className="flex gap-3 justify-end">

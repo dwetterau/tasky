@@ -13,6 +13,7 @@ type ApiKeyType =
   | "github"
   | "linear"
   | "cursor_agent_sdk"
+  | "accuweather"
   | "portfolio_airtable_api_key"
   | "portfolio_airtable_base_id"
   | "portfolio_schwab_positions_view_id"
@@ -32,6 +33,8 @@ function getApiKeyTypeLabel(type: ApiKeyType): string {
       return "Linear";
     case "cursor_agent_sdk":
       return "Cursor Agent SDK";
+    case "accuweather":
+      return "AccuWeather (personal homepage)";
     case "portfolio_airtable_api_key":
       return "Portfolio Airtable API Key";
     case "portfolio_airtable_base_id":
@@ -154,6 +157,7 @@ function SettingsContent() {
                 <option value="github">GitHub</option>
                 <option value="linear">Linear</option>
                 <option value="cursor_agent_sdk">Cursor Agent SDK</option>
+                <option value="accuweather">AccuWeather (personal homepage)</option>
                 <option value="portfolio_airtable_api_key">
                   Portfolio Airtable API Key
                 </option>

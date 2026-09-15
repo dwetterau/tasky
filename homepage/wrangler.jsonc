@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tasky-homepage",
+  "account_id": "3dd7176ee728107d75279307beba54bd",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "rules": [{ "type": "Text", "globs": ["**/*.svg"], "fallthrough": true }],
+  "kv_namespaces": [{ "binding": "EDITIONS", "id": "b8c9558c59c445a1a8af30396c3b0ed5" }],
+  "durable_objects": { "bindings": [
+    { "name": "PUBLISHERS", "class_name": "UserPublisher" },
+    { "name": "SESSIONS", "class_name": "HomepageSession" },
+    { "name": "COORDINATOR", "class_name": "Coordinator" }
+  ] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserPublisher", "HomepageSession", "Coordinator"] }],
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": {
+    "HOME_ORIGIN": "https://home.davidw.tech",
+    "TASKY_ORIGIN": "https://tasky.davidw.tech",
+    "TASKY_ISSUER": "https://pleasant-nightingale-894.convex.site",
+    "OAUTH_CLIENT_ID": "tasky-homepage",
+    "DEFAULT_TIMEZONE": "America/New_York",
+    "SESSION_TTL_SECONDS": "86400",
+    "ALLOWED_USER_IDS": "",
+    "WEATHER_CONFIG": "{\"locationKey\":\"349727\",\"locationName\":\"New York, NY\",\"units\":\"F\",\"language\":\"en-us\",\"currentIntervalMinutes\":120,\"forecastIntervalMinutes\":360,\"dailyRequestBudget\":20}"
+  },
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } }
+}

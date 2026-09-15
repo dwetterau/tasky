@@ -13,7 +13,7 @@ function isAllowedAuthorizeUrl(url: string): boolean {
     const allowed = new URL(configured);
     return (
       target.origin === allowed.origin &&
-      target.pathname.startsWith("/api/auth/mcp/authorize")
+      ["/api/auth/mcp/authorize", "/api/auth/oauth2/authorize"].includes(target.pathname)
     );
   } catch {
     return false;
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
 
   if (!authorizeUrl || !isAllowedAuthorizeUrl(authorizeUrl)) {
     return NextResponse.json(
-      { error: "authorizeUrl must target this deployment's MCP authorize endpoint" },
+      { error: "authorizeUrl must target this deployment's authorize endpoint" },
       { status: 400 }
     );
   }
@@ -63,4 +63,3 @@ export async function POST(req: Request) {
     { status: 502 }
   );
 }
-
