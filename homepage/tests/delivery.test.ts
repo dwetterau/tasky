@@ -52,6 +52,7 @@ describe("private delivery", () => {
     feed.displayName = "David Wetterau";
     const html = renderEdition(feed, env.TASKY_ORIGIN);
     expect(html).toMatch(/<h1>\s*Hello, David\s*<\/h1>/);
+    expect(html).toContain("<title>Hello, David</title>");
     expect(html).toContain("Edition Nº 1");
     expect(html).toContain('data-revision="99"');
     expect(html).toContain("Generated <time");
@@ -64,7 +65,7 @@ describe("private delivery", () => {
     expect(html).not.toContain(">Tasky ↗</a>");
     expect(html).toContain('aria-describedby="weather-info"');
     expect(html).toContain('role="tooltip"');
-    expect(html).toContain("Forecast timestamp");
+    expect(html).toContain("Forecast fetched");
     expect(html).toContain("Open ↗</a>");
     expect(
       dailyEdition(Date.parse("2026-09-16T04:00:00Z"), feed.timezone),

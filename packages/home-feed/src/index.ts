@@ -61,6 +61,7 @@ export const signalSchema = z
     ratio: z.number().min(0).max(1),
     isComplete: z.boolean(),
     todayCount: z.number().int().nonnegative().default(0),
+    labels: z.array(z.string().max(60)).max(3).default([]),
   })
   .strict();
 export const scorecardSchema = z
@@ -143,6 +144,19 @@ export const weatherPayloadSchema = z
       )
       .max(5),
     forecastObservedAt: timestamp.nullable(),
+    forecastFetchedAt: timestamp.nullable().optional(),
+    hourly: z
+      .array(
+        z
+          .object({
+            at: timestamp,
+            rainProbability: z.number().min(0).max(100).nullable(),
+          })
+          .strict(),
+      )
+      .max(24)
+      .optional(),
+    hourlyFetchedAt: timestamp.nullable().optional(),
     attributionUrl: z
       .url()
       .refine((value) => new URL(value).protocol === "https:"),

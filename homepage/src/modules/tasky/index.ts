@@ -50,7 +50,7 @@ export const taskyModule: HomeModule<TaskyPayload> = {
             .map(
               (signal) => `
           <li><span class="signal-dot ${e(signal.attention)}" aria-hidden="true"></span>
-            <div><strong>${e(signal.name)}</strong><p>${e(signal.reason)}</p></div></li>`,
+            <div><div class="signal-heading"><strong>${e(signal.name)}</strong>${signal.labels.length ? `<span class="signal-tags">${signal.labels.map(e).join(" · ")}</span>` : ""}</div><p>${e(signal.reason)}</p></div></li>`,
             )
             .join("") || '<li class="empty">All on track.</li>'}
         </ul>
