@@ -108,8 +108,8 @@ KV edition or collector state. This keeps Tasky as the credential store while
 the Worker owns weather collection.
 
 Defaults are New York (`349727`), Fahrenheit and English. Current conditions
-update every two hours; the five-day and 24-hour forecasts every six hours.
-The hourly rain chart shows the remaining hours of the current local day.
+update every two hours; the five-day and 12-hour forecasts every six hours.
+The hourly rain chart shows the available remaining hours of the current local day.
 The collector allows at most 20 provider calls per rolling 24 hours, with
 persisted accounting and rate-limit backoff. A missing key is rechecked every
 30 minutes. Weather failures do not block Tasky updates. Weather data becomes
@@ -120,7 +120,7 @@ forecasts; missing values show a dash. The weather header's info control reveals
 collection time, observation time, and separate daily/hourly forecast download
 times. The provider's `Last-Modified`/`Date` still informs daily forecast freshness
 internally; it is not displayed as a forecast creation time. The hourly chart
-uses `RainProbability` from the detailed 24-hour forecast and renders as HTML/CSS,
+uses `RainProbability` from the detailed 12-hour forecast and renders as HTML/CSS,
 with a fixed 0–100% scale and no charting library.
 
 ## Page loading
