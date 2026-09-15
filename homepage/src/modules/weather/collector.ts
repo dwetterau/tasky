@@ -32,6 +32,7 @@ export type WeatherState = {
   nextCurrent: number;
   nextForecast: number;
   nextHourly?: number;
+  hourlyVersion?: number;
   collectedAt: number | null;
   error?: ModuleSnapshot["error"];
   failures: number;
@@ -223,7 +224,8 @@ export async function collectWeather(
     state.nextForecast = 0;
     state.nextCheck = 0;
   }
-  if (state.nextHourly === undefined) {
+  if (state.nextHourly === undefined || state.hourlyVersion !== 1) {
+    state.hourlyVersion = 1;
     state.nextHourly = 0;
     state.nextCheck = 0;
   }
@@ -330,7 +332,7 @@ export async function collectWeather(
           ? `currentconditions/v1/${config.locationKey}`
           : part === "forecast"
             ? `forecasts/v1/daily/5day/${config.locationKey}`
-            : `forecasts/v1/hourly/24hour/${config.locationKey}`;
+            : `forecasts/v1/hourly/12hour/${config.locationKey}`;
       const url = new URL(`https://dataservice.accuweather.com/${path}`);
       url.search = new URLSearchParams({
         language: config.language,
