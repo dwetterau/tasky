@@ -7,6 +7,18 @@ import { TaskyWordmark } from "@/components/TaskyWordmark";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { authClient } from "@/lib/auth-client";
 import { UserIdentity } from "@/components/UserIdentity";
+import { oauthApplicationName } from "@/lib/oauth";
+
+const permissionLabels: Record<string, string> = {
+  openid: "Recognize your Tasky account",
+  profile: "Read your name and profile",
+  email: "Read your email address",
+  offline_access: "Keep you signed in between visits",
+  "tasks:read": "Read your tasks",
+  "tasks:write": "Create and update your tasks",
+  "signals:read": "Read your signals",
+  "signals:write": "Create and update your signals",
+};
 
 function OAuthConsentPageContent() {
   const { session, isPending } = useAuthSession();
@@ -15,9 +27,16 @@ function OAuthConsentPageContent() {
   const [didReturnToApp, setDidReturnToApp] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const clientName = useMemo(() => searchParams.get("client_name") ?? "", [searchParams]);
-  const requestedScope = useMemo(() => searchParams.get("scope") ?? "", [searchParams]);
-  const consentCode = useMemo(() => searchParams.get("consent_code") ?? "", [searchParams]);
+  const clientName = oauthApplicationName(searchParams);
+  const isHomepage = searchParams.get("flow") === "homepage";
+  const requestedScope = useMemo(
+    () => searchParams.get("scope") ?? "",
+    [searchParams],
+  );
+  const consentCode = useMemo(
+    () => searchParams.get("consent_code") ?? "",
+    [searchParams],
+  );
   const consentUrl = useMemo(() => {
     const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
     if (!convexSiteUrl) return null;
@@ -25,8 +44,12 @@ function OAuthConsentPageContent() {
   }, []);
 
   const scopeList = useMemo(
-    () => requestedScope.split(/\s+/).map((s) => s.trim()).filter((s) => s.length > 0),
-    [requestedScope]
+    () =>
+      requestedScope
+        .split(/\s+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    [requestedScope],
   );
 
   const submitConsent = async (accept: boolean) => {
@@ -59,18 +82,16 @@ function OAuthConsentPageContent() {
           : data.error
             ? ` (${data.error})`
             : "";
-        throw new Error(
-          `Failed to submit consent${details}`
-        );
+        throw new Error(`Failed to submit consent${details}`);
       }
 
       setDidReturnToApp(true);
-      window.location.href = data.redirectURI;
+      window.location.replace(data.redirectURI);
     } catch (submitError) {
       setError(
         submitError instanceof Error
           ? submitError.message
-          : "Failed to submit consent"
+          : "Failed to submit consent",
       );
     } finally {
       setIsSubmitting(false);
@@ -86,7 +107,7 @@ function OAuthConsentPageContent() {
   }
 
   if (!session) {
-    return <SignIn />;
+    return <SignIn applicationName={clientName} />;
   }
 
   return (
@@ -106,25 +127,35 @@ function OAuthConsentPageContent() {
             imageSize={36}
           />
         </div>
-        <h1 className="text-2xl font-semibold mb-2">Authorize client access</h1>
+        <h1 className="text-2xl font-semibold mb-2">Connect {clientName}?</h1>
         <p className="text-(--muted) mb-6">
-          Review and approve the permissions this application is requesting.
+          {isHomepage
+            ? "Tasky Homepage uses your account to show your private daily brief at home.davidw.tech."
+            : `${clientName} is asking to use your Tasky account.`}
         </p>
         {clientName ? (
           <p className="text-sm text-(--muted) mb-5">
-            App requesting access: <span className="text-foreground font-medium">{clientName}</span>
+            App requesting access:{" "}
+            <span className="text-foreground font-medium">{clientName}</span>
           </p>
         ) : null}
 
         <div className="mb-6 border border-(--card-border) rounded-xl p-4">
-          <p className="text-sm font-medium mb-3">Requested scopes</p>
+          <p className="text-sm font-medium mb-3">
+            This will allow {clientName} to:
+          </p>
           {scopeList.length === 0 ? (
-            <p className="text-sm text-(--muted)">No scopes were explicitly requested.</p>
+            <p className="text-sm text-(--muted)">
+              No additional permissions were requested.
+            </p>
           ) : (
             <ul className="flex flex-wrap gap-2">
               {scopeList.map((scope) => (
-                <li key={scope} className="text-xs px-2 py-1 rounded-full bg-(--accent-subtle) border border-(--card-border)">
-                  {scope}
+                <li
+                  key={scope}
+                  className="text-xs px-2 py-1 rounded-full bg-(--accent-subtle) border border-(--card-border)"
+                >
+                  {permissionLabels[scope] ?? scope}
                 </li>
               ))}
             </ul>
@@ -132,12 +163,14 @@ function OAuthConsentPageContent() {
         </div>
 
         {error ? (
-          <p className="mb-4 text-sm text-red-400 border border-red-400/30 rounded-lg px-3 py-2">{error}</p>
+          <p className="mb-4 text-sm text-red-400 border border-red-400/30 rounded-lg px-3 py-2">
+            {error}
+          </p>
         ) : null}
 
         {didReturnToApp ? (
           <p className="text-sm text-(--muted) border border-(--card-border) rounded-lg px-3 py-2">
-            Authorization was sent to the requesting application. You can close this window.
+            Returning to {clientName}…
           </p>
         ) : (
           <div className="flex gap-3 justify-end">
@@ -153,7 +186,11 @@ function OAuthConsentPageContent() {
               disabled={isSubmitting || !consentUrl}
               className="px-4 py-2 rounded-lg bg-accent hover:bg-(--accent-hover) text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? "Submitting..." : "Allow"}
+              {isSubmitting
+                ? "Connecting..."
+                : isHomepage
+                  ? "Allow and open homepage"
+                  : "Allow"}
             </button>
           </div>
         )}

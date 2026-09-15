@@ -56,10 +56,29 @@ export function homepageOidc(options: {
             const query = params.toString();
             throw ctx.redirect(`${options.loginPage}?${query}`);
           }
-          return provider.endpoints.oAuth2authorize({
+          const response = await provider.endpoints.oAuth2authorize({
             ...ctx,
             asResponse: true,
           });
+          const location = response.headers.get("location");
+          if (location) {
+            const target = new URL(location);
+            const consentPage = new URL(options.consentPage);
+            if (
+              target.origin === consentPage.origin &&
+              target.pathname === consentPage.pathname
+            ) {
+              target.searchParams.set("client_name", "Tasky Homepage");
+              target.searchParams.set("flow", "homepage");
+              const headers = new Headers(response.headers);
+              headers.set("location", target.toString());
+              return new Response(response.body, {
+                status: response.status,
+                headers,
+              });
+            }
+          }
+          return response;
         },
       ),
       homepageToken: createAuthEndpoint(
