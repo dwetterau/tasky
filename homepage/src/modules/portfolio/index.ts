@@ -43,7 +43,6 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
           <progress max="1" value="${Math.max(0, Math.min(1, holding.allocation))}" aria-label="${e(holding.ticker)} allocation"></progress></li>`,
           )
           .join("") || '<li class="empty">No holdings yet.</li>'}
-      </ul>
-      <p class="meta">Saved values from Tasky.</p>`;
+      </ul>`;
   },
 };

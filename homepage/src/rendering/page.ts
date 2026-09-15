@@ -614,13 +614,22 @@ export function renderEdition(
         <div class="module-header">
           ${module.renderHeader
             ? module.renderHeader(snapshot, context)
-            : `<h2>${e(module.title)}</h2>
-          <div class="meta ${snapshot.status !== "available" ? "stale" : ""}">
-            ${
-              timestamp === null
-                ? "Awaiting first update"
-                : `${e(label)} ${sourceTime(timestamp, feed.timezone)}`
-            }
+            : `<div class="module-title">
+            <h2>${e(module.title)}</h2>
+            <div class="module-actions">
+              <span class="module-info">
+                <button class="info-trigger" type="button"
+                  aria-label="${e(module.title)} timing information"
+                  aria-describedby="${e(module.id)}-info">ⓘ</button>
+                <span class="info-tooltip" id="${e(module.id)}-info" role="tooltip">
+                  <span>${
+                    timestamp === null
+                      ? "Awaiting first update"
+                      : `<strong>${e(label)}</strong> ${sourceTime(timestamp, feed.timezone)}`
+                  }</span>
+                </span>
+              </span>
+            </div>
           </div>`}
         </div>
         ${snapshot.error && snapshot.error !== "awaiting_data"
