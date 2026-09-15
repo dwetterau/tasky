@@ -244,8 +244,32 @@ describe("OAuth and remembered grants", () => {
       }),
       env,
     );
-    expect(logout.status).toBe(200);
-    expect(logout.headers.getSetCookie()).toHaveLength(3);
+    expect(logout.status).toBe(303);
+    expect(logout.headers.get("location")).toBe("/auth/sign-in");
+    const clearedCookies = logout.headers.getSetCookie();
+    expect(clearedCookies.map((value) => value.split(";")[0])).toEqual([
+      `${SESSION_COOKIE}=`,
+      `${REMEMBER_COOKIE}=`,
+      `${LOGIN_COOKIE}=`,
+    ]);
+    for (const value of clearedCookies) expect(value).toContain("Max-Age=0");
+    for (const path of ["/", "/auth/renew"]) {
+      const response = await worker.fetch(
+        new Request(`${env.HOME_ORIGIN}${path}`),
+        env,
+      );
+      expect(response.headers.get("location")).toBe("/auth/sign-in");
+    }
+    const signIn = await worker.fetch(
+      new Request(`${env.HOME_ORIGIN}/auth/sign-in`),
+      env,
+    );
+    expect(signIn.status).toBe(200);
+    expect(signIn.headers.get("location")).toBeNull();
+    const html = await signIn.text();
+    expect(html).toContain('href="/auth/login"');
+    expect(html).not.toContain('action="/auth/logout"');
+    expect(network).toHaveBeenCalledTimes(2);
     expect((await worker.fetch(renew, env)).status).toBe(401);
     // Documented local-token revocation window: already-issued tokens retain expiry.
     expect(await verifySession(env, token)).not.toBeNull();

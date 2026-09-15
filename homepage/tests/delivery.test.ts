@@ -75,6 +75,7 @@ describe("private delivery", () => {
       const response = await handleRequest(request(path, token), isolated);
       expect(response.status).toBe(200);
       expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("referrer-policy")).toBe("same-origin");
       expect(response.headers.get("x-edition-revision")).toBe("1");
       expect(await response.text()).not.toContain("User B private task");
       expect(get).toHaveBeenCalledExactlyOnceWith("edition:user-a", "json");
@@ -186,14 +187,20 @@ describe("local credentials", () => {
   });
   it("rejects cross-origin session mutations", async () => {
     for (const path of ["/auth/logout", "/auth/renew"]) {
-      const response = await worker.fetch(
-        new Request(`${env.HOME_ORIGIN}${path}`, {
-          method: "POST",
-          headers: { origin: "https://evil.test" },
-        }),
-        env,
-      );
-      expect(response.status).toBe(403);
+      for (const origin of ["https://evil.test", "null"]) {
+        const response = await worker.fetch(
+          new Request(`${env.HOME_ORIGIN}${path}`, {
+            method: "POST",
+            headers: { origin },
+          }),
+          env,
+        );
+        expect(response.status).toBe(403);
+        expect(response.headers.getSetCookie()).toHaveLength(0);
+        expect(await response.text()).not.toContain(
+          "This account is not allowed",
+        );
+      }
     }
   });
 });

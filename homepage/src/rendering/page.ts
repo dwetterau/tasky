@@ -485,6 +485,7 @@ export function shell(
     taskyOrigin?: string;
     fixture?: boolean;
     script?: boolean;
+    showSignOut?: boolean;
   } = {},
 ) {
   return /* HTML */ `<!doctype html>
@@ -515,9 +516,11 @@ export function shell(
                 ${options.taskyOrigin
                   ? `<a href="${safeLink(options.taskyOrigin)}">Tasky ↗</a>`
                   : ""}
-                <form action="/auth/logout" method="post">
-                  <button>Sign out</button>
-                </form>
+                ${options.showSignOut !== false
+                  ? `<form action="/auth/logout" method="post">
+                      <button>Sign out</button>
+                    </form>`
+                  : ""}
               </nav>
             </div>
             <div class="masthead">

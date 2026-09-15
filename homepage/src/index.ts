@@ -48,7 +48,8 @@ function privateResponse(
     "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
   );
   headers.set("x-content-type-options", "nosniff");
-  headers.set("referrer-policy", "no-referrer");
+  // Same-origin forms need an Origin header for CSRF validation.
+  headers.set("referrer-policy", "same-origin");
   headers.set("permissions-policy", "geolocation=(), camera=(), microphone=()");
   headers.set("strict-transport-security", "max-age=31536000");
   headers.set("x-robots-tag", "noindex, nofollow");
@@ -112,6 +113,18 @@ export async function handleRequest(
     );
     return json(result, 202);
   }
+  if (request.method === "GET" && url.pathname === "/auth/sign-in") {
+    return privateResponse(
+      shell(
+        `<main class="preparation">
+          <h2>Sign in to Tasky Homepage</h2>
+          <p>Connect your Tasky account to open your private edition.</p>
+          <p><a href="/auth/login">Sign in with Tasky →</a></p>
+        </main>`,
+        { showSignOut: false },
+      ),
+    );
+  }
   if (request.method === "GET" && url.pathname === "/auth/login") {
     const { attempt, url: authorizationUrl } = await beginAuthorization(env);
     const browserHandle = randomToken();
@@ -129,6 +142,7 @@ export async function handleRequest(
     return privateResponse(
       shell(
         '<main class="preparation"><h2>We couldn’t finish signing you in.</h2><p>Please start again to connect your Tasky account to Tasky Homepage.</p><p><a href="/auth/login">Sign in to Tasky Homepage</a></p></main>',
+        { showSignOut: false },
       ),
       401,
     );
@@ -172,6 +186,8 @@ export async function handleRequest(
     ]);
   }
   if (request.method === "GET" && url.pathname === "/auth/renew") {
+    if (!handle(readCookie(request, REMEMBER_COOKIE)))
+      return redirect("/auth/sign-in");
     return privateResponse(
       shell(
         '<main class="preparation"><p class="eyebrow">Welcome back</p><h2>Continue to your private edition.</h2><p>Your homepage session needs to be renewed before your information can be shown.</p><form action="/auth/renew" method="post"><button>Continue securely →</button></form><p><a href="/auth/login">Sign in with Tasky again</a></p></main>',
@@ -184,7 +200,7 @@ export async function handleRequest(
     if (!remember)
       return request.headers.get("accept") === "application/json"
         ? json({ error: "Sign in again" }, 401)
-        : redirect("/auth/login");
+        : redirect("/auth/sign-in");
     try {
       const { token } = await objectCall<{ token: string }>(
         env.SESSIONS,
@@ -219,7 +235,7 @@ export async function handleRequest(
         );
         return response;
       }
-      return redirect("/auth/login", cookies);
+      return redirect("/auth/sign-in", cookies);
     }
   }
   if (request.method === "POST" && url.pathname === "/auth/logout") {
@@ -235,18 +251,11 @@ export async function handleRequest(
       ),
     );
     for (const sid of ids) await objectCall(env.SESSIONS, sid, "/revoke", {});
-    return privateResponse(
-      shell(
-        '<main class="preparation"><h2>You’re signed out.</h2><p><a href="/auth/login">Connect with Tasky</a></p></main>',
-      ),
-      200,
-      "text/html; charset=utf-8",
-      new Headers([
-        ["set-cookie", cookie(SESSION_COOKIE, "", 0)],
-        ["set-cookie", cookie(REMEMBER_COOKIE, "", 0)],
-        ["set-cookie", cookie(LOGIN_COOKIE, "", 0)],
-      ]),
-    );
+    return redirect("/auth/sign-in", [
+      cookie(SESSION_COOKIE, "", 0),
+      cookie(REMEMBER_COOKIE, "", 0),
+      cookie(LOGIN_COOKIE, "", 0),
+    ]);
   }
   if (request.method !== "GET")
     return json({ error: "Method not allowed" }, 405);
@@ -262,7 +271,7 @@ export async function handleRequest(
     return redirect(
       handle(readCookie(request, REMEMBER_COOKIE))
         ? "/auth/renew"
-        : "/auth/login",
+        : "/auth/sign-in",
     );
   }
   // Setup diagnostics are explicitly a slower path and never choose a URL userId.
@@ -355,9 +364,18 @@ export default {
         // Never leave an authorization code in the address bar after failure.
         return redirect("/auth/error", [cookie(LOGIN_COOKIE, "", 0)]);
       }
+      const heading =
+        status === 403
+          ? "This request was not allowed. Reload the homepage and try again."
+          : status === 401
+            ? "Please sign in again."
+            : "Your homepage is temporarily unavailable.";
       return privateResponse(
         shell(
-          `<main class="preparation"><h2>${status === 403 ? "This account is not allowed." : status === 401 ? "Please sign in again." : "Your homepage is temporarily unavailable."}</h2><p><a href="/auth/login">Connect with Tasky</a> · <a href="/">Try again</a></p></main>`,
+          `<main class="preparation">
+            <h2>${heading}</h2>
+            <p><a href="/auth/sign-in">Sign in</a> · <a href="/">Try again</a></p>
+          </main>`,
         ),
         status,
       );
