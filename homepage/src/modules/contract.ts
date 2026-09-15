@@ -14,6 +14,7 @@ export interface HomeModule<T> {
   freshForMs: number;
   maxAgeMs: number;
   parse: (value: unknown) => T;
+  renderHeader?: (snapshot: ModuleSnapshot, context: RenderContext) => string;
   render: (payload: T, context: RenderContext) => string;
 }
 export function missingModule<T>(

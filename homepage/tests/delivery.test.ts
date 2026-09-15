@@ -59,6 +59,13 @@ describe("private delivery", () => {
     expect(html).not.toContain("Make space for the work");
     expect(html).not.toContain("YOUR PRIVATE EDITION");
     expect(html).not.toContain("Outside your window");
+    expect(html).not.toContain("Weather by AccuWeather");
+    expect(html).not.toContain(">Scorecards</h3>");
+    expect(html).not.toContain(">Tasky ↗</a>");
+    expect(html).toContain('aria-describedby="weather-info"');
+    expect(html).toContain('role="tooltip"');
+    expect(html).toContain("Forecast timestamp");
+    expect(html).toContain("Open ↗</a>");
     expect(
       dailyEdition(Date.parse("2026-09-16T04:00:00Z"), feed.timezone),
     ).toBe(2);

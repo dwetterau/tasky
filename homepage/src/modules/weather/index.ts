@@ -22,6 +22,56 @@ export const weatherModule: HomeModule<WeatherPayload> = {
   freshForMs: 7 * 3600_000,
   maxAgeMs: 12 * 3600_000,
   parse: (value) => weatherPayloadSchema.parse(value),
+  renderHeader(snapshot, context) {
+    const data =
+      snapshot.payload === null
+        ? null
+        : weatherPayloadSchema.parse(snapshot.payload);
+    return /* HTML */ `<div class="module-title">
+        <h2>Weather</h2>
+        <div class="module-actions">
+          <span class="module-info">
+            <button
+              class="info-trigger"
+              type="button"
+              aria-label="Weather timing information"
+              aria-describedby="weather-info"
+            >
+              ⓘ
+            </button>
+            <span class="info-tooltip" id="weather-info" role="tooltip">
+              <span
+                ><strong>Updated</strong> ${sourceTime(
+                  snapshot.collectedAt,
+                  context.timezone,
+                )}<br />
+                The homepage's last successful weather fetch.</span
+              >
+              ${data?.current
+                ? `<span><strong>Current conditions observed</strong> ${sourceTime(data.current.observedAt, context.timezone)}<br />When AccuWeather recorded the conditions.</span>`
+                : ""}
+              <span
+                ><strong>Forecast timestamp</strong> ${sourceTime(
+                  data?.forecastObservedAt ?? null,
+                  context.timezone,
+                )}<br />
+                The provider's timestamp for the forecast response.</span
+              >
+              <span
+                >Rain percentages are the chance of rain during the
+                daytime.</span
+              >
+            </span>
+          </span>
+          ${data
+            ? `<a class="module-open" href="${safeLink(data.attributionUrl)}" aria-label="Open weather on AccuWeather" rel="noreferrer">Open ↗</a>`
+            : ""}
+        </div>
+      </div>
+      ${snapshot.status !== "available"
+        ? `<p class="meta stale">${snapshot.payload ? "Earlier weather snapshot" : "Awaiting weather"}</p>`
+        : ""}`;
+  },
   render(data, context) {
     return /* HTML */ `<p class="weather-location">${e(data.location)}</p>
       ${data.current
@@ -31,25 +81,9 @@ export const weatherModule: HomeModule<WeatherPayload> = {
         ${data.forecast
           .map(
             (day) => `
-        <div class="forecast-day"><strong>${e(new Intl.DateTimeFormat("en-US", { timeZone: context.timezone, weekday: "short" }).format(new Date(day.date)))}</strong><span class="forecast-description"><span aria-hidden="true">${weatherEmoji(day.description)}</span> ${e(day.description)}</span><b>${Math.round(day.high)}° <span class="muted">${Math.round(day.low)}°</span></b></div>`,
+        <div class="forecast-day"><strong>${e(new Intl.DateTimeFormat("en-US", { timeZone: context.timezone, weekday: "short" }).format(new Date(day.date)))}</strong><span class="forecast-description"><span aria-hidden="true">${weatherEmoji(day.description)}</span> ${e(day.description)}</span><span class="forecast-values"><b>${Math.round(day.high)}° <span class="muted">${Math.round(day.low)}°</span></b><span class="rain-chance" title="Daytime rain chance" aria-label="Daytime rain chance: ${day.rainProbability == null ? "unavailable" : `${Math.round(day.rainProbability)} percent`}"><span aria-hidden="true">💧</span> ${day.rainProbability == null ? "—" : `${Math.round(day.rainProbability)}%`}</span></span></div>`,
           )
           .join("")}
-      </div>
-      <details class="source-details">
-        <summary>Observation times</summary>
-        ${data.current
-          ? `<p>Current conditions observed ${sourceTime(data.current.observedAt, context.timezone)}.</p>`
-          : ""}
-        <p>
-          Forecast retrieved
-          ${sourceTime(data.forecastObservedAt, context.timezone)}.
-        </p>
-      </details>
-      <a
-        class="attribution"
-        href="${safeLink(data.attributionUrl)}"
-        rel="noreferrer"
-        >Weather by AccuWeather</a
-      >`;
+      </div> `;
   },
 };

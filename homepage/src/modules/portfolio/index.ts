@@ -21,13 +21,18 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
   parse: (value) => portfolioPayloadSchema.parse(value),
   render(data) {
     const positive = data.gainLoss >= 0;
-    return /* HTML */ ` <p class="section-label">Saved portfolio value</p>
-      <div class="portfolio-value">${e(money(data.totalValue))}</div>
-      <p class="portfolio-return ${positive ? "positive" : "warning"}">
-        ${positive ? "+" : "−"}${e(money(Math.abs(data.gainLoss)))}
-        <span>(${positive ? "+" : ""}${data.gainLossPercent.toFixed(1)}%)</span>
-      </p>
-      <p class="meta">Unrealized return · ${data.holdingsCount} holdings</p>
+    return /* HTML */ `<div class="portfolio-value">
+        ${e(money(data.totalValue))}
+      </div>
+      <div class="portfolio-performance">
+        <p class="portfolio-return ${positive ? "positive" : "warning"}">
+          ${positive ? "+" : "−"}${e(money(Math.abs(data.gainLoss)))}
+          <span
+            >(${positive ? "+" : ""}${data.gainLossPercent.toFixed(1)}%)</span
+          >
+        </p>
+        <p class="meta">Unrealized return · ${data.holdingsCount} holdings</p>
+      </div>
       <h3 class="section-label holdings-label">Largest positions</h3>
       <ul class="holdings">
         ${data.holdings

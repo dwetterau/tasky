@@ -34,8 +34,7 @@ export const taskyModule: HomeModule<TaskyPayload> = {
         <div class="row"><h3>${e(card.name)}</h3><span class="score">${card.isComplete ? "✓ " : ""}${Math.round(card.ratio * 100)}%</span></div>
         <progress max="1" value="${card.ratio}" aria-label="${e(card.name)} progress"></progress>
       </li>`;
-    return /* HTML */ ` <section class="tasky-section">
-        <h3 class="section-label">Scorecards</h3>
+    return /* HTML */ ` <section class="tasky-section" aria-label="Scorecards">
         <ul class="scorecards">
           ${data.scorecards.slice(0, 4).map(scorecard).join("") ||
           '<li class="empty">No scorecards yet.</li>'}
