@@ -5,72 +5,53 @@ Expo / React Native iOS client for Tasky. Run it from `tasky/mobile`.
 ```bash
 npm install
 cd ios && pod install && cd ..
-npm run ios:dev
+npm run ios:dev -- --device
 ```
 
-`pod install` is required after a fresh checkout (or after moving this folder). CocoaPods bakes in absolute paths.
+`pod install` is required after a fresh checkout (or after moving this folder). CocoaPods bakes in absolute paths. Bluetooth scale support needs a physical iPhone; Expo Go and the simulator cannot connect.
 
-## Dev:
+## Temporary: iOS 27 UIScene lifecycle
 
-Run in development mode for debugging:
-```bash
-npx run ios
-```
+Apps built with the iOS 27 SDK crash on launch unless they adopt UIKit scenes
+([TN3187](https://developer.apple.com/documentation/technotes/tn3187-migrating-to-the-uikit-scene-based-life-cycle)).
+Expo SDK 57 still emits the old AppDelegate-owned `UIWindow` template
+([expo/expo#46664](https://github.com/expo/expo/issues/46664)).
 
-Export for use in xcode:
-```bash
-npx expo export --platform ios
-```
+Until Expo ships that (they closed a full SDK 57 backport in favor of an
+opt-in plugin), this app has a local workaround:
 
-Original readme is retained below:
+- `ios/Tasky/AppDelegate.swift` — `SceneDelegate` starts React Native; keep
+  factory setup in `AppDelegate`
+- `ios/Tasky/Info.plist` and `app.json` `ios.infoPlist` — `UIApplicationSceneManifest`
 
-# Welcome to your Expo app 👋
+Remove those once Expo's scene lifecycle lands in this SDK, then rebuild. Do
+not `expo prebuild --clean` without re-applying them, or the launch crash
+returns.
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Debug device builds also set `ios.buildReactNativeFromSource` in
+`ios/Podfile.properties.json` so Expo Dev Launcher can link against
+`RCTPackagerConnection`.
 
-## Get started
+## YUNMAI Mini scale
 
-1. Install dependencies
+Settings → YUNMAI scale. Tap Connect, wake the scale, and step on. The first
+time, select the scale; later Connect reconnects to the last one. An unfinished
+weigh-in times out after 30 seconds of inactivity. Save writes pounds to the
+uniquely named Weight activity signal (weight measurement only).
 
-   ```bash
-   npm install
-   ```
+`modules/tasky-scale` is a local Expo module using CoreBluetooth (`FFE0/FFE4`
+notifications, protocol version via `FFE5/FFE9`). Bluetooth permission lives in
+`app.config.js` and the checked-in iOS Info.plist.
 
-2. Start the app
+Only a completed packet preceded by a live reading in the current session can
+be saved. Phone receipt time is used because the scale clock may be wrong.
+Retries use the same backend idempotency key. Leaving or backgrounding the
+screen stops Bluetooth. Body-composition estimates are not written.
 
-   ```bash
-    npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Protocol references:
+- https://github.com/oliexdev/openScale/issues/71
+- https://gist.github.com/conoro/f0c1d96c450a8f5cce70e2846c3686c4
 
 ```bash
-npm run reset-project
+npx jest lib/__tests__/yunmaiProtocol.test.ts --runInBand --watch=false
 ```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
