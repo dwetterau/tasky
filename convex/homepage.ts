@@ -15,6 +15,7 @@ import {
   LIMITS,
 } from "../packages/home-feed/src/index";
 import { projectHomepage } from "./lib/homepageProjection";
+import { collectHomepagePortfolio } from "./lib/homepagePortfolio";
 import {
   homepageHeaders,
   verifyHomepageRequest,
@@ -67,9 +68,44 @@ export const enroll = internalMutation({
   },
 });
 
-export const prepare = internalMutation({
+export const prepare = internalAction({
   args: { id: v.id("homepageEnrollments") },
   handler: async (ctx, { id }) => {
+    const row = await ctx.runQuery(internal.homepage.pending, { id });
+    if (!row?.enabled || row.nextRunAt > Date.now()) return;
+    const portfolioSnapshot = row.pendingBody
+      ? undefined
+      : JSON.stringify(
+          await collectHomepagePortfolio(
+            ctx,
+            row.userId,
+            row.portfolioSnapshot,
+          ),
+        );
+    await ctx.runMutation(internal.homepage.freeze, { id, portfolioSnapshot });
+  },
+});
+
+export const requestExport = internalMutation({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    const row = await ctx.db
+      .query("homepageEnrollments")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique();
+    if (!row?.enabled) throw new Error("Not enrolled");
+    await ctx.db.patch(row._id, { nextRunAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.homepage.prepare, { id: row._id });
+    return { scheduled: true };
+  },
+});
+
+export const freeze = internalMutation({
+  args: {
+    id: v.id("homepageEnrollments"),
+    portfolioSnapshot: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, portfolioSnapshot }) => {
     const row = await ctx.db.get(id);
     if (!row?.enabled || row.nextRunAt > Date.now()) return;
     if (!row.pendingBody) {
@@ -85,6 +121,9 @@ export const prepare = internalMutation({
         sourceRevision,
         exportedAt: now,
         payload,
+        ...(portfolioSnapshot
+          ? { portfolio: JSON.parse(portfolioSnapshot) }
+          : {}),
       });
       const body = JSON.stringify(envelope);
       if (new TextEncoder().encode(body).length > LIMITS.bytes)
@@ -94,6 +133,7 @@ export const prepare = internalMutation({
         pendingExportId: exportId,
         revision: sourceRevision,
         attempt: 0,
+        ...(portfolioSnapshot ? { portfolioSnapshot } : {}),
       });
     }
     // A lease prevents the cron from double-dispatching while an action is running.

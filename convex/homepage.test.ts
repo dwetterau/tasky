@@ -9,7 +9,7 @@ import { calendar } from "../packages/home-feed/src/index";
 afterEach(() => vi.unstubAllEnvs());
 
 describe("homepage projection and durable outbox", () => {
-  it("reads only the requested user's active data and ranks deadlines deterministically", async () => {
+  it("exports only the requested user's counts without task or capture details", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       const tag = await ctx.db.insert("tags", {
@@ -66,11 +66,8 @@ describe("homepage projection and durable outbox", () => {
         Date.parse("2026-09-16T02:00:00Z"),
       ),
     );
-    expect(result.tasks.map((task) => task.title)).toEqual([
-      "Overdue",
-      "Today",
-    ]);
-    expect(result.tasks[1].labels).toEqual([]);
+    expect(result.tasks).toEqual([]);
+    expect(result.captures).toEqual([]);
     expect(result.counts).toEqual({
       active: 2,
       overdue: 1,
@@ -93,7 +90,7 @@ describe("homepage projection and durable outbox", () => {
         attempt: 0,
       }),
     );
-    await t.mutation(internal.homepage.prepare, { id });
+    await t.mutation(internal.homepage.freeze, { id });
     const first = await t.query(internal.homepage.pending, { id });
     expect(JSON.parse(first!.pendingBody!).payload.tasks).toEqual([]);
     await t.mutation(internal.homepage.deliveryResult, {
@@ -103,7 +100,7 @@ describe("homepage projection and durable outbox", () => {
       permanent: false,
     });
     await t.run((ctx) => ctx.db.patch(id, { nextRunAt: 0 }));
-    await t.mutation(internal.homepage.prepare, { id });
+    await t.mutation(internal.homepage.freeze, { id });
     const retry = await t.query(internal.homepage.pending, { id });
     expect(retry!.pendingBody).toBe(first!.pendingBody);
     expect(retry!.revision).toBe(1);
@@ -118,7 +115,7 @@ describe("homepage projection and durable outbox", () => {
     expect(delivered!.nextRunAt).toBeGreaterThanOrEqual(deliveredAt + 600_000);
     expect(delivered!.nextRunAt).toBeLessThanOrEqual(Date.now() + 600_000);
     // A routine recovery tick must not prepare another export before it is due.
-    await t.mutation(internal.homepage.prepare, { id });
+    await t.mutation(internal.homepage.freeze, { id });
     const waiting = await t.query(internal.homepage.pending, { id });
     expect(waiting!.revision).toBe(1);
     expect(waiting!.pendingBody).toBeUndefined();
@@ -132,12 +129,10 @@ describe("homepage projection and durable outbox", () => {
         priority: "high",
       });
     });
-    await t.mutation(internal.homepage.prepare, { id });
+    await t.mutation(internal.homepage.freeze, { id });
     const next = await t.query(internal.homepage.pending, { id });
     expect(next!.revision).toBe(2);
-    expect(JSON.parse(next!.pendingBody!).payload.tasks[0].title).toBe(
-      "New task",
-    );
+    expect(JSON.parse(next!.pendingBody!).payload.counts.active).toBe(1);
     // A delayed completion for an old delivery cannot clear the new export.
     await t.mutation(internal.homepage.deliveryResult, {
       id,
@@ -182,14 +177,49 @@ describe("homepage projection and durable outbox", () => {
       projectHomepage(ctx, "a", "UTC", Date.now()),
     );
     expect(result.truncated).toBe(true);
-    expect(result.tasks).toHaveLength(12);
-    expect(result.tasks[0].title).toHaveLength(240);
+    expect(result.tasks).toEqual([]);
+    expect(result.counts.active).toBe(200);
     expect(
       await t.query(internal.homepage.weatherKey, { userId: "a" }),
     ).toBeNull();
     await expect(
       t.query(internal.homepage.weatherKey, { userId: "b" }),
     ).rejects.toThrow("Not enrolled");
+  });
+  it("includes today's completed signals without counting yesterday or another user", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.parse("2026-09-16T02:00:00Z");
+    for (const [userId, name, occurredAt] of [
+      ["a", "Today", now - 3600_000],
+      ["a", "Yesterday", Date.parse("2026-09-15T03:59:00Z")],
+      ["b", "Private B signal", now],
+    ] as const) {
+      const { signalId } = await t.mutation(internal.signals.manageFromMcp, {
+        userId,
+        now,
+        operation: {
+          type: "activity.create",
+          name,
+          tagIds: [],
+          target: { type: "recency", dueAfterMs: 7 * 86400_000 },
+        },
+      });
+      await t.mutation(internal.signals.recordFromMcp, {
+        userId,
+        signalId,
+        now,
+        soonWindowMs: 0,
+        idempotencyKey: name,
+        operation: { type: "activity.occurred", occurredAt },
+      });
+    }
+    const result = await t.run((ctx) =>
+      projectHomepage(ctx, "a", "America/New_York", now),
+    );
+    expect(result.signals).toMatchObject([
+      { name: "Today", attention: "ok", todayCount: 1 },
+    ]);
+    expect(result.signals).toHaveLength(1);
   });
   it("uses local calendar boundaries across daylight-saving changes", () => {
     const spring = calendar(
@@ -220,12 +250,8 @@ describe("homepage projection and durable outbox", () => {
     const result = await t.run((ctx) =>
       projectHomepage(ctx, "a", "UTC", Date.now()),
     );
-    expect(result.tasks).toHaveLength(2);
-    expect(
-      result.tasks.every(
-        (task) => task.due === "none" && task.dueDate === undefined,
-      ),
-    ).toBe(true);
+    expect(result.tasks).toEqual([]);
+    expect(result.counts.active).toBe(2);
     expect(result.counts.overdue).toBe(0);
   });
 });

@@ -11,6 +11,11 @@ import {
 } from "../src/auth/credentials";
 import { base64ToBytes, digest } from "../src/transport";
 import type { Env } from "../src/env";
+import {
+  browserScriptVersion,
+  dailyEdition,
+  renderEdition,
+} from "../src/rendering/page";
 import { fixtureEdition } from "./fixtures";
 const env = bindings as unknown as Env;
 afterEach(async () => {
@@ -24,6 +29,40 @@ const request = (path: string, token?: string) =>
 const sid = () => digest("fixture-browser-handle");
 
 describe("private delivery", () => {
+  it("caches only the versioned public script, never private pages", async () => {
+    const response = await handleRequest(
+      request(`/assets/home.js?v=${browserScriptVersion}`),
+      env,
+    );
+    expect(response.headers.get("cache-control")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+    expect(response.headers.has("set-cookie")).toBe(false);
+    const legacy = await handleRequest(request("/assets/home.js?v=old"), env);
+    expect(legacy.headers.get("cache-control")).toBe(
+      "public, max-age=0, must-revalidate",
+    );
+  });
+  it("renders a personal daily edition without task details or duplicate headings", () => {
+    const { feed } = fixtureEdition(
+      "user-a",
+      99,
+      Date.parse("2026-09-16T02:00:00Z"),
+    );
+    feed.displayName = "David Wetterau";
+    const html = renderEdition(feed, env.TASKY_ORIGIN);
+    expect(html).toMatch(/<h1>\s*Hello, David\s*<\/h1>/);
+    expect(html).toContain("Edition Nº 1");
+    expect(html).toContain('data-revision="99"');
+    expect(html).toContain("Generated <time");
+    expect(html).toContain("A good week");
+    expect(html).not.toContain("Make space for the work");
+    expect(html).not.toContain("YOUR PRIVATE EDITION");
+    expect(html).not.toContain("Outside your window");
+    expect(
+      dailyEdition(Date.parse("2026-09-16T04:00:00Z"), feed.timezone),
+    ).toBe(2);
+  });
   it("authenticates before touching KV or any other service", async () => {
     const get = vi.fn();
     const fetch = vi
@@ -136,7 +175,7 @@ describe("private delivery", () => {
     );
     const html = await (await worker.fetch(request("/", token), env)).text();
     expect(html).toContain("outdated; check the source");
-    expect(html).toContain("Make space for the work");
+    expect(html).toContain("A good week");
     expect(html).not.toContain("<!--FRESHNESS-->");
   });
 });

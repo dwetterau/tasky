@@ -43,6 +43,7 @@ const currentResponse = z
     z.object({
       EpochTime: z.number(),
       WeatherText: z.string(),
+      IsDayTime: z.boolean().optional(),
       Temperature: z.object({
         Imperial: z.object({ Value: z.number() }),
         Metric: z.object({ Value: z.number() }),
@@ -97,6 +98,7 @@ export function normalizeCurrent(raw: unknown, units: "F" | "C") {
           : first.Temperature.Metric.Value,
       description: first.WeatherText.slice(0, 240),
       observedAt,
+      ...(first.IsDayTime !== undefined ? { isDay: first.IsDayTime } : {}),
     },
     attributionUrl: providerLink(first.Link),
   };

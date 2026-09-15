@@ -9,7 +9,7 @@ import type { HomeModule } from "../contract";
 
 export const taskyModule: HomeModule<TaskyPayload> = {
   id: "tasky",
-  title: "Your priorities",
+  title: "Tasky",
   placement: "lead",
   schemaVersion: 1,
   freshForMs: 15 * 60_000,
@@ -20,84 +20,68 @@ export const taskyModule: HomeModule<TaskyPayload> = {
       `${context.taskyOrigin}/tasks`,
       context.taskyOrigin,
     );
-    const capturesUrl = safeLink(
-      `${context.taskyOrigin}/captures`,
-      context.taskyOrigin,
-    );
-    const taskMarkup = data.tasks
-      .map(
-        (task, index) => `<li class="task ${index === 0 ? "lead-task" : ""}">
-      <div class="eyebrow"><span class="priority ${e(task.priority)}">${e(task.priority)}</span><span>${e(task.status.replaceAll("_", " "))}</span>${task.dueDate ? `<span class="${task.due === "overdue" ? "warning" : ""}">${task.due === "today" ? "Due today" : `${e(task.due)} · ${e(task.dueDate)}`}</span>` : ""}</div>
-      <h3><a href="${taskUrl}">${e(task.title || "Untitled task")}</a></h3>
-      ${task.labels.length ? `<p class="labels">${task.labels.map(e).join(" / ")}</p>` : ""}</li>`,
+    const attention = data.signals
+      .filter((signal) => signal.attention !== "ok")
+      .sort(
+        (a, b) =>
+          ({ due: 0, soon: 1, unknown: 2, ok: 3 })[a.attention] -
+          { due: 0, soon: 1, unknown: 2, ok: 3 }[b.attention],
       )
-      .join("");
-    return /* HTML */ `<div class="statline">
-        <div>
-          <strong>${data.counts.active}${data.truncated ? "+" : ""}</strong
-          ><span>Open tasks</span>
+      .slice(0, 3);
+    const today = data.signals.filter((signal) => signal.todayCount > 0);
+    const scorecard = (card: TaskyPayload["scorecards"][number]) => `
+      <li class="scorecard">
+        <div class="row"><h3>${e(card.name)}</h3><span class="score">${card.isComplete ? "✓ " : ""}${Math.round(card.ratio * 100)}%</span></div>
+        <progress max="1" value="${card.ratio}" aria-label="${e(card.name)} progress"></progress>
+      </li>`;
+    return /* HTML */ ` <section class="tasky-section">
+        <h3 class="section-label">Scorecards</h3>
+        <ul class="scorecards">
+          ${data.scorecards.slice(0, 4).map(scorecard).join("") ||
+          '<li class="empty">No scorecards yet.</li>'}
+        </ul>
+        ${data.scorecards.length > 4
+          ? `<details><summary>${data.scorecards.length - 4} more scorecards</summary><ul class="scorecards">${data.scorecards.slice(4).map(scorecard).join("")}</ul></details>`
+          : ""}
+      </section>
+      <section class="tasky-section">
+        <h3 class="section-label">Signals</h3>
+        <ul class="signal-list">
+          ${attention
+            .map(
+              (signal) => `
+          <li><span class="signal-dot ${e(signal.attention)}" aria-hidden="true"></span>
+            <div><strong>${e(signal.name)}</strong><p>${e(signal.reason)}</p></div></li>`,
+            )
+            .join("") || '<li class="empty">All on track.</li>'}
+        </ul>
+        ${today.length
+          ? `<h4 class="section-label logged-label">Logged today</h4><ul class="logged-signals">${today.map((signal) => `<li><span aria-hidden="true">✓</span> ${e(signal.name)}${signal.todayCount > 1 ? ` <span class="muted">×${signal.todayCount}</span>` : ""}</li>`).join("")}</ul>`
+          : ""}
+      </section>
+      <section class="task-summary">
+        <div class="section-heading">
+          <h3 class="section-label">Tasks & inbox</h3>
+          <a href="${taskUrl}">Open Tasky ↗</a>
         </div>
-        <div>
-          <strong>${data.counts.dueToday}</strong><span>Due today</span>
-        </div>
-        <div>
-          <strong class="${data.counts.overdue ? "warning" : ""}"
-            >${data.counts.overdue}</strong
-          ><span>Overdue</span>
-        </div>
-      </div>
-      <div class="section-heading">
-        <h2>First things first</h2>
-        <a href="${taskUrl}">Open Tasky ↗</a>
-      </div>
-      <ol class="task-list">
-        ${taskMarkup ||
-        '<li class="empty">A clear desk. No open tasks in this edition.</li>'}
-      </ol>
-      <div class="personal-columns">
-        <section>
-          <div class="section-heading">
-            <h2>The bigger picture</h2>
-            <span class="eyebrow">Scorecards</span>
+        <div class="statline">
+          <div>
+            <strong>${data.counts.active}${data.truncated ? "+" : ""}</strong
+            ><span>Open</span>
           </div>
-          ${data.scorecards.length
-            ? data.scorecards
-                .map(
-                  (card) =>
-                    `<article class="scorecard"><div class="row"><h3>${e(card.name)}</h3><span class="score">${card.target ? `${card.count} / ${card.target}` : `${Math.round(card.ratio * 100)}%`}</span></div><progress max="1" value="${card.ratio}" aria-label="${e(card.name)} progress"></progress><p class="meta">${card.isComplete ? "Complete for this period" : "In progress"}</p></article>`,
-                )
-                .join("")
-            : '<p class="empty">No scorecards yet.</p>'}
-          <h3 class="small-heading">Worth your attention</h3>
-          <ul class="signal-list">
-            ${data.signals
-              .map(
-                (signal) =>
-                  `<li><span class="signal-dot ${e(signal.attention)}" aria-label="${e(signal.attention)}"></span><div><strong>${e(signal.name)}</strong><p>${e(signal.reason)}</p></div></li>`,
-              )
-              .join("") ||
-            '<li class="empty">Nothing calling for your attention.</li>'}
-          </ul>
-        </section>
-        <section>
-          <div class="section-heading">
-            <h2>On your mind</h2>
-            <span class="eyebrow">${data.counts.captures} captures</span>
+          <div>
+            <strong>${data.counts.dueToday}</strong><span>Due today</span>
           </div>
-          <ul class="captures">
-            ${data.captures
-              .map(
-                (capture) =>
-                  `<li><a href="${capturesUrl}">${e(capture.text)}</a></li>`,
-              )
-              .join("") ||
-            '<li class="empty">Your capture inbox is clear.</li>'}
-          </ul>
-          <a class="text-link" href="${capturesUrl}">Visit your inbox ↗</a>
-        </section>
-      </div>
+          <div>
+            <strong class="${data.counts.overdue ? "warning" : ""}"
+              >${data.counts.overdue}</strong
+            ><span>Overdue</span>
+          </div>
+          <div><strong>${data.counts.captures}</strong><span>Inbox</span></div>
+        </div>
+      </section>
       ${data.truncated
-        ? '<p class="meta">A bounded selection is shown. Counts may be lower bounds; open Tasky for the complete view.</p>'
+        ? '<p class="meta">A selection is shown; counts may be lower bounds.</p>'
         : ""}`;
   },
 };

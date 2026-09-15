@@ -28,7 +28,12 @@ import {
   exchangeCode,
   type LoginAttempt,
 } from "./auth/oauth";
-import { browserScript, freshnessBanner, shell } from "./rendering/page";
+import {
+  browserScript,
+  browserScriptVersion,
+  freshnessBanner,
+  shell,
+} from "./rendering/page";
 
 export { UserPublisher } from "./publishing/publisher";
 export { HomepageSession } from "./auth/session-object";
@@ -93,12 +98,20 @@ export async function handleRequest(
   // Aliases are rejected rather than inadvertently becoming alternative login origins.
   if (url.origin !== origin(env.HOME_ORIGIN))
     return privateResponse("Unknown homepage host", 421, "text/plain");
-  if (request.method === "GET" && url.pathname === "/assets/home.js")
-    return privateResponse(
+  if (request.method === "GET" && url.pathname === "/assets/home.js") {
+    const response = privateResponse(
       browserScript,
       200,
       "text/javascript; charset=utf-8",
     );
+    response.headers.set(
+      "cache-control",
+      url.searchParams.get("v") === browserScriptVersion
+        ? "public, max-age=31536000, immutable"
+        : "public, max-age=0, must-revalidate",
+    );
+    return response;
+  }
   if (request.method === "POST" && url.pathname === "/internal/tasky") {
     const body = await limitedBody(request, LIMITS.bytes);
     if (!(await verifyRequest(request, body, env.INGESTION_SECRET)))

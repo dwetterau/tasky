@@ -43,8 +43,9 @@ success interval in Convex; `600000` is ten minutes. Delivery failures have a
 separate retry backoff, and a one-minute recovery cron picks up overdue jobs.
 That cron does not export every user's data every minute.
 
-Each export includes up to 12 tasks, 6 captures, 12 signals and 8 top-level
-scorecards. Queries and text lengths are bounded; truncated results are labeled.
+Each export includes task/inbox counts, up to 3 attention signals plus signals
+logged today (12 total), and 8 top-level scorecards. Task and capture details
+are omitted. Queries and text lengths are bounded; truncated results are labeled.
 Dates follow the user's timezone. The export excludes notes, attachments and
 credentials. Retries reuse the same serialized export and revision until it is
 acknowledged.
@@ -52,6 +53,18 @@ acknowledged.
 Tasky data is fresh for 15 minutes and outdated after one hour. The source time
 is separate from publication time. Failed updates retain the original source
 age. KV can briefly return an older complete edition, including a cached miss.
+
+The cover edition counts calendar days, with September 15, 2026 as Edition 1.
+The generated time changes with each publication; the internal revision still
+increments per publication so automatic updates work throughout the day.
+
+## Portfolio
+
+The export reuses Tasky's saved Airtable Positions view and the user's existing
+portfolio credentials. It includes total value, unrealized return and the five
+largest positions. It does not sync market prices or call Alpaca. “Checked” is
+the snapshot retrieval time, not a market quote timestamp. Failed reads preserve
+the last successful snapshot and its age; missing credentials hide the module.
 
 ## Authentication
 
@@ -100,6 +113,12 @@ allows at most 20 provider calls per rolling 24 hours (normally about 16), with
 persisted accounting and rate-limit backoff. A missing key is rechecked every
 30 minutes. Weather failures do not block Tasky updates. Weather data becomes
 stale after seven hours and is removed after twelve.
+
+## Page loading
+
+HTML is rendered in the background and stays private with `no-store`. The small
+public refresh script uses a content-derived URL and immutable browser caching.
+There is no React hydration or provider request on the page-loading path.
 
 ## Deployment and configuration
 

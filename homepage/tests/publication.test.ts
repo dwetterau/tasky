@@ -115,7 +115,9 @@ describe("durable ingestion and publication", () => {
     await evictDurableObject(stub());
     await tick();
     const first = await env.EDITIONS.get<Edition>("edition:user-a", "json");
-    expect(first!.html).toContain("Make space");
+    expect(
+      first!.feed.modules.find((m) => m.id === "tasky")!.payload,
+    ).toMatchObject({ counts: { active: 14 } });
     const empty = fixtureExport("user-a", 2);
     empty.payload.tasks = [];
     empty.payload.captures = [];
@@ -125,7 +127,42 @@ describe("durable ingestion and publication", () => {
     const next = await env.EDITIONS.get<Edition>("edition:user-a", "json");
     expect(next!.feed.revision).toBeGreaterThan(first!.feed.revision);
     expect(next!.html).not.toContain("Make space");
-    expect(next!.html).toContain("No open tasks");
+    expect(
+      next!.feed.modules.find((m) => m.id === "tasky")!.payload,
+    ).toMatchObject({ tasks: [], captures: [], counts: { active: 0 } });
+  });
+  it("publishes the saved portfolio alongside Tasky in the same user-scoped edition", async () => {
+    await enroll();
+    const envelope = fixtureExport();
+    envelope.portfolio = {
+      id: "portfolio",
+      schemaVersion: 1,
+      scope: "user",
+      status: "available",
+      sourceDataAt: Date.now(),
+      collectedAt: Date.now(),
+      freshForMs: 900_000,
+      maxAgeMs: 3600_000,
+      payload: {
+        currency: "USD",
+        totalValue: 1250,
+        gainLoss: 250,
+        gainLossPercent: 25,
+        holdingsCount: 1,
+        holdings: [
+          { ticker: "ABC", name: "Example", value: 1250, allocation: 1 },
+        ],
+      },
+    };
+    expect((await send(envelope)).status).toBe(202);
+    await tick();
+    const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(
+      edition!.feed.modules.find((m) => m.id === "portfolio")!.payload,
+    ).toMatchObject({ totalValue: 1250 });
+    expect(edition!.html).toContain("$1,250");
+    expect(edition!.html).toContain("Unrealized return");
+    expect(await env.EDITIONS.get("edition:user-b")).toBeNull();
   });
   it("keeps weather failures separate from Tasky publication and preserves observation age", async () => {
     await enroll();

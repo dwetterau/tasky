@@ -119,8 +119,13 @@ export class UserPublisher extends DurableObject<Env> {
             revision: envelope.sourceRevision,
           };
           state.modules = [
-            ...state.modules.filter((m) => m.id !== "tasky"),
+            ...state.modules.filter(
+              (m) =>
+                m.id !== "tasky" &&
+                (!envelope.portfolio || m.id !== "portfolio"),
+            ),
             ingestTasky(envelope),
+            ...(envelope.portfolio ? [validateModule(envelope.portfolio)] : []),
           ];
           state.sourceRevision = envelope.sourceRevision;
           state.provisioned = true;
