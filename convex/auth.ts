@@ -8,7 +8,7 @@ import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
 import { homepageOidc } from "./lib/homepageOidc";
-import { isolateHomepageFromMcp } from "./lib/homepageMcp";
+import { isolateHomepageFromMcp } from "./lib/mcp";
 
 // Convex runtime may not expose URL.canParse yet. Better Auth OAuth/MCP uses it.
 const urlWithCanParse = URL as unknown as {
@@ -34,7 +34,6 @@ const mobileAppOrigin = process.env.MOBILE_APP_ORIGIN ?? "tasky://";
 const mcpResourceUrl = `${convexSiteUrl}/api/mcp`;
 const oauthLoginPage = `${siteUrl}/oauth/login`;
 const oauthConsentPage = `${siteUrl}/oauth/consent`;
-const homepageClientId = process.env.HOMEPAGE_OAUTH_CLIENT_ID ?? "tasky-homepage";
 
 export const oauthIssuer = convexSiteUrl;
 export const mcpResource = mcpResourceUrl;
@@ -51,8 +50,13 @@ export const oauthScopes = [
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
-export const createAuth = (ctx: GenericCtx<DataModel>) =>
-  betterAuth({
+export const createAuth = (ctx: GenericCtx<DataModel>) => {
+  const homepageClientId = process.env.HOMEPAGE_OAUTH_CLIENT_ID?.trim();
+  if (!homepageClientId) {
+    throw new Error("HOMEPAGE_OAUTH_CLIENT_ID must be configured");
+  }
+
+  return betterAuth({
     // baseURL must be the Convex site URL where auth endpoints are hosted
     baseURL: convexSiteUrl,
     trustedOrigins: [siteUrl, convexSiteUrl, mobileAppOrigin],
@@ -66,31 +70,40 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
         // MCP clients should use bearer tokens, not session response headers.
         disableSettingJwtHeader: true,
       }),
-      isolateHomepageFromMcp(mcp({
-        loginPage: oauthLoginPage,
-        resource: mcpResource,
-        oidcConfig: {
+      isolateHomepageFromMcp(
+        mcp({
           loginPage: oauthLoginPage,
-          consentPage: oauthConsentPage,
-          scopes: [...oauthScopes],
-          defaultScope: "openid offline_access tasks:read",
-          allowDynamicClientRegistration: true,
-          useJWTPlugin: true,
-          schema: {
-            oauthApplication: {
-              fields: {
-                redirectUrls: "redirectURLs",
+          resource: mcpResource,
+          oidcConfig: {
+            loginPage: oauthLoginPage,
+            consentPage: oauthConsentPage,
+            scopes: [...oauthScopes],
+            defaultScope: "openid offline_access tasks:read",
+            allowDynamicClientRegistration: true,
+            useJWTPlugin: true,
+            schema: {
+              oauthApplication: {
+                fields: {
+                  redirectUrls: "redirectURLs",
+                },
               },
             },
           },
-        },
-      }), homepageClientId),
-      ...(process.env.HOMEPAGE_ORIGIN && process.env.HOMEPAGE_OAUTH_CLIENT_SECRET ? [homepageOidc({
-        origin: process.env.HOMEPAGE_ORIGIN,
-        clientId: homepageClientId,
-        clientSecret: process.env.HOMEPAGE_OAUTH_CLIENT_SECRET,
-        loginPage: oauthLoginPage, consentPage: oauthConsentPage,
-      })] : []),
+        }),
+        homepageClientId,
+      ),
+      ...(process.env.HOMEPAGE_ORIGIN &&
+      process.env.HOMEPAGE_OAUTH_CLIENT_SECRET
+        ? [
+            homepageOidc({
+              origin: process.env.HOMEPAGE_ORIGIN,
+              clientId: homepageClientId,
+              clientSecret: process.env.HOMEPAGE_OAUTH_CLIENT_SECRET,
+              loginPage: oauthLoginPage,
+              consentPage: oauthConsentPage,
+            }),
+          ]
+        : []),
       expo(),
       // crossDomain redirects users back to the frontend after OAuth
       crossDomain({ siteUrl }),
@@ -105,9 +118,12 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
       },
     },
   });
+};
 
 // Helper to get the current user ID (returns string or null)
-export async function getAuthUserId(ctx: GenericCtx<DataModel>): Promise<string | null> {
+export async function getAuthUserId(
+  ctx: GenericCtx<DataModel>,
+): Promise<string | null> {
   const user = await authComponent.safeGetAuthUser(ctx);
   return user?._id ?? null;
 }

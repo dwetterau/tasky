@@ -22,30 +22,61 @@ export interface Env {
 
 export function origin(value: string) {
   const url = new URL(value);
-  if (url.protocol !== "https:" || url.origin !== value) throw new Error("Invalid configured origin");
+  if (url.protocol !== "https:" || url.origin !== value)
+    throw new Error("Invalid configured origin");
   return url.origin;
 }
 
 export function sessionLifetime(env: Env) {
   const value = Number(env.SESSION_TTL_SECONDS ?? 86400);
-  if (!Number.isInteger(value) || value < 300 || value > 86400) throw new Error("Invalid session lifetime");
+  if (!Number.isInteger(value) || value < 300 || value > 86400)
+    throw new Error("Invalid session lifetime");
   return value;
 }
 
-export function allowed(env: Env, userId: string, email?: string, verified = false) {
-  const ids = (env.ALLOWED_USER_IDS || "").split(",").map(s => s.trim()).filter(Boolean);
-  const emails = (env.ALLOWED_EMAILS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-  return ids.includes(userId) || Boolean(verified && email && emails.includes(email.toLowerCase()));
+export function allowed(
+  env: Env,
+  userId: string,
+  email?: string,
+  verified = false,
+) {
+  const ids = (env.ALLOWED_USER_IDS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const emails = (env.ALLOWED_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return (
+    ids.includes(userId) ||
+    Boolean(verified && email && emails.includes(email.toLowerCase()))
+  );
 }
 
-export async function objectCall<T>(namespace: DurableObjectNamespace, name: string, path: string, body: unknown): Promise<T> {
-  const response = await namespace.get(namespace.idFromName(name)).fetch(`https://internal${path}`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new HttpError(response.status, "Background operation failed");
+export async function objectCall<T>(
+  namespace: DurableObjectNamespace,
+  name: string,
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const response = await namespace
+    .get(namespace.idFromName(name))
+    .fetch(`https://internal${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  if (!response.ok)
+    throw new HttpError(response.status, "Background operation failed");
   return response.json() as Promise<T>;
 }
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
