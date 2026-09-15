@@ -60,7 +60,18 @@ export function homepageOidc(options: {
             ...ctx,
             asResponse: true,
           });
-          const location = response.headers.get("location");
+          const redirectBody = response.ok
+            ? await response
+                .clone()
+                .json()
+                .catch(() => null)
+            : null;
+          const location =
+            response.headers.get("location") ??
+            (redirectBody?.redirect === true &&
+            typeof redirectBody.url === "string"
+              ? redirectBody.url
+              : null);
           if (location) {
             const target = new URL(location);
             const consentPage = new URL(options.consentPage);
@@ -71,6 +82,12 @@ export function homepageOidc(options: {
               target.searchParams.set("client_name", "Tasky Homepage");
               target.searchParams.set("flow", "homepage");
               const headers = new Headers(response.headers);
+              if (!response.headers.has("location")) {
+                return Response.json(
+                  { ...redirectBody, url: target.toString() },
+                  { status: response.status, headers },
+                );
+              }
               headers.set("location", target.toString());
               return new Response(response.body, {
                 status: response.status,

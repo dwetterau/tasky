@@ -6,14 +6,17 @@ type ContinueRequest = {
 };
 
 function isAllowedAuthorizeUrl(url: string): boolean {
-  const configured = process.env.NEXT_PUBLIC_CONVEX_SITE_URL ?? process.env.CONVEX_SITE_URL;
+  const configured =
+    process.env.NEXT_PUBLIC_CONVEX_SITE_URL ?? process.env.CONVEX_SITE_URL;
   if (!configured) return false;
   try {
     const target = new URL(url);
     const allowed = new URL(configured);
     return (
       target.origin === allowed.origin &&
-      ["/api/auth/mcp/authorize", "/api/auth/oauth2/authorize"].includes(target.pathname)
+      ["/api/auth/mcp/authorize", "/api/auth/oauth2/authorize"].includes(
+        target.pathname,
+      )
     );
   } catch {
     return false;
@@ -35,12 +38,17 @@ export async function POST(req: Request) {
 
   if (!authorizeUrl || !isAllowedAuthorizeUrl(authorizeUrl)) {
     return NextResponse.json(
-      { error: "authorizeUrl must target this deployment's authorize endpoint" },
-      { status: 400 }
+      {
+        error: "authorizeUrl must target this deployment's authorize endpoint",
+      },
+      { status: 400 },
     );
   }
   if (!betterAuthCookie) {
-    return NextResponse.json({ error: "Missing Better Auth cookie" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing Better Auth cookie" },
+      { status: 400 },
+    );
   }
 
   const upstream = await fetch(authorizeUrl, {
@@ -50,16 +58,29 @@ export async function POST(req: Request) {
       Cookie: betterAuthCookie,
     },
     redirect: "manual",
+    cache: "no-store",
   });
 
-  const location = upstream.headers.get("location");
+  let location = upstream.headers.get("location");
+  // Better Auth returns JSON redirects when fetch sends Sec-Fetch-Mode: cors.
+  if (!location && upstream.ok) {
+    const data = await upstream.json().catch(() => null);
+    if (data?.redirect === true && typeof data.url === "string") {
+      location = data.url;
+    }
+  }
   if (location) {
-    return NextResponse.json({ location, status: upstream.status });
+    return NextResponse.json(
+      { location, status: upstream.status },
+      { headers: { "cache-control": "no-store" } },
+    );
   }
 
-  const text = await upstream.text();
   return NextResponse.json(
-    { error: "No redirect location from authorize endpoint", status: upstream.status, body: text },
-    { status: 502 }
+    {
+      error: "No redirect location from authorize endpoint",
+      status: upstream.status,
+    },
+    { status: 502, headers: { "cache-control": "no-store" } },
   );
 }
