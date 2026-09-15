@@ -41,6 +41,7 @@ export const apiKeyTypeValues = [
   "github",
   "linear",
   "cursor_agent_sdk",
+  "accuweather",
   "portfolio_airtable_api_key",
   "portfolio_airtable_base_id",
   "portfolio_schwab_positions_view_id",
@@ -53,6 +54,7 @@ export const apiKeyType = v.union(
   v.literal("github"),
   v.literal("linear"),
   v.literal("cursor_agent_sdk"),
+  v.literal("accuweather"),
   v.literal("portfolio_airtable_api_key"),
   v.literal("portfolio_airtable_base_id"),
   v.literal("portfolio_schwab_positions_view_id"),
@@ -259,6 +261,13 @@ export const signalEntryOperation = v.union(
 // Note: better-auth manages its own tables (users, sessions, accounts, verifications)
 // through the component. Our app tables use string userId to reference better-auth users.
 export default defineSchema({
+  homepageEnrollments: defineTable({
+    userId: v.string(), timezone: v.string(), enabled: v.boolean(),
+    revision: v.number(), nextRunAt: v.number(), attempt: v.number(),
+    pendingBody: v.optional(v.string()), pendingExportId: v.optional(v.string()),
+    lastSuccessAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+  }).index("by_user", ["userId"]).index("by_enabled_next_run", ["enabled", "nextRunAt"]),
   captures: defineTable({
     userId: v.string(),
     text: v.string(),
@@ -296,6 +305,8 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_has_tags", ["userId", "hasTags"])
     .index("by_user_status", ["userId", "status"])
+    .index("by_user_status_priority", ["userId", "status", "priority"])
+    .index("by_user_status_due_date", ["userId", "status", "dueDate"])
     .index("by_user_status_status_updated_at", [
       "userId",
       "status",

@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import { authComponent, createAuth, siteUrl } from "./auth";
 import { httpAction } from "./_generated/server";
+import { service as homepageService } from "./homepage";
 import {
   mcpDeleteHandler,
   mcpGetHandler,
@@ -19,6 +20,8 @@ const http = httpRouter();
 
 // Enable CORS since frontend (Next.js) is on a different domain
 authComponent.registerRoutes(http, createAuth, { cors: true });
+http.route({ path: "/api/homepage/enroll", method: "POST", handler: homepageService });
+http.route({ path: "/api/homepage/weather-key", method: "POST", handler: homepageService });
 
 http.route({
   path: "/",

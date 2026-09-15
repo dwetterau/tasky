@@ -40,3 +40,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Independently deployed homepage
+homepage/node_modules/
+homepage/.wrangler/
+homepage/gateway/.wrangler/
+homepage/.dev.vars*
+homepage/dist/
+homepage/coverage/
+homepage/artifacts/
