@@ -19,6 +19,7 @@ import type * as githubRepos from "../githubRepos.js";
 import type * as homepage from "../homepage.js";
 import type * as http from "../http.js";
 import type * as lib_homepageOidc from "../lib/homepageOidc.js";
+import type * as lib_homepagePortfolio from "../lib/homepagePortfolio.js";
 import type * as lib_homepageProjection from "../lib/homepageProjection.js";
 import type * as lib_homepageTransport from "../lib/homepageTransport.js";
 import type * as lib_mcp from "../lib/mcp.js";
@@ -61,6 +62,7 @@ declare const fullApi: ApiFromModules<{
   homepage: typeof homepage;
   http: typeof http;
   "lib/homepageOidc": typeof lib_homepageOidc;
+  "lib/homepagePortfolio": typeof lib_homepagePortfolio;
   "lib/homepageProjection": typeof lib_homepageProjection;
   "lib/homepageTransport": typeof lib_homepageTransport;
   "lib/mcp": typeof lib_mcp;

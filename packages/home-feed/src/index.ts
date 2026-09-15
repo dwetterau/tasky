@@ -60,6 +60,7 @@ export const signalSchema = z
     reason: text,
     ratio: z.number().min(0).max(1),
     isComplete: z.boolean(),
+    todayCount: z.number().int().nonnegative().default(0),
   })
   .strict();
 export const scorecardSchema = z
@@ -92,6 +93,29 @@ export const taskyPayloadSchema = z
     truncated: z.boolean(),
   })
   .strict();
+export const portfolioPayloadSchema = z
+  .object({
+    currency: z.literal("USD"),
+    totalValue: z.number(),
+    gainLoss: z.number(),
+    gainLossPercent: z.number(),
+    holdingsCount: z.number().int().nonnegative(),
+    holdings: z
+      .array(
+        z
+          .object({
+            ticker: z.string().max(24),
+            name: text,
+            value: z.number(),
+            allocation: z.number(),
+          })
+          .strict(),
+      )
+      .max(5),
+  })
+  .strict();
+export type PortfolioPayload = z.infer<typeof portfolioPayloadSchema>;
+
 export const weatherPayloadSchema = z
   .object({
     location: z.string().max(120),
@@ -101,6 +125,7 @@ export const weatherPayloadSchema = z
         temperature: z.number(),
         description: text,
         observedAt: timestamp,
+        isDay: z.boolean().optional(),
       })
       .strict()
       .nullable(),
@@ -120,17 +145,6 @@ export const weatherPayloadSchema = z
     attributionUrl: z
       .url()
       .refine((value) => new URL(value).protocol === "https:"),
-  })
-  .strict();
-export const exportSchema = z
-  .object({
-    schemaVersion: z.literal(VERSION),
-    exportId: id,
-    userId: identitySchema,
-    sourceRevision: revision,
-    exportedAt: timestamp,
-    timezone: timezoneSchema,
-    payload: taskyPayloadSchema,
   })
   .strict();
 
@@ -157,6 +171,21 @@ export const moduleSchema = z
   })
   .strict()
   .refine((m) => m.maxAgeMs >= m.freshForMs);
+export const exportSchema = z
+  .object({
+    schemaVersion: z.literal(VERSION),
+    exportId: id,
+    userId: identitySchema,
+    sourceRevision: revision,
+    exportedAt: timestamp,
+    timezone: timezoneSchema,
+    payload: taskyPayloadSchema,
+    portfolio: moduleSchema
+      .refine((module) => module.id === "portfolio")
+      .optional(),
+  })
+  .strict();
+
 export const feedSchema = z
   .object({
     schemaVersion: z.literal(VERSION),

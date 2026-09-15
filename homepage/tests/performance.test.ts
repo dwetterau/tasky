@@ -35,9 +35,7 @@ it("records local Worker delivery timings without imposing a network-latency ass
       authMs: Number(/auth;dur=([\d.]+)/.exec(timing)![1]),
       kvMs: Number(/kv;dur=([\d.]+)/.exec(timing)![1]),
     });
-    expect((await response.text()).includes("Make space for the work")).toBe(
-      true,
-    );
+    expect((await response.text()).includes("A good week")).toBe(true);
   }
   const warm = samples.slice(1);
   const summarize = (key: keyof (typeof samples)[number]) => {

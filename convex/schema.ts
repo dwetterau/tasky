@@ -267,6 +267,7 @@ export default defineSchema({
     pendingBody: v.optional(v.string()), pendingExportId: v.optional(v.string()),
     lastSuccessAt: v.optional(v.number()),
     lastError: v.optional(v.string()),
+    portfolioSnapshot: v.optional(v.string()),
   }).index("by_user", ["userId"]).index("by_enabled_next_run", ["enabled", "nextRunAt"]),
   captures: defineTable({
     userId: v.string(),

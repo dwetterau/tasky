@@ -1,5 +1,4 @@
 import type { MutationCtx } from "../_generated/server";
-import type { Doc } from "../_generated/dataModel";
 import {
   calendar,
   LIMITS,
@@ -17,7 +16,6 @@ const statuses = [
   "agent_running",
   "blocked",
 ] as const;
-const weights = { urgent: 5, high: 4, medium: 3, low: 2, triage: 1 };
 
 /** One mutation snapshot, bounded indexed reads, no public/user-provided auth context. */
 export async function projectHomepage(
@@ -27,131 +25,63 @@ export async function projectHomepage(
   now: number,
 ): Promise<TaskyPayload> {
   const dates = calendar(now, timezone);
-  const [
-    taskGroups,
-    priorityGroups,
-    deadlineGroups,
-    captures,
-    signals,
-    scorecards,
-  ] = await Promise.all([
-    Promise.all(
-      statuses.map((status) =>
-        ctx.db
-          .query("tasks")
-          .withIndex("by_user_status", (q) =>
-            q.eq("userId", userId).eq("status", status),
-          )
-          .order("desc")
-          .take(201),
-      ),
-    ),
-    Promise.all(
-      statuses.flatMap((status) =>
-        (["urgent", "high"] as const).map((priority) =>
+  const [taskGroups, captures, signals, scorecards, todayEntries] =
+    await Promise.all([
+      Promise.all(
+        statuses.map((status) =>
           ctx.db
             .query("tasks")
-            .withIndex("by_user_status_priority", (q) =>
-              q
-                .eq("userId", userId)
-                .eq("status", status)
-                .eq("priority", priority),
+            .withIndex("by_user_status", (q) =>
+              q.eq("userId", userId).eq("status", status),
             )
-            .take(13),
+            .take(201),
         ),
       ),
-    ),
-    Promise.all(
-      statuses.map((status) =>
-        ctx.db
-          .query("tasks")
-          .withIndex("by_user_status_due_date", (q) =>
-            q
-              .eq("userId", userId)
-              .eq("status", status)
-              .gte("dueDate", "0001-01-01")
-              .lte("dueDate", dates.upcomingDate),
-          )
-          .take(13),
-      ),
-    ),
-    ctx.db
-      .query("captures")
-      .withIndex("by_user_completed", (q) =>
-        q.eq("userId", userId).eq("completed", false),
-      )
-      .order("desc")
-      .take(201),
-    ctx.db
-      .query("signals")
-      .withIndex("by_user_archived", (q) =>
-        q.eq("userId", userId).eq("archivedAt", undefined),
-      )
-      .take(61),
-    ctx.db
-      .query("scorecards")
-      .withIndex("by_user_archived", (q) =>
-        q.eq("userId", userId).eq("archivedAt", undefined),
-      )
-      .take(31),
-  ]);
+      ctx.db
+        .query("captures")
+        .withIndex("by_user_completed", (q) =>
+          q.eq("userId", userId).eq("completed", false),
+        )
+        .take(201),
+      ctx.db
+        .query("signals")
+        .withIndex("by_user_archived", (q) =>
+          q.eq("userId", userId).eq("archivedAt", undefined),
+        )
+        .take(61),
+      ctx.db
+        .query("scorecards")
+        .withIndex("by_user_archived", (q) =>
+          q.eq("userId", userId).eq("archivedAt", undefined),
+        )
+        .take(31),
+      ctx.db
+        .query("signalEntries")
+        .withIndex("by_user_effective_at", (q) =>
+          q
+            .eq("userId", userId)
+            .gte("effectiveAt", dates.day.startAt)
+            .lt("effectiveAt", Math.min(now + 1, dates.day.endAt)),
+        )
+        .order("desc")
+        .take(501),
+    ]);
   let truncated =
     taskGroups.some((group) => group.length > 200) ||
     captures.length > 200 ||
     signals.length > 60 ||
-    scorecards.length > 30;
-  const countedTasks = taskGroups.flatMap((group) => group.slice(0, 200));
-  // Separate deadline/priority reads keep important older tasks in the selection
-  // even when the bounded count scan only sees more recently created records.
-  const tasks = [
-    ...new Map(
-      [...countedTasks, ...priorityGroups.flat(), ...deadlineGroups.flat()].map(
-        (task) => [task._id, task],
-      ),
-    ).values(),
-  ].map((task) => ({
-    ...task,
-    dueDate: localDateSchema.safeParse(task.dueDate).data,
-  }));
-  const due = (date?: string): TaskyPayload["tasks"][number]["due"] =>
-    !date
-      ? "none"
-      : date < dates.localDate
-        ? "overdue"
-        : date === dates.localDate
-          ? "today"
-          : date <= dates.upcomingDate
-            ? "upcoming"
-            : "later";
-  const dueWeight = { overdue: 4, today: 3, upcoming: 2, later: 1, none: 0 };
-  tasks.sort(
-    (a, b) =>
-      dueWeight[due(b.dueDate)] - dueWeight[due(a.dueDate)] ||
-      weights[b.priority] - weights[a.priority] ||
-      (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") ||
-      a._creationTime - b._creationTime ||
-      a._id.localeCompare(b._id),
-  );
-  const selected = await Promise.all(
-    tasks.slice(0, LIMITS.tasks).map(async (task) => {
-      const tags = await Promise.all(
-        task.tagIds.slice(0, 3).map((id) => ctx.db.get("tags", id)),
-      );
-      return {
-        id: task._id,
-        title: summary(task.content),
-        status: task.status as (typeof statuses)[number],
-        priority: task.priority,
-        ...(task.dueDate ? { dueDate: task.dueDate } : {}),
-        due: due(task.dueDate),
-        labels: tags
-          .filter(
-            (tag): tag is Doc<"tags"> => tag !== null && tag.userId === userId,
-          )
-          .map((tag) => summary(tag.name, 60)),
-      };
-    }),
-  );
+    scorecards.length > 30 ||
+    todayEntries.length > 500;
+  const tasks = taskGroups
+    .flatMap((group) => group.slice(0, 200))
+    .map((task) => ({
+      ...task,
+      dueDate: localDateSchema.safeParse(task.dueDate).data,
+    }));
+  const todayCounts = new Map<string, number>();
+  for (const entry of todayEntries.slice(0, 500)) {
+    todayCounts.set(entry.signalId, (todayCounts.get(entry.signalId) ?? 0) + 1);
+  }
   const evaluated = await Promise.all(
     signals.slice(0, 60).map(async (signal) => {
       let progress: ActivityPeriodProgress | undefined;
@@ -256,24 +186,29 @@ export async function projectHomepage(
       ...(card.targetCount ? { target: card.targetCount } : {}),
     }));
   const attentionRank = { due: 0, soon: 1, unknown: 2, ok: 3 };
+  const attention = evaluated
+    .filter((item) => item.evaluation.attention !== "ok")
+    .sort(
+      (a, b) =>
+        attentionRank[a.evaluation.attention] -
+          attentionRank[b.evaluation.attention] ||
+        a.signal.name.localeCompare(b.signal.name),
+    )
+    .slice(0, 3);
+  const today = evaluated
+    .filter((item) => todayCounts.has(item.signal._id))
+    .sort((a, b) => a.signal.name.localeCompare(b.signal.name));
+  const selected = [
+    ...new Map(
+      [...attention, ...today].map((item) => [item.signal._id, item]),
+    ).values(),
+  ];
+  if (selected.length > LIMITS.signals) truncated = true;
   return taskyPayloadSchema.parse({
     localDate: dates.localDate,
-    tasks: selected,
-    captures: captures
-      .slice(0, LIMITS.captures)
-      .map((capture) => ({
-        id: capture._id,
-        text: summary(capture.text),
-        createdAt: Math.floor(capture._creationTime),
-      })),
-    signals: evaluated
-      .filter((item) => item.evaluation.attention !== "ok")
-      .sort(
-        (a, b) =>
-          attentionRank[a.evaluation.attention] -
-            attentionRank[b.evaluation.attention] ||
-          a.signal.name.localeCompare(b.signal.name),
-      )
+    tasks: [],
+    captures: [],
+    signals: selected
       .slice(0, LIMITS.signals)
       .map(({ signal, evaluation }) => ({
         id: signal._id,
@@ -283,6 +218,7 @@ export async function projectHomepage(
         reason: summary(evaluation.reason),
         ratio: evaluation.ratio,
         isComplete: evaluation.isComplete,
+        todayCount: todayCounts.get(signal._id) ?? 0,
       })),
     scorecards: cardItems
       .sort(
@@ -301,8 +237,10 @@ export async function projectHomepage(
       })),
     counts: {
       active: tasks.length,
-      overdue: tasks.filter((task) => due(task.dueDate) === "overdue").length,
-      dueToday: tasks.filter((task) => due(task.dueDate) === "today").length,
+      overdue: tasks.filter(
+        (task) => task.dueDate && task.dueDate < dates.localDate,
+      ).length,
+      dueToday: tasks.filter((task) => task.dueDate === dates.localDate).length,
       captures: Math.min(200, captures.length),
     },
     truncated,

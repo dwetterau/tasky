@@ -159,9 +159,9 @@ it("counts attempts in a rolling 24-hour window across restarts and location cha
 it("escapes source text and rejects unsafe links", () => {
   const edition = fixtureEdition();
   const tasky = edition.feed.modules[0].payload as {
-    tasks: { title: string }[];
+    signals: { name: string }[];
   };
-  tasky.tasks[0].title =
+  tasky.signals[0].name =
     '<script>alert(1)</script><img src=x onerror="evil()">';
   const html = renderEdition(edition.feed, "https://tasky.example.test");
   expect(html).not.toContain("<script>alert");
