@@ -3,10 +3,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   collectWeather,
   normalizeForecast,
+  normalizeHourly,
   weatherConfigSchema,
   type WeatherState,
 } from "../src/modules/weather/collector";
 import { renderEdition } from "../src/rendering/page";
+import { weatherPayloadSchema } from "@tasky/home-feed";
+import { renderHourlyRain } from "../src/modules/weather";
 import { fixtureEdition } from "./fixtures";
 import type { Env } from "../src/env";
 const env = bindings as unknown as Env;
@@ -34,6 +37,20 @@ const forecast = {
   ],
 };
 
+const hourly = () =>
+  Array.from({ length: 24 }, (_, index) => ({
+    DateTime: new Date(Date.now() + index * 3600_000).toISOString(),
+    RainProbability: index * 4,
+  }));
+function weatherResponse(input: unknown) {
+  const url = String(input);
+  return url.includes("currentconditions")
+    ? current()
+    : url.includes("/hourly/")
+      ? hourly()
+      : forecast;
+}
+
 it("works without a weather key, and never writes credentials to snapshots or durable state", async () => {
   const save = vi.fn(async (_state: WeatherState) => {});
   const network = vi
@@ -56,13 +73,15 @@ it("works without a weather key, and never writes credentials to snapshots or du
     if (String(input).includes("forecasts/")) {
       expect(new URL(String(input)).searchParams.get("details")).toBe("true");
     }
-    return Response.json(
-      String(input).includes("currentconditions") ? current() : forecast,
-    );
+    return Response.json(weatherResponse(input));
   });
   const result = await collectWeather(env, "user-a", config, undefined, save);
   expect(result.snapshot?.status).toBe("available");
   expect(result.state?.payload?.forecast[0].rainProbability).toBe(0);
+  expect(result.state?.payload?.hourly).toHaveLength(24);
+  expect(result.state?.nextHourly).toBeGreaterThanOrEqual(
+    result.state!.payload!.hourlyFetchedAt! + 6 * 3600_000,
+  );
   expect(result.state?.payload?.attributionUrl).toBe(
     "https://www.accuweather.com/",
   );
@@ -78,9 +97,7 @@ it("upgrades only the forecast without clearing current conditions or the reques
     .mockImplementation(async (input) => {
       if (String(input).includes("weather-key"))
         return Response.json({ apiKey: "secret" });
-      return Response.json(
-        String(input).includes("currentconditions") ? current() : forecast,
-      );
+      return Response.json(weatherResponse(input));
     });
   const save = vi.fn(async (_state: WeatherState) => {});
   const first = await collectWeather(env, "user-a", config, undefined, save);
@@ -89,13 +106,14 @@ it("upgrades only the forecast without clearing current conditions or the reques
   network.mockClear();
   const next = await collectWeather(env, "user-a", config, previous, save);
   expect(network).toHaveBeenCalledTimes(2); // credential + forecast only
-  expect(next.state!.requestTimes).toHaveLength(3);
+  expect(next.state!.requestTimes).toHaveLength(4);
   expect(next.state!.payload!.current).toEqual(first.state!.payload!.current);
   const missing = structuredClone(forecast);
   delete (missing.DailyForecasts[0].Day as { RainProbability?: number })
     .RainProbability;
   expect(
-    normalizeForecast(missing, Date.now()).forecast[0].rainProbability,
+    normalizeForecast(missing, Date.now(), Date.now()).forecast[0]
+      .rainProbability,
   ).toBeNull();
 });
 it("backs off on rate limits, enforces a persisted budget, and keeps original last-good times", async () => {
@@ -108,9 +126,7 @@ it("backs off on rate limits, enforces a persisted budget, and keeps original la
     .mockImplementation(async (input) => {
       if (String(input).includes("weather-key"))
         return Response.json({ apiKey: "secret" });
-      return Response.json(
-        String(input).includes("currentconditions") ? current() : forecast,
-      );
+      return Response.json(weatherResponse(input));
     });
   const first = await collectWeather(env, "user-a", config, undefined, save);
   const observed = first.snapshot!.sourceDataAt;
@@ -186,6 +202,39 @@ it("counts attempts in a rolling 24-hour window across restarts and location cha
     now + 86400_000 + 60_000,
     now + 86400_000 + 60_000,
   ]);
+});
+it("graphs only the remaining hours in the user's current day and distinguishes fetch time", () => {
+  const now = Date.parse("2026-09-16T02:30:00Z"); // 10:30 PM in New York
+  const sourceAt = now - 3600_000;
+  const daily = normalizeForecast(forecast, sourceAt, now);
+  expect(daily.forecastObservedAt).toBe(sourceAt);
+  expect(daily.forecastFetchedAt).toBe(now);
+  const hours = normalizeHourly(
+    [
+      { DateTime: "2026-09-15T21:00:00-04:00", RainProbability: 80 },
+      { DateTime: "2026-09-15T22:00:00-04:00", RainProbability: 0 },
+      { DateTime: "2026-09-15T23:00:00-04:00", RainProbability: 25 },
+      { DateTime: "2026-09-16T00:00:00-04:00", RainProbability: 90 },
+    ],
+    now,
+  );
+  const data = weatherPayloadSchema.parse({
+    location: "New York",
+    units: "F",
+    current: null,
+    ...daily,
+    ...hours,
+  });
+  const html = renderHourlyRain(data, {
+    now,
+    timezone: "America/New_York",
+    taskyOrigin: env.TASKY_ORIGIN,
+  });
+  expect(html).toContain("10 PM: 0% chance of rain");
+  expect(html).toContain("11 PM: 25% chance of rain");
+  expect(html).not.toContain("9 PM:");
+  expect(html).not.toContain("12 AM:");
+  expect(html).toContain("height:25%");
 });
 it("escapes source text and rejects unsafe links", () => {
   const edition = fixtureEdition();

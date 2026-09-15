@@ -154,6 +154,7 @@ export function fixtureWeather(now = Date.now()): ModuleSnapshot {
         },
       ],
       forecastObservedAt: now,
+      forecastFetchedAt: now,
       attributionUrl:
         "https://www.accuweather.com/en/us/new-york-ny/10007/weather-forecast/349727",
     },

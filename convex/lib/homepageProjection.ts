@@ -204,6 +204,15 @@ export async function projectHomepage(
     ).values(),
   ];
   if (selected.length > LIMITS.signals) truncated = true;
+  const tagIds = [
+    ...new Set(attention.flatMap(({ signal }) => signal.tagIds.slice(0, 3))),
+  ];
+  const tags = await Promise.all(tagIds.map((id) => ctx.db.get(id)));
+  const tagNames = new Map(
+    tags.flatMap((tag) =>
+      tag?.userId === userId ? [[tag._id, summary(tag.name, 60)] as const] : [],
+    ),
+  );
   return taskyPayloadSchema.parse({
     localDate: dates.localDate,
     tasks: [],
@@ -219,6 +228,10 @@ export async function projectHomepage(
         ratio: evaluation.ratio,
         isComplete: evaluation.isComplete,
         todayCount: todayCounts.get(signal._id) ?? 0,
+        labels: signal.tagIds.slice(0, 3).flatMap((id) => {
+          const name = tagNames.get(id);
+          return name ? [name] : [];
+        }),
       })),
     scorecards: cardItems
       .sort(

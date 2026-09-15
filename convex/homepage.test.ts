@@ -17,6 +17,22 @@ describe("homepage projection and durable outbox", () => {
         name: "Private B label",
         parentId: null,
       });
+      const ownTag = await ctx.db.insert("tags", {
+        userId: "a",
+        name: "Health",
+        parentId: null,
+      });
+      await ctx.db.insert("signals", {
+        userId: "a",
+        name: "Run",
+        tagIds: [ownTag, tag],
+        model: {
+          kind: "activity",
+          target: { type: "recency", dueAfterMs: 86400_000 },
+        },
+        createdAt: 0,
+        updatedAt: 0,
+      });
       await ctx.db.insert("tasks", {
         userId: "a",
         content: "Today",
@@ -68,6 +84,7 @@ describe("homepage projection and durable outbox", () => {
     );
     expect(result.tasks).toEqual([]);
     expect(result.captures).toEqual([]);
+    expect(result.signals[0].labels).toEqual(["Health"]);
     expect(result.counts).toEqual({
       active: 2,
       overdue: 1,

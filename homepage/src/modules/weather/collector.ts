@@ -24,13 +24,14 @@ export const weatherConfigSchema = z
   })
   .strict();
 export type WeatherConfig = z.infer<typeof weatherConfigSchema>;
-type Part = "current" | "forecast";
+type Part = "current" | "forecast" | "hourly";
 export type WeatherState = {
   configKey: string;
   forecastVersion?: number;
   payload: WeatherPayload | null;
   nextCurrent: number;
   nextForecast: number;
+  nextHourly?: number;
   collectedAt: number | null;
   error?: ModuleSnapshot["error"];
   failures: number;
@@ -72,6 +73,28 @@ const forecastResponse = z.object({
     .min(1)
     .max(5),
 });
+const hourlyResponse = z
+  .array(
+    z.object({
+      DateTime: z.string().datetime({ offset: true }),
+      RainProbability: z.number().min(0).max(100).nullish(),
+    }),
+  )
+  .min(1)
+  .max(24);
+
+export function normalizeHourly(raw: unknown, fetchedAt: number) {
+  return {
+    hourly: hourlyResponse
+      .parse(raw)
+      .map((hour) => ({
+        at: Date.parse(hour.DateTime),
+        rainProbability: hour.RainProbability ?? null,
+      }))
+      .sort((a, b) => a.at - b.at),
+    hourlyFetchedAt: fetchedAt,
+  };
+}
 
 function providerLink(value: string) {
   const url = new URL(value);
@@ -107,7 +130,11 @@ export function normalizeCurrent(raw: unknown, units: "F" | "C") {
     attributionUrl: providerLink(first.Link),
   };
 }
-export function normalizeForecast(raw: unknown, issuedAt: number) {
+export function normalizeForecast(
+  raw: unknown,
+  issuedAt: number,
+  fetchedAt: number,
+) {
   const value = forecastResponse.parse(raw);
   return {
     forecast: value.DailyForecasts.map((day) => ({
@@ -118,6 +145,7 @@ export function normalizeForecast(raw: unknown, issuedAt: number) {
       rainProbability: day.Day.RainProbability ?? null,
     })),
     forecastObservedAt: issuedAt,
+    forecastFetchedAt: fetchedAt,
     attributionUrl: providerLink(value.Headline.Link),
   };
 }
@@ -148,6 +176,7 @@ function snapshot(state: WeatherState): ModuleSnapshot {
   const times = [
     state.payload?.current?.observedAt,
     state.payload?.forecastObservedAt,
+    state.payload?.hourlyFetchedAt,
   ].filter((t): t is number => typeof t === "number");
   return {
     id: "weather",
@@ -189,9 +218,13 @@ export async function collectWeather(
     };
   // Fetch detailed forecasts once after upgrading, preserving current conditions
   // and every reserved provider call in the rolling request budget.
-  if (state.forecastVersion !== 1) {
-    state.forecastVersion = 1;
+  if (state.forecastVersion !== 2) {
+    state.forecastVersion = 2;
     state.nextForecast = 0;
+    state.nextCheck = 0;
+  }
+  if (state.nextHourly === undefined) {
+    state.nextHourly = 0;
     state.nextCheck = 0;
   }
   // A rolling window also survives configuration changes; changing location
@@ -218,8 +251,20 @@ export async function collectWeather(
     ) {
       state.payload.forecast = [];
       state.payload.forecastObservedAt = null;
+      state.payload.forecastFetchedAt = null;
     }
-    if (!state.payload.current && !state.payload.forecast.length)
+    if (
+      state.payload.hourlyFetchedAt &&
+      now - state.payload.hourlyFetchedAt > 12 * 3600_000
+    ) {
+      state.payload.hourly = [];
+      state.payload.hourlyFetchedAt = null;
+    }
+    if (
+      !state.payload.current &&
+      !state.payload.forecast.length &&
+      !state.payload.hourly?.length
+    )
       state.payload = null;
   }
   if (now < state.nextCheck) {
@@ -254,36 +299,43 @@ export async function collectWeather(
   state.disabled = false;
   state.errors ??= {};
   let failed = false;
-  for (const part of ["current", "forecast"] as Part[]) {
-    const nextField = part === "current" ? "nextCurrent" : "nextForecast";
-    if (now < state[nextField]) continue;
+  for (const part of ["current", "forecast", "hourly"] as Part[]) {
+    const nextField = {
+      current: "nextCurrent",
+      forecast: "nextForecast",
+      hourly: "nextHourly",
+    } as const;
+    const field = nextField[part];
+    if (now < (state[field] ?? 0)) continue;
     if (state.requestTimes.length >= config.dailyRequestBudget) {
       state.error = "rate_limited";
       state.errors[part] = state.error;
-      state[nextField] = Math.min(...state.requestTimes) + 86400_000;
+      state[field] = Math.min(...state.requestTimes) + 86400_000;
       failed = true;
       continue;
     }
     const interval =
       (part === "current"
         ? config.currentIntervalMinutes
-        : config.forecastIntervalMinutes) * 60_000;
+        : part === "forecast"
+          ? config.forecastIntervalMinutes
+          : 360) * 60_000;
     // Reserve the call durably BEFORE fetch so restarts can't bypass the budget.
     state.requestTimes.push(now);
-    state[nextField] = now + interval;
+    state[field] = now + interval;
     await save(state);
     try {
       const path =
         part === "current"
           ? `currentconditions/v1/${config.locationKey}`
-          : `forecasts/v1/daily/5day/${config.locationKey}`;
+          : part === "forecast"
+            ? `forecasts/v1/daily/5day/${config.locationKey}`
+            : `forecasts/v1/hourly/24hour/${config.locationKey}`;
       const url = new URL(`https://dataservice.accuweather.com/${path}`);
       url.search = new URLSearchParams({
         language: config.language,
-        details: String(part === "forecast"),
-        ...(part === "forecast"
-          ? { metric: String(config.units === "C") }
-          : {}),
+        details: String(part !== "current"),
+        ...(part !== "current" ? { metric: String(config.units === "C") } : {}),
       }).toString();
       const response = await fetch(url, {
         headers: {
@@ -304,7 +356,7 @@ export async function collectWeather(
               ? "rate_limited"
               : "collection_failed";
         state.errors[part] = state.error;
-        state[nextField] =
+        state[field] =
           now +
           (state.error === "configuration"
             ? 6 * 3600_000
@@ -333,7 +385,9 @@ export async function collectWeather(
       const patch =
         part === "current"
           ? normalizeCurrent(raw, config.units)
-          : normalizeForecast(raw, issued);
+          : part === "forecast"
+            ? normalizeForecast(raw, issued, now)
+            : normalizeHourly(raw, now);
       state.payload = weatherPayloadSchema.parse({
         location: config.locationName,
         units: config.units,
@@ -345,7 +399,7 @@ export async function collectWeather(
       });
       state.collectedAt = now;
       delete state.errors[part];
-      state[nextField] = now + Math.max(interval, cacheDelay(response, now));
+      state[field] = now + Math.max(interval, cacheDelay(response, now));
     } catch {
       failed = true;
       state.error = "collection_failed";
@@ -353,11 +407,12 @@ export async function collectWeather(
       state.failures++;
     }
   }
-  state.error = state.errors.current ?? state.errors.forecast;
+  state.error =
+    state.errors.current ?? state.errors.forecast ?? state.errors.hourly;
   if (!failed && !state.error) state.failures = 0;
   state.nextCheck = Math.max(
     now + 60_000,
-    Math.min(state.nextCurrent, state.nextForecast),
+    Math.min(state.nextCurrent, state.nextForecast, state.nextHourly ?? 0),
   );
   await save(state);
   return { state, snapshot: snapshot(state) };

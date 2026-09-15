@@ -265,6 +265,19 @@ progress::-moz-progress-bar {
   font-size: 15px;
   overflow-wrap: anywhere;
 }
+.signal-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 8px;
+}
+.signal-tags {
+  font:
+    10px system-ui,
+    sans-serif;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 .signal-list p {
   font:
     11px/1.5 system-ui,
@@ -329,9 +342,10 @@ progress::-moz-progress-bar {
   overflow-wrap: anywhere;
 }
 .current-weather {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(64px, 0.8fr) minmax(110px, 1.2fr);
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   margin: 16px 0;
 }
 .weather-emoji {
@@ -339,7 +353,7 @@ progress::-moz-progress-bar {
   line-height: 1;
 }
 .temperature {
-  font-size: 56px;
+  font-size: 48px;
   letter-spacing: -0.05em;
   line-height: 1;
 }
@@ -352,6 +366,81 @@ progress::-moz-progress-bar {
   font-size: 15px;
   margin-top: 6px;
   overflow-wrap: anywhere;
+}
+.rain-chart {
+  margin: 0;
+  min-width: 0;
+  font:
+    10px system-ui,
+    sans-serif;
+}
+.rain-chart figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 7px;
+  color: var(--ink);
+}
+.rain-chart figcaption span {
+  color: var(--muted);
+  font-size: 9px;
+}
+.rain-plot {
+  display: flex;
+  gap: 5px;
+  height: 60px;
+}
+.rain-scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 8px;
+}
+.rain-bars {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.rain-hour {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+}
+.rain-bar {
+  display: block;
+  width: 100%;
+  max-width: 9px;
+  background: #668aa3;
+  border-radius: 2px 2px 0 0;
+}
+.rain-hour.unknown {
+  border-bottom: 1px dashed var(--muted);
+}
+.rain-hour:hover {
+  background: #668aa315;
+}
+.rain-times {
+  display: flex;
+  justify-content: space-between;
+  margin: 5px 0 0 25px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.rain-empty {
+  margin-left: auto;
+  max-width: 140px;
+}
+.current-weather-missing .rain-chart {
+  max-width: 240px;
+  margin-bottom: 16px;
 }
 .forecast {
   border-top: 1px solid var(--rule);
@@ -524,13 +613,14 @@ export function shell(
     showSignOut?: boolean;
   } = {},
 ) {
+  const greeting = options.firstName ? `Hello, ${options.firstName}` : "Hello";
   return /* HTML */ `<!doctype html>
     <html lang="en">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
         <meta name="robots" content="noindex,nofollow" />
-        <title>The Daily Brief · Tasky</title>
+        <title>${e(greeting)}</title>
         <style>
           ${styles.replace(/\s+/g, " ").trim()}
         </style>
@@ -545,11 +635,7 @@ export function shell(
         <div class="paper">
           <header>
             <div class="masthead">
-              <h1>
-                ${options.firstName
-                  ? `Hello, ${e(options.firstName)}`
-                  : "Hello"}
-              </h1>
+              <h1>${e(greeting)}</h1>
               <nav aria-label="Account">
                 ${options.showSignOut !== false
                   ? '<form action="/auth/logout" method="post"><button>Sign out</button></form>'
@@ -698,6 +784,7 @@ export const browserScript = `
         );
         const next = Number(page.body.dataset.revision);
         if (next > revision) {
+          document.title = page.title;
           document
             .querySelector(".paper")
             .replaceWith(page.querySelector(".paper"));
