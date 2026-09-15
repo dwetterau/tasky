@@ -182,6 +182,13 @@ export async function collectWeather(
   state.requestTimes = state.requestTimes.filter(
     (time) => time > now - 86400_000,
   );
+  // Recover older service failures that were treated as bad provider credentials.
+  if (
+    state.error === "configuration" &&
+    !state.requestTimes.length &&
+    !state.payload
+  )
+    state.nextCheck = 0;
   if (state.payload) {
     if (
       state.payload.current &&
@@ -207,9 +214,15 @@ export async function collectWeather(
     credentials = await taskyService(env, "/api/homepage/weather-key", {
       userId,
     });
-  } catch {
-    state.error = "configuration";
-    state.nextCheck = now + 30 * 60_000;
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        event: "homepage_weather_credentials_retry",
+        error: error instanceof Error ? error.name : "UnknownError",
+      }),
+    );
+    state.error = "collection_failed";
+    state.nextCheck = now + 60_000;
     await save(state);
     return { state, snapshot: snapshot(state) };
   }
@@ -260,7 +273,8 @@ export async function collectWeather(
           Authorization: `Bearer ${credentials.apiKey}`,
           "Accept-Encoding": "gzip,deflate",
         },
-        redirect: "error",
+        // Never forward provider credentials to a redirected host.
+        redirect: "manual",
         signal: AbortSignal.timeout(15_000),
       });
       if (!response.ok) {
