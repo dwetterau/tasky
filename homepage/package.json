@@ -9,8 +9,7 @@
     "deploy": "wrangler deploy",
     "deploy:gateway": "wrangler pages deploy --cwd gateway --project-name tasky-homepage --branch main",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "preview:fixture": "tsx scripts/preview-fixture.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@tasky/home-feed": "file:../packages/home-feed",
@@ -20,7 +19,6 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260915.1",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
     "wrangler": "^4.131.2"

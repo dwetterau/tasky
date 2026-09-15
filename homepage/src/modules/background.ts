@@ -1,6 +1,10 @@
 import type { ModuleSnapshot } from "@tasky/home-feed";
 import type { Env } from "../env";
-import { collectWeather, weatherConfigSchema, type WeatherState } from "./weather/collector";
+import {
+  collectWeather,
+  weatherConfigSchema,
+  type WeatherState,
+} from "./weather/collector";
 
 export interface CollectionContext {
   env: Env;
@@ -18,11 +22,22 @@ export interface BackgroundModule {
 
 /** Register future sports/fantasy collectors here. Each gets its own private
  * state namespace, retry schedule and payload validator; no page-route changes. */
-export const backgroundModules: readonly BackgroundModule[] = [{
-  id: "weather",
-  initialConfig: env => env.WEATHER_CONFIG ? weatherConfigSchema.parse(JSON.parse(env.WEATHER_CONFIG)) : null,
-  async collect({ env, userId, config, load, save }) {
-    const result = await collectWeather(env, userId, config === null ? null : weatherConfigSchema.parse(config), await load<WeatherState>(), save);
-    return result.snapshot;
+export const backgroundModules: readonly BackgroundModule[] = [
+  {
+    id: "weather",
+    initialConfig: (env) =>
+      env.WEATHER_CONFIG
+        ? weatherConfigSchema.parse(JSON.parse(env.WEATHER_CONFIG))
+        : null,
+    async collect({ env, userId, config, load, save }) {
+      const result = await collectWeather(
+        env,
+        userId,
+        config === null ? null : weatherConfigSchema.parse(config),
+        await load<WeatherState>(),
+        save,
+      );
+      return result.snapshot;
+    },
   },
-}];
+];

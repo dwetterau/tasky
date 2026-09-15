@@ -4,5 +4,5 @@
   "pages_build_output_dir": "./public",
   "compatibility_date": "2026-08-22",
   "vars": { "HOME_ORIGIN": "https://home.davidw.tech" },
-  "services": [{ "binding": "HOMEPAGE", "service": "tasky-homepage" }]
+  "services": [{ "binding": "HOMEPAGE", "service": "tasky-homepage" }],
 }

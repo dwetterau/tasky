@@ -18,9 +18,11 @@ function OAuthLoginPageContent() {
   const continueUrl = useMemo(() => {
     const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
     if (!convexSiteUrl) return null;
-    const query = searchParams.toString();
+    const params = new URLSearchParams(searchParams.toString());
+    const isHomepage = params.get("flow") === "homepage";
+    params.delete("flow");
+    const query = params.toString();
     if (!query) return null;
-    const isHomepage = searchParams.get("client_id") === (process.env.NEXT_PUBLIC_HOMEPAGE_OAUTH_CLIENT_ID ?? "tasky-homepage");
     return `${convexSiteUrl}/api/auth/${isHomepage ? "oauth2" : "mcp"}/authorize?${query}`;
   }, [searchParams]);
 
@@ -54,7 +56,9 @@ function OAuthLoginPageContent() {
       window.location.href = data.location;
     } catch (error) {
       setContinueError(
-        error instanceof Error ? error.message : "Failed to continue authorization"
+        error instanceof Error
+          ? error.message
+          : "Failed to continue authorization",
       );
     } finally {
       setIsContinuing(false);
@@ -92,10 +96,13 @@ function OAuthLoginPageContent() {
         </div>
         <h1 className="text-2xl font-semibold mb-2">Signed in</h1>
         <p className="text-(--muted) mb-6">
-          Continue to authorize the requesting application with your Tasky account.
+          Continue to authorize the requesting application with your Tasky
+          account.
         </p>
         {continueError ? (
-          <p className="mb-4 text-sm text-red-400 border border-red-400/30 rounded-lg px-3 py-2">{continueError}</p>
+          <p className="mb-4 text-sm text-red-400 border border-red-400/30 rounded-lg px-3 py-2">
+            {continueError}
+          </p>
         ) : null}
         {continueUrl ? (
           <button
@@ -107,7 +114,8 @@ function OAuthLoginPageContent() {
           </button>
         ) : (
           <p className="text-sm text-(--muted)">
-            Missing OAuth query parameters. Start authorization again from the requesting application.
+            Missing OAuth query parameters. Start authorization again from the
+            requesting application.
           </p>
         )}
       </div>
