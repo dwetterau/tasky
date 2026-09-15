@@ -7,6 +7,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify } from "jose";
 import { symmetricEncrypt } from "better-auth/crypto";
 import { homepageOidc } from "./lib/homepageOidc";
 import { isolateHomepageFromMcp } from "./lib/mcp";
+import { POST as continueAuthorization } from "../src/app/api/oauth/mcp/continue/route";
 
 const issuer = "https://issuer.example.test";
 const home = "https://home.example.test";
@@ -109,6 +110,71 @@ async function fixture() {
   return { auth, db, account, cookies, query };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+it.each(["navigate", "cors"])(
+  "continues a fresh Tasky session through consent and an existing grant (%s)",
+  async (mode) => {
+    const f = await fixture();
+    vi.stubEnv("NEXT_PUBLIC_CONVEX_SITE_URL", issuer);
+    const network = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set("sec-fetch-mode", mode);
+        return f.auth.handler(new Request(String(input), { ...init, headers }));
+      });
+    const resume = () =>
+      continueAuthorization(
+        new Request(`${front}/api/oauth/mcp/continue`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            authorizeUrl: `${issuer}/api/auth/oauth2/authorize?${f.query}`,
+            betterAuthCookie: f.cookies,
+          }),
+        }),
+      );
+    try {
+      const initial = await resume();
+      expect(initial.status).toBe(200);
+      const consentUrl = new URL((await initial.json()).location);
+      expect(consentUrl.origin + consentUrl.pathname).toBe(
+        `${front}/oauth/consent`,
+      );
+      expect(consentUrl.searchParams.get("flow")).toBe("homepage");
+      expect(consentUrl.searchParams.get("client_name")).toBe("Tasky Homepage");
+      const consent = await f.auth.handler(
+        new Request(`${issuer}/api/auth/oauth2/consent`, {
+          method: "POST",
+          headers: {
+            cookie: f.cookies,
+            origin: issuer,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            accept: true,
+            consent_code: consentUrl.searchParams.get("consent_code"),
+          }),
+        }),
+      );
+      expect(consent.status).toBe(200);
+
+      const returning = await resume();
+      expect(returning.status).toBe(200);
+      expect(returning.headers.get("cache-control")).toBe("no-store");
+      const callback = new URL((await returning.json()).location);
+      expect(callback.origin + callback.pathname).toBe(`${home}/auth/callback`);
+      expect(callback.searchParams.get("state")).toBe("fixture-state");
+      expect(
+        (await token(f.auth, codeBody(callback.searchParams.get("code")!)))
+          .status,
+      ).toBe(200);
+    } finally {
+      network.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  },
+);
 
 it("signs homepage identity with an existing Convex RSA key without stored algorithm metadata", async () => {
   const f = await fixture();
