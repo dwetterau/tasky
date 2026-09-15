@@ -15,6 +15,7 @@ export default function RootLayout() {
             <ToastProvider>
               <Stack screenOptions={iosHeaderScreenOptions}>
                 <Stack.Screen name="index" options={{ title: "" }} />
+                <Stack.Screen name="scale_page" options={{ title: "Scale" }} />
                 <Stack.Screen
                   name="settings_page"
                   options={{ title: "Settings" }}
