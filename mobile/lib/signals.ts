@@ -273,6 +273,34 @@ const ATTENTION_RANK: Record<
   ok: 3,
 };
 
+export function lastLoggedAt(signal: SignalDashboardItem): number | undefined {
+  return signal.model.kind === "activity"
+    ? signal.model.lastOccurredAt
+    : signal.model.confirmedAt;
+}
+
+export function loggedTodaySignals(
+  signals: SignalDashboardItem[],
+  day: { startAt: number; endAt: number },
+): SignalDashboardItem[] {
+  return signals
+    .filter((signal) => {
+      const loggedAt = lastLoggedAt(signal);
+      return (
+        loggedAt !== undefined &&
+        loggedAt >= day.startAt &&
+        loggedAt < day.endAt
+      );
+    })
+    .sort((left, right) => {
+      const loggedDelta =
+        (lastLoggedAt(right) ?? 0) - (lastLoggedAt(left) ?? 0);
+      return loggedDelta !== 0
+        ? loggedDelta
+        : left.name.localeCompare(right.name);
+    });
+}
+
 export function leftoverSignals(
   signals: SignalDashboardItem[],
   scorecards: ScorecardItem[],
