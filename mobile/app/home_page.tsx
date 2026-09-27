@@ -310,6 +310,23 @@ function TodayCard() {
   );
 }
 
+function ScaleCard() {
+  const router = useRouter();
+
+  return (
+    <TouchableOpacity
+      style={sharedStyles.card}
+      activeOpacity={0.85}
+      onPress={() => router.push("/scale_page" as Href)}
+    >
+      <CardHeader
+        title="Weight"
+        subtitle="Connect your scale and log a weigh-in"
+      />
+    </TouchableOpacity>
+  );
+}
+
 function TaskyCard() {
   const router = useRouter();
   const taskyAuth = useTaskyAuth();
@@ -570,6 +587,7 @@ export default function HomePage() {
       >
         <TodayCard />
         <SignalsCard />
+        <ScaleCard />
         <TaskyCard />
         <PortfolioCard />
       </ScrollView>

@@ -1,6 +1,4 @@
 import Constants from "expo-constants";
-import { type Href, useRouter } from "expo-router";
-import { PillButton } from "@/components/PillButton";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -97,7 +95,6 @@ function SectionHeader({ title }: { title: string }) {
 
 export default function SettingsPage() {
   const taskyAuth = useTaskyAuth();
-  const router = useRouter();
 
   const [isConnectingTasky, setIsConnectingTasky] = useState(false);
   const [isDisconnectingTasky, setIsDisconnectingTasky] = useState(false);
@@ -199,11 +196,6 @@ export default function SettingsPage() {
             <Text style={sharedStyles.muted}>Refreshing Tasky session…</Text>
           </View>
         ) : null}
-      </View>
-
-      <SectionHeader title="Devices" />
-      <View style={styles.card}>
-        <PillButton label="YUNMAI scale" onPress={() => router.push("/scale_page" as Href)} />
       </View>
 
       <SectionHeader title="About" />

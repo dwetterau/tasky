@@ -34,10 +34,10 @@ Debug device builds also set `ios.buildReactNativeFromSource` in
 
 ## YUNMAI Mini scale
 
-Settings → YUNMAI scale. Tap Connect, wake the scale, and step on. The first
-time, select the scale; later Connect reconnects to the last one. An unfinished
-weigh-in times out after 30 seconds of inactivity. Save writes pounds to the
-uniquely named Weight activity signal (weight measurement only).
+From the home screen, open Weight. Tap Connect, wake the scale, and step on.
+The first time, select the scale; later Connect reconnects to the last one. An
+unfinished weigh-in times out after 30 seconds of inactivity. Save writes pounds
+to the uniquely named Weight activity signal (weight measurement only).
 
 `modules/tasky-scale` is a local Expo module using CoreBluetooth (`FFE0/FFE4`
 notifications, protocol version via `FFE5/FFE9`). Bluetooth permission lives in
