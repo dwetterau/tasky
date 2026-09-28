@@ -221,11 +221,13 @@ export function SearchTagSelector({
   onTagChange,
   allTags,
   selectedNoTag = false,
+  allowNoTag = true,
 }: {
   selectedTag: Tag | null;
   onTagChange: (tagId: TagFilterValue) => void;
   allTags: Tag[];
   selectedNoTag?: boolean;
+  allowNoTag?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -285,7 +287,9 @@ export function SearchTagSelector({
   };
 
   // Include "No tag" option in the list when searching matches it
-  const showNoTagOption = "no tag".includes(search.toLowerCase()) || search === "";
+  const showNoTagOption =
+    allowNoTag &&
+    ("no tag".includes(search.toLowerCase()) || search === "");
   const totalItems = (showNoTagOption ? 1 : 0) + availableTags.length;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

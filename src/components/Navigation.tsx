@@ -44,6 +44,26 @@ const navItems = [
     ),
   },
   {
+    name: "Signals",
+    href: "/signals",
+    preserveTag: true,
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12h3l2-7 4 14 2-7h5" />
+      </svg>
+    ),
+  },
+  {
+    name: "Scorecards",
+    href: "/scorecards",
+    preserveTag: true,
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2m-4 4 2 2 4-4m-4 8h6" />
+      </svg>
+    ),
+  },
+  {
     name: "Agents",
     href: "/agents",
     preserveTag: true,
@@ -137,7 +157,7 @@ export function Navigation() {
           />
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-1">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
@@ -236,7 +256,7 @@ export function Navigation() {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="md:hidden p-2 text-(--muted) hover:text-foreground transition-colors"
+            className="lg:hidden p-2 text-(--muted) hover:text-foreground transition-colors"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               {menuOpen ? (
@@ -251,7 +271,7 @@ export function Navigation() {
 
       {/* Mobile Menu */}
       {menuOpen && (
-        <div className="md:hidden border-t border-(--card-border) bg-(--card-bg)">
+        <div className="lg:hidden border-t border-(--card-border) bg-(--card-bg)">
           <div className="px-4 sm:px-6 lg:px-8 py-2 space-y-1">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
