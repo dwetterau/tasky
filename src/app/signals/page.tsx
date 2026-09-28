@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { Navigation } from "@/components/Navigation";
 import { SearchTagSelector } from "@/components/TagSelector";
 import { SignalCard } from "@/components/SignalCard";
+import { SignalInspectorModal } from "@/components/SignalInspectorModal";
 import { SignIn } from "@/components/SignIn";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { usePageTagFilter } from "@/lib/usePageTagFilter";
@@ -46,6 +47,8 @@ function SignalsContent() {
   const [kind, setKind] = useState<SignalKind>("all");
   const [view, setView] = useState<SignalView>("status");
   const [searchText, setSearchText] = useState("");
+  const [selectedSignal, setSelectedSignal] =
+    useState<SignalDashboardItem | null>(null);
   const { allTags, selectedTag, selectedTagId, handleTagChange } =
     usePageTagFilter();
 
@@ -209,7 +212,12 @@ function SignalsContent() {
         ) : view === "today" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {todaySignals.map((signal) => (
-              <SignalCard key={signal.id} signal={signal} now={now} />
+              <SignalCard
+                key={signal.id}
+                signal={signal}
+                now={now}
+                onInspect={() => setSelectedSignal(signal)}
+              />
             ))}
           </div>
         ) : (
@@ -226,7 +234,12 @@ function SignalsContent() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {group.signals.map((signal) => (
-                    <SignalCard key={signal.id} signal={signal} now={now} />
+                    <SignalCard
+                      key={signal.id}
+                      signal={signal}
+                      now={now}
+                      onInspect={() => setSelectedSignal(signal)}
+                    />
                   ))}
                 </div>
               </section>
@@ -234,6 +247,13 @@ function SignalsContent() {
           </div>
         )}
       </main>
+      {selectedSignal ? (
+        <SignalInspectorModal
+          signal={selectedSignal}
+          now={now}
+          onClose={() => setSelectedSignal(null)}
+        />
+      ) : null}
     </div>
   );
 }

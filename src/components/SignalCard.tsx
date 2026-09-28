@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   signalPrimaryText,
   signalSecondaryText,
@@ -36,16 +37,35 @@ export function SignalCard({
   signal,
   now,
   compact = false,
+  onInspect,
 }: {
   signal: SignalDashboardItem;
   now: number;
   compact?: boolean;
+  onInspect?: () => void;
 }) {
   const attention = ATTENTION_STYLES[signal.evaluation.attention];
 
   return (
     <article
+      role={onInspect ? "button" : undefined}
+      tabIndex={onInspect ? 0 : undefined}
+      onClick={onInspect}
+      onKeyDown={(event) => {
+        if (
+          onInspect &&
+          event.target === event.currentTarget &&
+          (event.key === "Enter" || event.key === " ")
+        ) {
+          event.preventDefault();
+          onInspect();
+        }
+      }}
       className={`bg-(--card-bg) border border-(--card-border) rounded-xl transition-colors hover:border-(--accent)/30 ${
+        onInspect
+          ? "cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40"
+          : ""
+      } ${
         compact ? "p-4" : "p-5"
       }`}
     >
@@ -90,14 +110,16 @@ export function SignalCard({
             </span>
           ))}
           {signal.scorecards.map((scorecard) => (
-            <span
+            <Link
               key={scorecard.id}
+              href={`/scorecards?expanded=${scorecard.id}`}
+              onClick={(event) => event.stopPropagation()}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-(--muted) bg-(--card-border)"
             >
               <span aria-hidden="true">◎</span>
               {scorecard.name}
               {scorecard.role === "optional" ? " · optional" : ""}
-            </span>
+            </Link>
           ))}
         </div>
       ) : null}

@@ -2,10 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "../../../convex/_generated/api";
 import { Navigation } from "@/components/Navigation";
 import { SearchTagSelector } from "@/components/TagSelector";
 import { SignalCard } from "@/components/SignalCard";
+import { SignalInspectorModal } from "@/components/SignalInspectorModal";
 import { SignIn } from "@/components/SignIn";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { usePageTagFilter } from "@/lib/usePageTagFilter";
@@ -16,6 +18,7 @@ import {
   scorecardHeadline,
   SIGNAL_SOON_WINDOW_MS,
   type ScorecardItem,
+  type SignalDashboardItem,
   useSignalClock,
 } from "@/lib/signalDisplay";
 
@@ -27,8 +30,15 @@ function memberKey(member: ScorecardItem["members"][number]): string {
   return member.type === "scorecard" ? member.scorecardId : member.signalId;
 }
 
-function ScorecardCard({ scorecard }: { scorecard: ScorecardItem }) {
-  const [expanded, setExpanded] = useState(false);
+function ScorecardCard({
+  scorecard,
+  expanded,
+  onToggle,
+}: {
+  scorecard: ScorecardItem;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const ratio = Math.min(1, Math.max(0, scorecard.evaluation.ratio));
   const counted = scorecard.targetCount !== undefined;
   const visibleMembers = counted
@@ -43,7 +53,7 @@ function ScorecardCard({ scorecard }: { scorecard: ScorecardItem }) {
   return (
     <article className="bg-(--card-bg) border border-(--card-border) rounded-xl overflow-hidden">
       <button
-        onClick={() => setExpanded((current) => !current)}
+        onClick={onToggle}
         aria-expanded={expanded}
         className="w-full p-5 text-left hover:bg-(--accent)/3 transition-colors"
       >
@@ -191,29 +201,58 @@ function LoadingState() {
 }
 
 function ScorecardsContent() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const now = useSignalClock();
   const periodBounds = useMemo(() => getSignalPeriodBounds(now), [now]);
   const [searchText, setSearchText] = useState("");
+  const [selectedSignal, setSelectedSignal] =
+    useState<SignalDashboardItem | null>(null);
   const { allTags, selectedTag, selectedTagId, handleTagChange } =
     usePageTagFilter();
+  const expandedScorecardId = searchParams.get("expanded");
 
-  const queryArgs = {
+  const baseQueryArgs = {
     now,
     soonWindowMs: SIGNAL_SOON_WINDOW_MS,
     periodBounds,
+  };
+  const queryArgs = {
+    ...baseQueryArgs,
     tagId: selectedTagId ?? undefined,
   };
   const scorecards = useQuery(api.scorecards.list, queryArgs);
   const signals = useQuery(api.signals.listDashboard, queryArgs);
+  const scorecardsForExpansion = useQuery(
+    api.scorecards.list,
+    expandedScorecardId ? baseQueryArgs : "skip",
+  );
 
   const matchingScorecards = useMemo(() => {
     if (!scorecards) return undefined;
     const normalizedSearch = searchText.trim().toLocaleLowerCase();
-    if (!normalizedSearch) return scorecards;
-    return scorecards.filter((scorecard) =>
-      scorecard.name.toLocaleLowerCase().includes(normalizedSearch),
+    const matching = normalizedSearch
+      ? scorecards.filter((scorecard) =>
+          scorecard.name.toLocaleLowerCase().includes(normalizedSearch),
+        )
+      : [...scorecards];
+    const expandedScorecard = scorecardsForExpansion?.find(
+      (scorecard) => scorecard.id === expandedScorecardId,
     );
-  }, [scorecards, searchText]);
+    if (
+      expandedScorecard &&
+      !matching.some((scorecard) => scorecard.id === expandedScorecard.id)
+    ) {
+      matching.unshift(expandedScorecard);
+    }
+    return matching;
+  }, [
+    expandedScorecardId,
+    scorecards,
+    scorecardsForExpansion,
+    searchText,
+  ]);
 
   const leftovers = useMemo(
     () =>
@@ -227,6 +266,19 @@ function ScorecardsContent() {
   const clearFilters = () => {
     setSearchText("");
     handleTagChange(null);
+  };
+
+  const toggleScorecard = (scorecardId: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (expandedScorecardId === scorecardId) {
+      params.delete("expanded");
+    } else {
+      params.set("expanded", scorecardId);
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
   };
 
   return (
@@ -312,7 +364,12 @@ function ScorecardsContent() {
             {matchingScorecards.length > 0 ? (
               <section className="grid grid-cols-1 gap-4">
                 {matchingScorecards.map((scorecard) => (
-                  <ScorecardCard key={scorecard.id} scorecard={scorecard} />
+                  <ScorecardCard
+                    key={scorecard.id}
+                    scorecard={scorecard}
+                    expanded={expandedScorecardId === scorecard.id}
+                    onToggle={() => toggleScorecard(scorecard.id)}
+                  />
                 ))}
               </section>
             ) : null}
@@ -334,6 +391,7 @@ function ScorecardsContent() {
                       signal={signal}
                       now={now}
                       compact
+                      onInspect={() => setSelectedSignal(signal)}
                     />
                   ))}
                 </div>
@@ -342,6 +400,13 @@ function ScorecardsContent() {
           </div>
         )}
       </main>
+      {selectedSignal ? (
+        <SignalInspectorModal
+          signal={selectedSignal}
+          now={now}
+          onClose={() => setSelectedSignal(null)}
+        />
+      ) : null}
     </div>
   );
 }
