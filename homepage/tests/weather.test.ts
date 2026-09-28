@@ -7,7 +7,7 @@ import {
   weatherConfigSchema,
   type WeatherState,
 } from "../src/modules/weather/collector";
-import { renderEdition } from "../src/rendering/page";
+import { renderEdition, freshnessBanner } from "../src/rendering/page";
 import { weatherPayloadSchema } from "@tasky/home-feed";
 import { renderHourlyRain } from "../src/modules/weather";
 import { fixtureEdition } from "./fixtures";
@@ -38,9 +38,9 @@ const forecast = {
 };
 
 const hourly = () =>
-  Array.from({ length: 24 }, (_, index) => ({
+  Array.from({ length: 12 }, (_, index) => ({
     DateTime: new Date(Date.now() + index * 3600_000).toISOString(),
-    RainProbability: index * 4,
+    PrecipitationProbability: index * 4,
   }));
 function weatherResponse(input: unknown) {
   const url = String(input);
@@ -70,15 +70,19 @@ it("works without a weather key, and never writes credentials to snapshots or du
       "Bearer secret-not-for-feed",
     );
     expect(String(input)).not.toContain("secret-not-for-feed");
-    if (String(input).includes("forecasts/")) {
+    if (String(input).includes("/daily/")) {
       expect(new URL(String(input)).searchParams.get("details")).toBe("true");
+    }
+    if (String(input).includes("/hourly/")) {
+      expect(String(input)).toContain("/hourly/12hour/");
+      expect(new URL(String(input)).searchParams.get("details")).toBe("false");
     }
     return Response.json(weatherResponse(input));
   });
   const result = await collectWeather(env, "user-a", config, undefined, save);
   expect(result.snapshot?.status).toBe("available");
   expect(result.state?.payload?.forecast[0].rainProbability).toBe(0);
-  expect(result.state?.payload?.hourly).toHaveLength(24);
+  expect(result.state?.payload?.hourly).toHaveLength(12);
   expect(result.state?.nextHourly).toBeGreaterThanOrEqual(
     result.state!.payload!.hourlyFetchedAt! + 6 * 3600_000,
   );
@@ -142,8 +146,15 @@ it("backs off on rate limits, enforces a persisted budget, and keeps original la
         }),
   );
   const failed = await collectWeather(env, "user-a", config, stored, save);
-  expect(failed.snapshot!.sourceDataAt).toBe(observed);
-  expect(failed.snapshot!.error).toBe("rate_limited");
+  expect(failed.snapshot!.sourceDataAt).toBeGreaterThanOrEqual(observed!);
+  expect(failed.state!.payload?.current?.observedAt).toBe(
+    first.state!.payload!.current!.observedAt,
+  );
+  expect(failed.snapshot!.error).toBeUndefined();
+  expect(failed.state!.error).toBe("rate_limited");
+  expect(failed.state!.payload?.current).toEqual(
+    first.state!.payload!.current,
+  );
   expect(stored!.nextCurrent).toBeGreaterThan(Date.now() + 3 * 3600_000);
   stored!.nextCheck = 0;
   stored!.nextCurrent = 0;
@@ -152,6 +163,47 @@ it("backs off on rate limits, enforces a persisted budget, and keeps original la
   const count = network.mock.calls.length;
   await collectWeather(env, "user-a", config, stored, save);
   expect(network.mock.calls.length - count).toBe(1); // credential check only; no weather calls
+  const forced = network.mock.calls.length;
+  await collectWeather(env, "user-a", config, stored, save, Date.now(), true);
+  expect(
+    network.mock.calls
+      .slice(forced)
+      .filter((call) => !String(call[0]).includes("weather-key")),
+  ).toHaveLength(3);
+});
+it("does not treat a morning forecast issue time or hourly miss as the whole module going stale", async () => {
+  const save = vi.fn(async (_state: WeatherState) => {});
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+    String(input).includes("weather-key")
+      ? Response.json({ apiKey: "secret" })
+      : Response.json(weatherResponse(input)),
+  );
+  const first = await collectWeather(env, "user-a", config, undefined, save);
+  const morning = Date.now() - 10 * 3600_000;
+  const stored = structuredClone(first.state!);
+  stored.payload!.forecastObservedAt = morning;
+  stored.payload!.hourlyFetchedAt = morning;
+  stored.errors = { hourly: "configuration" };
+  stored.error = "configuration";
+  stored.nextCheck = Date.now() + 60_000;
+  const next = await collectWeather(env, "user-a", config, stored, save);
+  expect(next.snapshot!.sourceDataAt).toBeGreaterThan(morning);
+  expect(next.snapshot!.error).toBeUndefined();
+  expect(next.snapshot!.status).toBe("available");
+});
+it("does not treat a last-good snapshot as a page error", () => {
+  const edition = fixtureEdition();
+  const weather = edition.feed.modules.find((module) => module.id === "weather")!;
+  weather.status = "stale";
+  weather.error = "collection_failed";
+  weather.sourceDataAt = Date.now() - 8 * 3600_000;
+  const html = `${freshnessBanner(edition.feed, Date.now())}${renderEdition(edition.feed, env.TASKY_ORIGIN)}`;
+  expect(html).not.toContain("earlier snapshot");
+  expect(html).not.toContain('class="notice"');
+  expect(html).not.toContain("latest update failed");
+  expect(html).not.toContain("Earlier weather snapshot");
+  expect(html).not.toContain("Updates will appear when the source recovers");
+  expect(html).toContain('action="/api/refresh"');
 });
 it("counts attempts in a rolling 24-hour window across restarts and location changes", async () => {
   const now = Date.now();
@@ -203,18 +255,30 @@ it("counts attempts in a rolling 24-hour window across restarts and location cha
     now + 86400_000 + 60_000,
   ]);
 });
-it("graphs only the remaining hours in the user's current day and distinguishes fetch time", () => {
+it("graphs upcoming hours across midnight and distinguishes fetch time", () => {
   const now = Date.parse("2026-09-16T02:30:00Z"); // 10:30 PM in New York
   const sourceAt = now - 3600_000;
   const daily = normalizeForecast(forecast, sourceAt, now);
   expect(daily.forecastObservedAt).toBe(sourceAt);
   expect(daily.forecastFetchedAt).toBe(now);
+  expect(
+    normalizeHourly(
+      [
+        {
+          DateTime: "2026-09-16T12:00:00-04:00",
+          RainProbability: 11,
+          PrecipitationProbability: 90,
+        },
+      ],
+      now,
+    ).hourly[0].rainProbability,
+  ).toBe(11);
   const hours = normalizeHourly(
     [
-      { DateTime: "2026-09-15T21:00:00-04:00", RainProbability: 80 },
-      { DateTime: "2026-09-15T22:00:00-04:00", RainProbability: 0 },
-      { DateTime: "2026-09-15T23:00:00-04:00", RainProbability: 25 },
-      { DateTime: "2026-09-16T00:00:00-04:00", RainProbability: 90 },
+      { DateTime: "2026-09-15T21:00:00-04:00", PrecipitationProbability: 80 },
+      { DateTime: "2026-09-15T22:00:00-04:00", PrecipitationProbability: 0 },
+      { DateTime: "2026-09-15T23:00:00-04:00", PrecipitationProbability: 25 },
+      { DateTime: "2026-09-16T00:00:00-04:00", PrecipitationProbability: 90 },
     ],
     now,
   );
@@ -232,8 +296,13 @@ it("graphs only the remaining hours in the user's current day and distinguishes 
   });
   expect(html).toContain("10 PM: 0% chance of rain");
   expect(html).toContain("11 PM: 25% chance of rain");
+  expect(html).toContain("12 AM: 90% chance of rain");
+  expect(html).toContain('class="rain-tip"');
+  expect(html).toContain("10p 0%");
+  expect(html).toContain("11p 25%");
+  expect(html).toContain("12a 90%");
+  expect(html).toContain("Rain next 3h");
   expect(html).not.toContain("9 PM:");
-  expect(html).not.toContain("12 AM:");
   expect(html).toContain("height:25%");
 });
 it("escapes source text and rejects unsafe links", () => {

@@ -197,6 +197,18 @@ export class UserPublisher extends DurableObject<Env> {
           await this.work(state);
           return Response.json({ ok: true });
         }
+        if (path === "/publish") {
+          // One-off reprint: never patch KV HTML. Mark dirty and assemble a
+          // new revision from the current snapshots.
+          state.dirty = true;
+          state.retryAfter = 0;
+          state.lastPublishedAt = 0;
+          await this.work(state);
+          return Response.json({
+            ok: true,
+            revision: state.publishedRevision ?? 0,
+          });
+        }
         return new Response(null, { status: 404 });
       } catch (error) {
         const invalid =
@@ -286,8 +298,20 @@ export class UserPublisher extends DurableObject<Env> {
         state.publishedSourceRevision = state.sourceRevision;
         if (state.lastError === "publication_failed")
           state.lastError = undefined;
+        const weather = feed.modules.find((module) => module.id === "weather");
+        console.warn(
+          JSON.stringify({
+            event: "homepage_edition_published",
+            revision: feed.revision,
+            weatherStatus: weather?.status ?? null,
+            weatherCollectedAt: weather?.collectedAt ?? null,
+            weatherSourceDataAt: weather?.sourceDataAt ?? null,
+            weatherError: weather?.error ?? null,
+          }),
+        );
       } catch {
         state.lastError = "publication_failed";
+        console.warn(JSON.stringify({ event: "homepage_edition_publish_failed" }));
         state.retryAttempt += 1;
         state.retryAfter =
           now + Math.min(300_000, 2000 * 2 ** Math.min(state.retryAttempt, 8));

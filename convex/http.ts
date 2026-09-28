@@ -22,6 +22,7 @@ const http = httpRouter();
 authComponent.registerRoutes(http, createAuth, { cors: true });
 http.route({ path: "/api/homepage/enroll", method: "POST", handler: homepageService });
 http.route({ path: "/api/homepage/weather-key", method: "POST", handler: homepageService });
+http.route({ path: "/api/homepage/sync-prices", method: "POST", handler: homepageService });
 
 http.route({
   path: "/",

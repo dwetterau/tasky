@@ -10,6 +10,7 @@ export interface CollectionContext {
   env: Env;
   userId: string;
   config: unknown;
+  force?: boolean;
   /** Private control state, separate from the published module payload. */
   load: <T>() => Promise<T | undefined>;
   save: (state: unknown) => Promise<void>;
@@ -29,13 +30,15 @@ export const backgroundModules: readonly BackgroundModule[] = [
       env.WEATHER_CONFIG
         ? weatherConfigSchema.parse(JSON.parse(env.WEATHER_CONFIG))
         : null,
-    async collect({ env, userId, config, load, save }) {
+    async collect({ env, userId, config, load, save, force }) {
       const result = await collectWeather(
         env,
         userId,
         config === null ? null : weatherConfigSchema.parse(config),
         await load<WeatherState>(),
         save,
+        Date.now(),
+        Boolean(force),
       );
       return result.snapshot;
     },

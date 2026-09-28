@@ -25,6 +25,9 @@ export const weatherConfigSchema = z
   .strict();
 export type WeatherConfig = z.infer<typeof weatherConfigSchema>;
 type Part = "current" | "forecast" | "hourly";
+function weatherLog(fields: Record<string, unknown>) {
+  console.warn(JSON.stringify({ event: "homepage_weather", ...fields }));
+}
 export type WeatherState = {
   configKey: string;
   forecastVersion?: number;
@@ -78,6 +81,7 @@ const hourlyResponse = z
   .array(
     z.object({
       DateTime: z.string().datetime({ offset: true }),
+      PrecipitationProbability: z.number().min(0).max(100).nullish(),
       RainProbability: z.number().min(0).max(100).nullish(),
     }),
   )
@@ -90,7 +94,8 @@ export function normalizeHourly(raw: unknown, fetchedAt: number) {
       .parse(raw)
       .map((hour) => ({
         at: Date.parse(hour.DateTime),
-        rainProbability: hour.RainProbability ?? null,
+        rainProbability:
+          hour.RainProbability ?? hour.PrecipitationProbability ?? null,
       }))
       .sort((a, b) => a.at - b.at),
     hourlyFetchedAt: fetchedAt,
@@ -174,21 +179,20 @@ function cacheDelay(response: Response, now: number) {
 }
 function snapshot(state: WeatherState): ModuleSnapshot {
   if (state.disabled) return missingModule(weatherModule, true);
-  const times = [
-    state.payload?.current?.observedAt,
-    state.payload?.forecastObservedAt,
-    state.payload?.hourlyFetchedAt,
-  ].filter((t): t is number => typeof t === "number");
+  const hasPrimary =
+    Boolean(state.payload?.current) || Boolean(state.payload?.forecast.length);
   return {
     id: "weather",
     schemaVersion: 1,
     scope: "user",
-    sourceDataAt: times.length ? Math.min(...times) : null,
+    // Last successful fetch, not the oldest fragment. A 6am hourly leftover
+    // must not mark afternoon current conditions stale.
+    sourceDataAt: state.collectedAt,
     collectedAt: state.collectedAt,
     freshForMs: weatherModule.freshForMs,
     maxAgeMs: weatherModule.maxAgeMs,
     status: state.payload ? "available" : "unavailable",
-    ...(state.error ? { error: state.error } : {}),
+    ...(state.error && !hasPrimary ? { error: state.error } : {}),
     payload: state.payload,
   };
 }
@@ -202,6 +206,7 @@ export async function collectWeather(
   state: WeatherState | undefined,
   save: (state: WeatherState) => Promise<void>,
   now = Date.now(),
+  force = false,
 ): Promise<{ state?: WeatherState; snapshot?: ModuleSnapshot }> {
   if (!config) return { snapshot: missingModule(weatherModule, true) };
   // Retry data rejected by the older parser while retaining the request budget.
@@ -224,8 +229,8 @@ export async function collectWeather(
     state.nextForecast = 0;
     state.nextCheck = 0;
   }
-  if (state.nextHourly === undefined || state.hourlyVersion !== 1) {
-    state.hourlyVersion = 1;
+  if (state.nextHourly === undefined || state.hourlyVersion !== 2) {
+    state.hourlyVersion = 2;
     state.nextHourly = 0;
     state.nextCheck = 0;
   }
@@ -269,7 +274,27 @@ export async function collectWeather(
     )
       state.payload = null;
   }
-  if (now < state.nextCheck) {
+  if (force) {
+    state.nextCheck = 0;
+    state.nextCurrent = 0;
+    state.nextForecast = 0;
+    state.nextHourly = 0;
+  }
+  weatherLog({
+    phase: "start",
+    force,
+    used: state.requestTimes.length,
+    budget: config.dailyRequestBudget,
+    nextCheck: state.nextCheck,
+    nextCurrent: state.nextCurrent,
+    nextForecast: state.nextForecast,
+    nextHourly: state.nextHourly ?? null,
+    collectedAt: state.collectedAt,
+    error: state.error ?? null,
+    hasPayload: Boolean(state.payload),
+  });
+  if (!force && now < state.nextCheck) {
+    weatherLog({ phase: "deferred", nextCheck: state.nextCheck });
     await save(state);
     return { state, snapshot: snapshot(state) };
   }
@@ -279,18 +304,17 @@ export async function collectWeather(
       userId,
     });
   } catch (error) {
-    console.warn(
-      JSON.stringify({
-        event: "homepage_weather_credentials_retry",
-        error: error instanceof Error ? error.name : "UnknownError",
-      }),
-    );
+    weatherLog({
+      phase: "credentials",
+      error: error instanceof Error ? error.name : "UnknownError",
+    });
     state.error = "collection_failed";
     state.nextCheck = now + 60_000;
     await save(state);
     return { state, snapshot: snapshot(state) };
   }
   if (!credentials.apiKey) {
+    weatherLog({ phase: "credentials", hasKey: false });
     state.payload = null;
     state.nextCheck = now + 30 * 60_000;
     state.error = undefined;
@@ -308,8 +332,23 @@ export async function collectWeather(
       hourly: "nextHourly",
     } as const;
     const field = nextField[part];
-    if (now < (state[field] ?? 0)) continue;
-    if (state.requestTimes.length >= config.dailyRequestBudget) {
+    if (!force && now < (state[field] ?? 0)) {
+      weatherLog({
+        phase: "skip",
+        part,
+        reason: "interval",
+        nextAt: state[field] ?? 0,
+      });
+      continue;
+    }
+    if (!force && state.requestTimes.length >= config.dailyRequestBudget) {
+      weatherLog({
+        phase: "skip",
+        part,
+        reason: "budget",
+        used: state.requestTimes.length,
+        budget: config.dailyRequestBudget,
+      });
       state.error = "rate_limited";
       state.errors[part] = state.error;
       state[field] = Math.min(...state.requestTimes) + 86400_000;
@@ -336,13 +375,12 @@ export async function collectWeather(
       const url = new URL(`https://dataservice.accuweather.com/${path}`);
       url.search = new URLSearchParams({
         language: config.language,
-        details: String(part !== "current"),
+        details: String(part === "forecast"),
         ...(part !== "current" ? { metric: String(config.units === "C") } : {}),
       }).toString();
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${credentials.apiKey}`,
-          "Accept-Encoding": "gzip,deflate",
         },
         // Never forward provider credentials to a redirected host.
         redirect: "manual",
@@ -371,9 +409,17 @@ export async function collectWeather(
                     3600_000 * 2 ** Math.min(state.failures, 4),
                   ),
                 ));
+        weatherLog({
+          phase: "part",
+          part,
+          ok: false,
+          status: response.status,
+          contentType: response.headers.get("content-type"),
+        });
         await response.body?.cancel();
         continue;
       }
+      const contentType = response.headers.get("content-type");
       const raw = await response.json();
       const issuedHeader = Date.parse(
         response.headers.get("last-modified") ??
@@ -402,11 +448,18 @@ export async function collectWeather(
       state.collectedAt = now;
       delete state.errors[part];
       state[field] = now + Math.max(interval, cacheDelay(response, now));
-    } catch {
+      weatherLog({ phase: "part", part, ok: true, contentType });
+    } catch (error) {
       failed = true;
       state.error = "collection_failed";
       state.errors[part] = state.error;
       state.failures++;
+      weatherLog({
+        phase: "part",
+        part,
+        ok: false,
+        error: error instanceof Error ? error.name : "UnknownError",
+      });
     }
   }
   state.error =
@@ -417,5 +470,17 @@ export async function collectWeather(
     Math.min(state.nextCurrent, state.nextForecast, state.nextHourly ?? 0),
   );
   await save(state);
-  return { state, snapshot: snapshot(state) };
+  const snap = snapshot(state);
+  weatherLog({
+    phase: "done",
+    force,
+    failed,
+    collectedAt: state.collectedAt,
+    sourceDataAt: snap.sourceDataAt,
+    error: state.error ?? null,
+    errors: state.errors,
+    failures: state.failures,
+    used: state.requestTimes.length,
+  });
+  return { state, snapshot: snap };
 }

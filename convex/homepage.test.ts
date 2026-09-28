@@ -4,6 +4,8 @@ import schema from "./schema";
 import { internal } from "./_generated/api";
 import { modules } from "./test.setup";
 import { projectHomepage } from "./lib/homepageProjection";
+import { homepageHeaders } from "./lib/homepageTransport";
+import { handleHomepageService } from "./homepage";
 import { calendar } from "../packages/home-feed/src/index";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -270,5 +272,128 @@ describe("homepage projection and durable outbox", () => {
     expect(result.tasks).toEqual([]);
     expect(result.counts.active).toBe(2);
     expect(result.counts.overdue).toBe(0);
+  });
+});
+
+const provisionSecret = "fixture-provision-only-32-bytes-long-secret";
+const syncPath = "/api/homepage/sync-prices";
+type HomepageHarness = ReturnType<typeof convexTest>;
+
+async function enrollHomepageUser(t: HomepageHarness, userId = "a") {
+  return await t.run((ctx) =>
+    ctx.db.insert("homepageEnrollments", {
+      userId,
+      timezone: "America/New_York",
+      enabled: true,
+      revision: 0,
+      nextRunAt: 0,
+      attempt: 0,
+    }),
+  );
+}
+
+async function postSync(
+  t: HomepageHarness,
+  body: string,
+  secret = provisionSecret,
+) {
+  const headers = await homepageHeaders(secret, syncPath, body);
+  return await t.action(async (ctx) => {
+    const response = await handleHomepageService(
+      ctx,
+      new Request(`https://tasky.example.test${syncPath}`, {
+        method: "POST",
+        headers,
+        body,
+      }),
+    );
+    return { status: response.status, body: await response.text() };
+  });
+}
+
+describe("homepage price sync route", () => {
+  it("rejects a missing or mismatched provisioning signature", async () => {
+    vi.stubEnv("HOMEPAGE_PROVISIONING_SECRET", provisionSecret);
+    const t = convexTest(schema, modules);
+    const id = await enrollHomepageUser(t);
+    const body = JSON.stringify({ userId: "a" });
+    const unsigned = await t.action(async (ctx) => {
+      const response = await handleHomepageService(
+        ctx,
+        new Request(`https://tasky.example.test${syncPath}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+        }),
+      );
+      return response.status;
+    });
+    expect(unsigned).toBe(401);
+    const unenrolled = await postSync(t, JSON.stringify({ userId: "b" }));
+    const headers = await homepageHeaders(provisionSecret, syncPath, body);
+    const tampered = await t.action(async (ctx) => {
+      const response = await handleHomepageService(
+        ctx,
+        new Request(`https://tasky.example.test${syncPath}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ userId: "b" }),
+        }),
+      );
+      return response.status;
+    });
+    expect(unenrolled.status).toBe(400);
+    expect(tampered).toBe(401);
+    const untouched = await t.query(internal.homepage.pending, { id });
+    expect(untouched!.priceSyncStartedAt).toBeUndefined();
+    expect(untouched!.revision).toBe(0);
+  });
+
+  it("starts one sync for the signed enrolled user and ignores a held lease", async () => {
+    vi.stubEnv("HOMEPAGE_PROVISIONING_SECRET", provisionSecret);
+    const t = convexTest(schema, modules);
+    const id = await enrollHomepageUser(t);
+    const started = await postSync(t, JSON.stringify({ userId: "a" }));
+    expect(started.status).toBe(200);
+    expect(JSON.parse(started.body)).toEqual({ started: true });
+    await t.finishAllScheduledFunctions(() => {});
+    const finished = await t.query(internal.homepage.pending, { id });
+    expect(finished!.priceSyncStartedAt).toBeUndefined();
+    expect(finished!.revision).toBe(0);
+    expect(finished!.pendingBody).toBeUndefined();
+
+    const heldAt = Date.now();
+    await t.run((ctx) => ctx.db.patch(id, { priceSyncStartedAt: heldAt }));
+    const repeat = await postSync(t, JSON.stringify({ userId: "a" }));
+    expect(repeat.status).toBe(200);
+    expect(JSON.parse(repeat.body)).toEqual({ started: false });
+    expect((await t.query(internal.homepage.pending, { id }))!.priceSyncStartedAt).toBe(
+      heldAt,
+    );
+    await t.run((ctx) =>
+      ctx.db.patch(id, { priceSyncStartedAt: Date.now() - 30 * 60_000 - 1 }),
+    );
+    const expired = await postSync(t, JSON.stringify({ userId: "a" }));
+    expect(expired.status).toBe(200);
+    expect(JSON.parse(expired.body)).toEqual({ started: true });
+    await t.finishAllScheduledFunctions(() => {});
+    expect((await t.query(internal.homepage.pending, { id }))!.revision).toBe(0);
+  });
+
+  it("releases the lease without exporting when price sync does not succeed", async () => {
+    const t = convexTest(schema, modules);
+    const id = await enrollHomepageUser(t);
+    const startedAt = Date.now();
+    await t.run((ctx) => ctx.db.patch(id, { priceSyncStartedAt: startedAt }));
+    expect(
+      await t.action(internal.homepage.runPriceSync, {
+        userId: "a",
+        startedAt,
+      }),
+    ).toBeNull();
+    const row = await t.query(internal.homepage.pending, { id });
+    expect(row!.priceSyncStartedAt).toBeUndefined();
+    expect(row!.nextRunAt).toBe(0);
+    expect(row!.revision).toBe(0);
   });
 });

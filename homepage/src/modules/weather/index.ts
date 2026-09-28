@@ -1,8 +1,4 @@
-import {
-  calendar,
-  weatherPayloadSchema,
-  type WeatherPayload,
-} from "@tasky/home-feed";
+import { weatherPayloadSchema, type WeatherPayload } from "@tasky/home-feed";
 import type { HomeModule, RenderContext } from "../contract";
 import { escapeHtml as e, safeLink, sourceTime } from "../../rendering/html";
 
@@ -20,13 +16,10 @@ export function weatherEmoji(description: string, isDay = true) {
 }
 
 export function renderHourlyRain(data: WeatherPayload, context: RenderContext) {
-  const { day } = calendar(context.now, context.timezone);
-  const hours = (data.hourly ?? []).filter(
-    (hour) =>
-      hour.at >= day.startAt &&
-      hour.at < day.endAt &&
-      hour.at + 3600_000 > context.now,
-  );
+  const hours = (data.hourly ?? [])
+    .filter((hour) => hour.at + 3600_000 > context.now)
+    .sort((a, b) => a.at - b.at)
+    .slice(0, 24);
   if (!hours.length)
     return '<p class="rain-empty meta">Hourly rain outlook unavailable.</p>';
   const time = new Intl.DateTimeFormat("en-US", {
@@ -38,9 +31,9 @@ export function renderHourlyRain(data: WeatherPayload, context: RenderContext) {
   ];
   return /* HTML */ `<figure
     class="rain-chart"
-    aria-label="Hourly rain chance for the rest of today"
+    aria-label="Hourly rain chance for the next ${hours.length} hours"
   >
-    <figcaption>Rain today <span>hourly</span></figcaption>
+    <figcaption>Rain next ${hours.length}h <span>hourly</span></figcaption>
     <div class="rain-plot">
       <div class="rain-scale" aria-hidden="true">
         <span>100%</span><span>0%</span>
@@ -50,7 +43,9 @@ export function renderHourlyRain(data: WeatherPayload, context: RenderContext) {
           .map((hour) => {
             const probability = hour.rainProbability;
             const label = `${time.format(hour.at)}: ${probability === null ? "rain chance unavailable" : `${Math.round(probability)}% chance of rain`}`;
-            return `<li class="rain-hour${probability === null ? " unknown" : ""}" title="${e(label)}" aria-label="${e(label)}"><span class="rain-bar" style="height:${probability ?? 0}%" aria-hidden="true"></span></li>`;
+            const tip =
+              probability === null ? "—" : `${Math.round(probability)}%`;
+            return `<li class="rain-hour${probability === null ? " unknown" : ""}" aria-label="${e(label)}"><span class="rain-bar" style="height:${probability ?? 0}%" aria-hidden="true"></span><span class="rain-tip" aria-hidden="true">${e(time.format(hour.at).replace(" AM", "a").replace(" PM", "p"))} ${e(tip)}</span></li>`;
           })
           .join("")}
       </ol>
@@ -118,14 +113,14 @@ export const weatherModule: HomeModule<WeatherPayload> = {
                 : ""}
             </span>
           </span>
+          <form class="module-refresh" action="/api/refresh" method="post">
+            <button type="submit">Refresh</button>
+          </form>
           ${data
             ? `<a class="module-open" href="${safeLink(data.attributionUrl)}" aria-label="Open weather on AccuWeather" rel="noreferrer">Open ↗</a>`
             : ""}
         </div>
-      </div>
-      ${snapshot.status !== "available"
-        ? `<p class="meta stale">${snapshot.payload ? "Earlier weather snapshot" : "Awaiting weather"}</p>`
-        : ""}`;
+      </div>`;
   },
   render(data, context) {
     return /* HTML */ `<p class="weather-location">${e(data.location)}</p>
