@@ -10,6 +10,10 @@ export type SignalDashboardItem = FunctionReturnType<
   typeof api.signals.listDashboard
 >[number];
 
+export type SignalEntry = FunctionReturnType<
+  typeof api.signals.history
+>["page"][number];
+
 export type ScorecardItem = FunctionReturnType<
   typeof api.scorecards.list
 >[number];
