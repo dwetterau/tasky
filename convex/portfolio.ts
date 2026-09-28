@@ -925,26 +925,21 @@ export const getPriceHistory = action({
   },
 });
 
-export const syncPriceHistory = action({
-  args: {},
-  returns: v.object({
-    success: v.boolean(),
-    message: v.string(),
-    synced: v.number(),
-    details: v.object({
-      tickersProcessed: v.number(),
-      recordsFound: v.number(),
-      recordsInserted: v.number(),
-      positionsUpdated: v.number(),
-      yahooTickers: v.array(v.string()),
-    }),
+const priceSyncResult = v.object({
+  success: v.boolean(),
+  message: v.string(),
+  synced: v.number(),
+  details: v.object({
+    tickersProcessed: v.number(),
+    recordsFound: v.number(),
+    recordsInserted: v.number(),
+    positionsUpdated: v.number(),
+    yahooTickers: v.array(v.string()),
   }),
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
+});
 
+/** Same Airtable/Alpaca sync the app runs. Caller supplies an already-authorized user id. */
+export async function syncPriceHistoryForUser(ctx: ActionCtx, userId: string) {
     const [apiKey, baseId, positionsViewId, resetDate] = await Promise.all([
       getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
       getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
@@ -1199,5 +1194,16 @@ export const syncPriceHistory = action({
         yahooTickers,
       },
     };
+}
+
+export const syncPriceHistory = action({
+  args: {},
+  returns: priceSyncResult,
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+    return await syncPriceHistoryForUser(ctx, userId);
   },
 });

@@ -162,6 +162,9 @@ describe("durable ingestion and publication", () => {
     ).toMatchObject({ totalValue: 1250 });
     expect(edition!.html).toContain("$1,250");
     expect(edition!.html).toContain("Unrealized return");
+    expect(edition!.html).toContain('action="/api/sync-prices"');
+    expect(edition!.html).toContain("Sync prices");
+    expect(edition!.html).not.toContain('name="userId"');
     expect(await env.EDITIONS.get("edition:user-b")).toBeNull();
   });
   it("keeps weather failures separate from Tasky publication and preserves observation age", async () => {
@@ -182,7 +185,9 @@ describe("durable ingestion and publication", () => {
     expect(
       edition!.feed.modules.find((m) => m.id === "weather")!.sourceDataAt,
     ).toBe(weather.sourceDataAt);
-    expect(edition!.html).toContain("latest update failed");
+    expect(edition!.html).not.toContain("latest update failed");
+    expect(edition!.html).not.toContain("Earlier weather snapshot");
+    expect(edition!.html).toContain('action="/api/refresh"');
     await expect(
       objectCall(env.PUBLISHERS, "user-a", "/accept-module", {
         userId: "user-b",
@@ -245,6 +250,37 @@ describe("durable ingestion and publication", () => {
     expect(
       await objectCall(env.PUBLISHERS, "user-a", "/status", {}),
     ).toMatchObject({ state: "ready", revision: edition!.feed.revision });
+  });
+  it("does not rewrite the frozen KV edition until a new revision is published", async () => {
+    await enroll();
+    await send();
+    await tick();
+    const first = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    const weather = fixtureWeather(Date.now());
+    await objectCall(env.PUBLISHERS, "user-a", "/accept-module", {
+      userId: "user-a",
+      snapshot: weather,
+    });
+    const pending = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(pending!.feed.revision).toBe(first!.feed.revision);
+    expect(
+      pending!.feed.modules.find((m) => m.id === "weather")?.sourceDataAt,
+    ).not.toBe(weather.sourceDataAt);
+    await objectCall(env.PUBLISHERS, "user-a", "/publish", {});
+    const published = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(published!.feed.revision).toBeGreaterThan(first!.feed.revision);
+    expect(
+      published!.feed.modules.find((m) => m.id === "weather")!.sourceDataAt,
+    ).toBe(weather.sourceDataAt);
+    expect(published!.feed.publishedAt).toBeGreaterThan(
+      first!.feed.publishedAt,
+    );
+    await objectCall(env.PUBLISHERS, "user-a", "/publish", {});
+    const reprint = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(reprint!.feed.revision).toBeGreaterThan(published!.feed.revision);
+    expect(
+      reprint!.feed.modules.find((m) => m.id === "weather")!.sourceDataAt,
+    ).toBe(weather.sourceDataAt);
   });
   it("reports a delayed first export without claiming an empty preparation edition is ready", async () => {
     await enroll();

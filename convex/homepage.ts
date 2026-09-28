@@ -4,6 +4,9 @@ import {
   internalMutation,
   internalQuery,
   httpAction,
+  type ActionCtx,
+  type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { authComponent } from "./auth";
@@ -16,10 +19,18 @@ import {
 } from "../packages/home-feed/src/index";
 import { projectHomepage } from "./lib/homepageProjection";
 import { collectHomepagePortfolio } from "./lib/homepagePortfolio";
+import { syncPriceHistoryForUser } from "./portfolio";
 import {
   homepageHeaders,
   verifyHomepageRequest,
 } from "./lib/homepageTransport";
+
+/**
+ * Crash-recovery window for a homepage price sync. Keep this comfortably
+ * longer than the action runtime so scheduler delay cannot permit overlap.
+ * A finished run releases the lease immediately.
+ */
+const PRICE_SYNC_LEASE_MS = 30 * 60_000;
 
 function interval() {
   return Math.max(
@@ -88,15 +99,28 @@ export const prepare = internalAction({
 
 export const requestExport = internalMutation({
   args: { userId: v.string() },
+  returns: v.object({
+    scheduled: v.boolean(),
+    queued: v.boolean(),
+  }),
   handler: async (ctx, { userId }) => {
     const row = await ctx.db
       .query("homepageEnrollments")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .unique();
     if (!row?.enabled) throw new Error("Not enrolled");
-    await ctx.db.patch(row._id, { nextRunAt: Date.now() });
+    if (row.pendingBody) {
+      // Never replace an in-flight outbox payload. Queue a fresh snapshot for
+      // immediately after that exact payload is acknowledged.
+      await ctx.db.patch(row._id, { exportRequested: true });
+      return { scheduled: false, queued: true };
+    }
+    await ctx.db.patch(row._id, {
+      nextRunAt: Date.now(),
+      exportRequested: undefined,
+    });
     await ctx.scheduler.runAfter(0, internal.homepage.prepare, { id: row._id });
-    return { scheduled: true };
+    return { scheduled: true, queued: false };
   },
 });
 
@@ -171,8 +195,11 @@ export const deliveryResult = internalMutation({
     const row = await ctx.db.get(args.id);
     if (!row || row.pendingExportId !== args.exportId) return;
     const attempt = row.attempt + 1;
+    const runQueuedExport = args.ok && row.exportRequested === true;
     const delay = args.ok
-      ? interval()
+      ? runQueuedExport
+        ? 0
+        : interval()
       : args.permanent
         ? 3600_000
         : Math.min(900_000, 10_000 * 2 ** Math.min(attempt, 7));
@@ -189,6 +216,7 @@ export const deliveryResult = internalMutation({
             pendingBody: undefined,
             pendingExportId: undefined,
             lastSuccessAt: Date.now(),
+            ...(runQueuedExport ? { exportRequested: undefined } : {}),
           }
         : {}),
     });
@@ -259,9 +287,99 @@ export const weatherKey = internalQuery({
   },
 });
 
-/** Only the scoped homepage service can enroll or retrieve an enrolled user's
- * AccuWeather credential. There is deliberately no arbitrary key-type argument. */
-export const service = httpAction(async (ctx, request) => {
+async function enrolledHomepageUser(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+) {
+  identitySchema.parse(userId);
+  return await ctx.db
+    .query("homepageEnrollments")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .unique();
+}
+
+export const beginPriceSync = internalMutation({
+  args: { userId: v.string() },
+  returns: v.object({ started: v.boolean() }),
+  handler: async (ctx, { userId }) => {
+    const row = await enrolledHomepageUser(ctx, userId);
+    if (!row?.enabled) throw new Error("Not enrolled");
+    const now = Date.now();
+    if (
+      row.priceSyncStartedAt !== undefined &&
+      now - row.priceSyncStartedAt < PRICE_SYNC_LEASE_MS
+    ) {
+      return { started: false };
+    }
+    await ctx.db.patch(row._id, { priceSyncStartedAt: now });
+    await ctx.scheduler.runAfter(0, internal.homepage.runPriceSync, {
+      userId,
+      startedAt: now,
+    });
+    return { started: true };
+  },
+});
+
+export const priceSyncOwned = internalQuery({
+  args: { userId: v.string(), startedAt: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, { userId, startedAt }) => {
+    const row = await enrolledHomepageUser(ctx, userId);
+    return row?.enabled === true && row.priceSyncStartedAt === startedAt;
+  },
+});
+
+export const releasePriceSync = internalMutation({
+  args: { userId: v.string(), startedAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { userId, startedAt }) => {
+    const row = await enrolledHomepageUser(ctx, userId);
+    if (row?.priceSyncStartedAt === startedAt) {
+      await ctx.db.patch(row._id, { priceSyncStartedAt: undefined });
+    }
+    return null;
+  },
+});
+
+export const runPriceSync = internalAction({
+  args: { userId: v.string(), startedAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { userId, startedAt }) => {
+    let succeeded = false;
+    try {
+      succeeded = (await syncPriceHistoryForUser(ctx, userId)).success;
+      if (succeeded) {
+        const owned = await ctx.runQuery(internal.homepage.priceSyncOwned, {
+          userId,
+          startedAt,
+        });
+        if (owned) {
+          await ctx.runMutation(internal.homepage.requestExport, { userId });
+        }
+      }
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "homepage_price_sync_failed",
+          error: error instanceof Error ? error.name : "UnknownError",
+        }),
+      );
+    } finally {
+      await ctx.runMutation(internal.homepage.releasePriceSync, {
+        userId,
+        startedAt,
+      });
+    }
+    return null;
+  },
+});
+
+/** Only the homepage Worker can call these routes. Requests are HMAC-signed
+ * with the provisioning secret and scoped to an enrolled user id. */
+export async function handleHomepageService(
+  ctx: Pick<ActionCtx, "runQuery" | "runMutation">,
+  request: Request,
+) {
   const headers = {
     "cache-control": "private, no-store",
     "content-type": "application/json",
@@ -323,6 +441,12 @@ export const service = httpAction(async (ctx, request) => {
         { headers },
       );
     }
+    if (path === "/api/homepage/sync-prices") {
+      const result = await ctx.runMutation(internal.homepage.beginPriceSync, {
+        userId,
+      });
+      return new Response(JSON.stringify(result), { headers });
+    }
     return new Response("{}", { status: 404, headers });
   } catch {
     return new Response('{"error":"Homepage service request failed"}', {
@@ -330,4 +454,8 @@ export const service = httpAction(async (ctx, request) => {
       headers,
     });
   }
+}
+
+export const service = httpAction(async (ctx, request) => {
+  return await handleHomepageService(ctx, request);
 });

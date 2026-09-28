@@ -62,9 +62,16 @@ increments per publication so automatic updates work throughout the day.
 
 The export reuses Tasky's saved Airtable Positions view and the user's existing
 portfolio credentials. It includes total value, unrealized return and the five
-largest positions. It does not sync market prices or call Alpaca. “Checked” is
-the snapshot retrieval time, not a market quote timestamp. Failed reads preserve
-the last successful snapshot and its age; missing credentials hide the module.
+largest positions. “Checked” is the snapshot retrieval time, not a market quote
+timestamp. Failed reads preserve the last successful snapshot and its age;
+missing credentials hide the module.
+
+**Sync prices** posts to `/api/sync-prices`. The Worker checks the homepage
+session and calls Convex `POST /api/homepage/sync-prices` with the same
+provisioning signature as the weather-key route. Convex runs the app's price
+sync for that enrolled user only, then exports a new edition. A click while a
+sync is already running does nothing. The page shows the new totals when that
+edition is published.
 
 ## Authentication
 
@@ -109,7 +116,7 @@ the Worker owns weather collection.
 
 Defaults are New York (`349727`), Fahrenheit and English. Current conditions
 update every two hours; the five-day and 12-hour forecasts every six hours.
-The hourly rain chart shows the available remaining hours of the current local day.
+The hourly rain chart shows the upcoming hours from the 12-hour forecast, including hours after midnight.
 The collector allows at most 20 provider calls per rolling 24 hours, with
 persisted accounting and rate-limit backoff. A missing key is rechecked every
 30 minutes. Weather failures do not block Tasky updates. Weather data becomes
@@ -120,8 +127,9 @@ forecasts; missing values show a dash. The weather header's info control reveals
 collection time, observation time, and separate daily/hourly forecast download
 times. The provider's `Last-Modified`/`Date` still informs daily forecast freshness
 internally; it is not displayed as a forecast creation time. The hourly chart
-uses `RainProbability` from the detailed 12-hour forecast and renders as HTML/CSS,
-with a fixed 0–100% scale and no charting library.
+uses `PrecipitationProbability` from the standard 12-hour forecast (not the
+details-only `RainProbability` field) and renders as HTML/CSS, with a fixed
+0–100% scale and no charting library.
 
 ## Page loading
 
@@ -169,12 +177,18 @@ aliases are rejected.
 
 ## Troubleshooting
 
-- `/api/setup` shows authenticated enrollment and publication status.
+- `/api/setup` shows authenticated enrollment, publication status, and weather
+  collector counters (budget used, next fetch times, last error). It does not
+  include provider keys or forecast payloads.
 - Missing Tasky updates: inspect `homepageEnrollments` for the next run and coarse
   error code, then check scheduling and matching ingestion secrets. Avoid logging
   the pending export body.
 - Missing weather: check the key in Tasky Settings and allow for the retry
-  interval. Do not repeatedly force requests against the provider quota.
+  interval. The Weather **Refresh** control (or `POST /api/refresh`) collects
+  immediately, then publishes a **new** edition from the current snapshots. It
+  does not edit the frozen KV HTML. A Refresh click is allowed to call AccuWeather
+  even if the rolling daily budget is already spent (at most current, 5-day, and
+  12-hour). Do not click it repeatedly.
 - After auth changes, check sign-in, renewal and logout with the real account.
   Local integration tests do not establish live provider/account behavior.
 - Keep Durable Object namespaces during deployments: they store enrollment,

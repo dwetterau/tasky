@@ -34,6 +34,7 @@ import {
   freshnessBanner,
   shell,
 } from "./rendering/page";
+import { taskyService } from "./ingestion/tasky-service";
 
 export { UserPublisher } from "./publishing/publisher";
 export { HomepageSession } from "./auth/session-object";
@@ -270,6 +271,42 @@ export async function handleRequest(
       cookie(LOGIN_COOKIE, "", 0),
     ]);
   }
+  if (request.method === "POST" && url.pathname === "/api/refresh") {
+    csrf(request, env);
+    const session = await verifySession(
+      env,
+      readCookie(request, SESSION_COOKIE),
+    );
+    if (!session)
+      return request.headers.get("accept") === "application/json"
+        ? json({ error: "Sign in required" }, 401)
+        : redirect("/auth/sign-in");
+    await objectCall(env.COORDINATOR, "users", "/collect", {
+      userId: session.userId,
+    });
+    if (request.headers.get("accept") === "application/json")
+      return json({ ok: true });
+    return redirect("/");
+  }
+  if (request.method === "POST" && url.pathname === "/api/sync-prices") {
+    csrf(request, env);
+    const session = await verifySession(
+      env,
+      readCookie(request, SESSION_COOKIE),
+    );
+    if (!session)
+      return request.headers.get("accept") === "application/json"
+        ? json({ error: "Sign in required" }, 401)
+        : redirect("/auth/sign-in");
+    const result = await taskyService<{ started: boolean }>(
+      env,
+      "/api/homepage/sync-prices",
+      { userId: session.userId },
+    );
+    if (request.headers.get("accept") === "application/json")
+      return json({ ok: true, started: result.started });
+    return redirect("/");
+  }
   if (request.method !== "GET")
     return json({ error: "Method not allowed" }, 405);
   if (
@@ -288,10 +325,21 @@ export async function handleRequest(
     );
   }
   // Setup diagnostics are explicitly a slower path and never choose a URL userId.
-  if (url.pathname === "/api/setup")
-    return json(
-      await objectCall(env.PUBLISHERS, session.userId, "/status", {}),
+  if (url.pathname === "/api/setup") {
+    const publication = await objectCall<Record<string, unknown>>(
+      env.PUBLISHERS,
+      session.userId,
+      "/status",
+      {},
     );
+    const collector = await objectCall(
+      env.COORDINATOR,
+      "users",
+      "/status",
+      { userId: session.userId },
+    );
+    return json({ ...publication, collector });
+  }
   const kvStart = performance.now();
   const raw = await env.EDITIONS.get(`edition:${session.userId}`, "json");
   const kvMs = performance.now() - kvStart;

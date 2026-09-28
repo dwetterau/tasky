@@ -268,6 +268,8 @@ export default defineSchema({
     lastSuccessAt: v.optional(v.number()),
     lastError: v.optional(v.string()),
     portfolioSnapshot: v.optional(v.string()),
+    exportRequested: v.optional(v.boolean()),
+    priceSyncStartedAt: v.optional(v.number()),
   }).index("by_user", ["userId"]).index("by_enabled_next_run", ["enabled", "nextRunAt"]),
   captures: defineTable({
     userId: v.string(),

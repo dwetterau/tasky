@@ -2,7 +2,7 @@ import {
   portfolioPayloadSchema,
   type PortfolioPayload,
 } from "@tasky/home-feed";
-import { escapeHtml as e } from "../../rendering/html";
+import { escapeHtml as e, sourceTime } from "../../rendering/html";
 import type { HomeModule } from "../contract";
 const money = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -19,6 +19,40 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
   freshForMs: 15 * 60_000,
   maxAgeMs: 60 * 60_000,
   parse: (value) => portfolioPayloadSchema.parse(value),
+  renderHeader(snapshot, context) {
+    const timestamp = snapshot.collectedAt;
+    const label =
+      snapshot.status === "available"
+        ? "Checked"
+        : snapshot.status === "unavailable" && snapshot.payload
+          ? "Outdated"
+          : snapshot.status;
+    return /* HTML */ `<div class="module-title">
+      <h2>Portfolio</h2>
+      <div class="module-actions">
+        <span class="module-info">
+          <button
+            class="info-trigger"
+            type="button"
+            aria-label="Portfolio timing information"
+            aria-describedby="portfolio-info"
+          >
+            ⓘ
+          </button>
+          <span class="info-tooltip" id="portfolio-info" role="tooltip">
+            <span
+              >${timestamp === null
+                ? "Awaiting first update"
+                : `<strong>${e(label)}</strong> ${sourceTime(timestamp, context.timezone)}`}</span
+            >
+          </span>
+        </span>
+        <form class="module-refresh" action="/api/sync-prices" method="post">
+          <button type="submit">Sync prices</button>
+        </form>
+      </div>
+    </div>`;
+  },
   render(data) {
     const positive = data.gainLoss >= 0;
     return /* HTML */ `<div class="portfolio-value">

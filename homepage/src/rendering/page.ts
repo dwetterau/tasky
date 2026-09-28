@@ -130,7 +130,8 @@ button {
     11px system-ui,
     sans-serif;
 }
-.module-open {
+.module-open,
+.module-refresh button {
   color: var(--accent);
   white-space: nowrap;
 }
@@ -370,6 +371,7 @@ progress::-moz-progress-bar {
 .rain-chart {
   margin: 0;
   min-width: 0;
+  overflow: visible;
   font:
     10px system-ui,
     sans-serif;
@@ -378,7 +380,7 @@ progress::-moz-progress-bar {
   display: flex;
   justify-content: space-between;
   gap: 4px;
-  margin-bottom: 7px;
+  margin-bottom: 22px;
   color: var(--ink);
 }
 .rain-chart figcaption span {
@@ -389,6 +391,7 @@ progress::-moz-progress-bar {
   display: flex;
   gap: 5px;
   height: 60px;
+  overflow: visible;
 }
 .rain-scale {
   display: flex;
@@ -408,6 +411,7 @@ progress::-moz-progress-bar {
   border-bottom: 1px solid var(--rule);
 }
 .rain-hour {
+  position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -426,6 +430,37 @@ progress::-moz-progress-bar {
 }
 .rain-hour:hover {
   background: #668aa315;
+}
+.rain-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 3px);
+  transform: translateX(-50%);
+  padding: 3px 6px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  box-shadow: 0 4px 14px #24282020;
+  color: var(--ink);
+  font:
+    11px system-ui,
+    sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+  z-index: 3;
+}
+.rain-hour:first-child .rain-tip {
+  left: 0;
+  transform: none;
+}
+.rain-hour:last-child .rain-tip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.rain-hour:hover .rain-tip,
+.rain-hour:focus-within .rain-tip {
+  visibility: visible;
 }
 .rain-times {
   display: flex;
@@ -718,9 +753,7 @@ export function renderEdition(
             </div>
           </div>`}
         </div>
-        ${snapshot.error && snapshot.error !== "awaiting_data"
-          ? '<p class="notice">The latest update failed. The last successful data is shown when available.</p>'
-          : ""}${snapshot.payload
+        ${snapshot.payload
           ? renderModule(snapshot, context)
           : `<p class="empty">${snapshot.error === "awaiting_data" ? "Your first update is on its way." : "This source is temporarily unavailable."}</p>`}
       </section>`;
@@ -742,24 +775,20 @@ export function renderEdition(
     script: true,
   });
 }
-/** Delivery-time freshness adds a banner to frozen HTML; it never changes the edition. */
+/** Delivery-time notice only when a source is past maxAge. Stale last-good
+ * snapshots are expected and must not look like an error. */
 export function freshnessBanner(feed: Feed, now: number) {
   const old = feed.modules
     .map((m) => withFreshness(m, now))
-    .filter(
-      (m) =>
-        m.payload !== null &&
-        (m.status === "stale" || m.status === "unavailable"),
-    );
+    .filter((m) => m.payload !== null && m.status === "unavailable");
   if (!old.length) return "";
   return /* HTML */ `<aside class="notice" role="status">
     ${old
       .map(
         (m) =>
-          `${e(moduleFor(m.id).title)}: ${m.status === "unavailable" ? "outdated; check the source before relying on it" : "an earlier snapshot"} (source ${sourceTime(m.sourceDataAt, feed.timezone)})`,
+          `${e(moduleFor(m.id).title)} is outdated (${sourceTime(m.sourceDataAt, feed.timezone)}).`,
       )
-      .join(". ")}.
-    Updates will appear when the source recovers.
+      .join(" ")}
   </aside>`;
 }
 export const browserScript = `

@@ -3,7 +3,10 @@ import { signedHeaders } from "../transport";
 
 export async function taskyService<T>(
   env: Env,
-  path: "/api/homepage/enroll" | "/api/homepage/weather-key",
+  path:
+    | "/api/homepage/enroll"
+    | "/api/homepage/weather-key"
+    | "/api/homepage/sync-prices",
   body: { userId: string; timezone?: string },
 ): Promise<T> {
   const serialized = JSON.stringify(body);
