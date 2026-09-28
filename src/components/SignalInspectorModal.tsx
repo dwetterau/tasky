@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { SignalTrendCharts } from "@/components/SignalTrendCharts";
 import {
   formatSignalQuantity,
   getSignalPeriodBounds,
@@ -134,7 +135,7 @@ export function SignalInspectorModal({
   } = usePaginatedQuery(
     api.signals.history,
     { signalId: initialSignal.id },
-    { initialNumItems: 20 },
+    { initialNumItems: 50 },
   );
   const signal = currentSignal ?? initialSignal;
 
@@ -279,6 +280,10 @@ export function SignalInspectorModal({
             ) : null}
           </section>
 
+          {status !== "LoadingFirstPage" && entries.length > 0 ? (
+            <SignalTrendCharts signal={signal} entries={entries} />
+          ) : null}
+
           <section className="px-6 py-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -347,7 +352,7 @@ export function SignalInspectorModal({
 
             {status === "CanLoadMore" || status === "LoadingMore" ? (
               <button
-                onClick={() => loadMore(20)}
+                onClick={() => loadMore(50)}
                 disabled={status === "LoadingMore"}
                 className="mt-4 w-full rounded-lg border border-(--card-border) px-4 py-2 text-sm font-medium text-(--muted) transition-colors hover:border-accent hover:text-foreground disabled:opacity-60"
               >
