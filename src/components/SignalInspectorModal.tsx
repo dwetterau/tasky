@@ -88,7 +88,22 @@ function targetDescription(signal: SignalDashboardItem): string {
     )} ${signal.model.unit}`;
   }
   if (!signal.model.target) return "No completion target";
-  if (signal.model.target.type === "period") {
+  if (
+    signal.model.target.type === "period" ||
+    signal.model.target.type === "schedule"
+  ) {
+    if (signal.model.target.type === "schedule") {
+      const progress = signal.evaluation.periodProgress;
+      const weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      if (signal.model.target.schedule.due.type === "weekdays") {
+        return signal.model.target.schedule.due.weekdays
+          .map((weekday) => weekdayNames[weekday - 1])
+          .join(", ");
+      }
+      return `${signal.model.target.targetCount} per ${
+        progress?.period ?? "scheduled window"
+      }`;
+    }
     return `${signal.model.target.targetCount} per ${signal.model.target.period}`;
   }
   const days = signal.model.target.dueAfterMs / (24 * 60 * 60 * 1000);

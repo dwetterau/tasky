@@ -11,10 +11,14 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
 import {
   activityPeriod,
+  calendarSchedule,
   scorecardMemberInput,
   signalAttention,
 } from "./schema";
-import { evaluateScorecard } from "./lib/scorecardStatus";
+import {
+  evaluateScorecard,
+  withScorecardAttention,
+} from "./lib/scorecardStatus";
 import {
   isNestedMember,
   memberKey,
@@ -23,10 +27,18 @@ import {
   type NormalizedScorecardMember,
 } from "./lib/scorecardMembers";
 import {
-  DAY_MS,
   evaluateSignal,
-  type ActivityPeriodProgress,
 } from "./lib/signalStatus";
+import {
+  calendarProgress,
+  calendarWindow,
+  type CalendarSchedule,
+} from "./lib/recurrence";
+import {
+  getActivityPeriodProgress,
+  resolveUserTimezone,
+} from "./lib/recurrenceData";
+import { validateCalendarSchedule } from "./lib/recurrence";
 
 const periodRangeInput = v.object({
   startAt: v.number(),
@@ -49,10 +61,6 @@ type PeriodBoundsInput = {
   month?: PeriodRange;
 };
 
-type PeriodBounds = PeriodBoundsInput & {
-  month: PeriodRange;
-};
-
 const scorecardTagValidator = v.object({
   id: v.id("tags"),
   name: v.string(),
@@ -72,6 +80,9 @@ const signalEvaluationValidator = v.object({
       completedCount: v.number(),
       targetCount: v.number(),
       remainingCount: v.number(),
+      requiredCountByNow: v.optional(v.number()),
+      overdueCount: v.optional(v.number()),
+      nextDueAt: v.optional(v.number()),
     }),
   ),
   projectedQuantity: v.optional(v.number()),
@@ -108,6 +119,22 @@ const scorecardEvaluationValidator = v.object({
   isComplete: v.boolean(),
   optionalDoneCount: v.number(),
   count: v.number(),
+  attention: v.optional(signalAttention),
+  actionAt: v.optional(v.number()),
+  reason: v.optional(v.string()),
+  scheduleProgress: v.optional(
+    v.object({
+      period: activityPeriod,
+      startAt: v.number(),
+      endAt: v.number(),
+      completedCount: v.number(),
+      targetCount: v.number(),
+      remainingCount: v.number(),
+      requiredCountByNow: v.number(),
+      overdueCount: v.number(),
+      nextDueAt: v.optional(v.number()),
+    }),
+  ),
 });
 
 const scorecardItemValidator = v.object({
@@ -119,6 +146,7 @@ const scorecardItemValidator = v.object({
   members: v.array(scorecardMemberItemValidator),
   optionalQuota: v.number(),
   targetCount: v.optional(v.number()),
+  schedule: v.optional(calendarSchedule),
   createdAt: v.number(),
   updatedAt: v.number(),
   archivedAt: v.optional(v.number()),
@@ -133,6 +161,7 @@ const manageOperationInput = v.union(
     members: v.array(scorecardMemberInput),
     optionalQuota: v.number(),
     targetCount: v.optional(v.number()),
+    schedule: v.optional(calendarSchedule),
   }),
   v.object({
     type: v.literal("scorecard.update"),
@@ -142,6 +171,7 @@ const manageOperationInput = v.union(
     members: v.optional(v.array(scorecardMemberInput)),
     optionalQuota: v.optional(v.number()),
     targetCount: v.optional(v.union(v.number(), v.null())),
+    schedule: v.optional(v.union(calendarSchedule, v.null())),
   }),
   v.object({
     type: v.literal("scorecard.archive"),
@@ -158,6 +188,7 @@ type ManageOperationInput =
       members: LooseScorecardMember[];
       optionalQuota: number;
       targetCount?: number;
+      schedule?: CalendarSchedule;
     }
   | {
       type: "scorecard.update";
@@ -167,6 +198,7 @@ type ManageOperationInput =
       members?: LooseScorecardMember[];
       optionalQuota?: number;
       targetCount?: number | null;
+      schedule?: CalendarSchedule | null;
     }
   | {
       type: "scorecard.archive";
@@ -204,6 +236,7 @@ type ScorecardItem = {
   >;
   optionalQuota: number;
   targetCount?: number;
+  schedule?: CalendarSchedule;
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;
@@ -311,92 +344,6 @@ async function scopedScorecardTagIds(
 function validateReadClock(now: number, soonWindowMs: number): void {
   assertFiniteNumber(now, "now");
   assertNonNegative(soonWindowMs, "soonWindowMs");
-}
-
-function utcPeriodBounds(now: number): PeriodBounds {
-  const date = new Date(now);
-  const dayStart = Date.UTC(
-    date.getUTCFullYear(),
-    date.getUTCMonth(),
-    date.getUTCDate(),
-  );
-  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
-  const weekStart = dayStart - daysSinceMonday * DAY_MS;
-  const monthStart = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
-  const monthEnd = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
-  return {
-    day: {
-      startAt: dayStart,
-      endAt: dayStart + DAY_MS,
-    },
-    week: {
-      startAt: weekStart,
-      endAt: weekStart + 7 * DAY_MS,
-    },
-    month: {
-      startAt: monthStart,
-      endAt: monthEnd,
-    },
-  };
-}
-
-function resolvePeriodBounds(
-  now: number,
-  provided: PeriodBoundsInput | undefined,
-): PeriodBounds {
-  const fallback = utcPeriodBounds(now);
-  const bounds: PeriodBounds = {
-    day: provided?.day ?? fallback.day,
-    week: provided?.week ?? fallback.week,
-    month: provided?.month ?? fallback.month,
-  };
-  for (const [name, range] of Object.entries(bounds)) {
-    assertFiniteNumber(range.startAt, `periodBounds.${name}.startAt`);
-    assertFiniteNumber(range.endAt, `periodBounds.${name}.endAt`);
-    if (
-      range.startAt >= range.endAt ||
-      now < range.startAt ||
-      now >= range.endAt
-    ) {
-      throw new Error(
-        `periodBounds.${name} must be an ordered range containing now`,
-      );
-    }
-  }
-  return bounds;
-}
-
-async function getActivityPeriodProgress(
-  ctx: QueryCtx | MutationCtx,
-  signal: Doc<"signals">,
-  periodBounds: PeriodBounds,
-): Promise<ActivityPeriodProgress | undefined> {
-  if (
-    signal.model.kind !== "activity" ||
-    signal.model.target?.type !== "period"
-  ) {
-    return undefined;
-  }
-  const target = signal.model.target;
-  const range = periodBounds[target.period];
-  const entries = await ctx.db
-    .query("signalEntries")
-    .withIndex("by_signal_effective_at", (q) =>
-      q
-        .eq("signalId", signal._id)
-        .gte("effectiveAt", range.startAt)
-        .lt("effectiveAt", range.endAt),
-    )
-    .collect();
-  const completedCount = entries.length;
-  return {
-    period: target.period,
-    startAt: range.startAt,
-    endAt: range.endAt,
-    completedCount,
-    targetCount: target.targetCount,
-    remainingCount: Math.max(0, target.targetCount - completedCount),
-  };
 }
 
 function missingSignalEvaluation() {
@@ -551,15 +498,17 @@ function nestedMemberEvaluation(
   targetCount?: number,
 ): ReturnType<typeof evaluateSignal> & { count?: number } {
   return {
-    attention: evaluation.isComplete ? "ok" : "due",
+    attention:
+      evaluation.attention ?? (evaluation.isComplete ? "ok" : "due"),
+    actionAt: evaluation.actionAt,
     reason:
       targetCount !== undefined
         ? `${evaluation.count} of ${targetCount}`
         : optionalQuota > 0
           ? `${evaluation.optionalDoneCount} of ${optionalQuota}`
-          : evaluation.isComplete
-            ? "Done"
-            : "Not done",
+          : (evaluation.reason ??
+            (evaluation.isComplete ? "Done" : "Not done")),
+    periodProgress: evaluation.scheduleProgress,
     count: evaluation.count,
     ratio: evaluation.ratio,
     isComplete: evaluation.isComplete,
@@ -572,7 +521,7 @@ async function toScorecardItem(
   scorecard: Doc<"scorecards">,
   now: number,
   soonWindowMs: number,
-  periodBounds: PeriodBounds,
+  timezone: string,
   visiting: Set<Id<"scorecards">> = new Set(),
 ): Promise<ScorecardItem> {
   const tags = await hydrateTags(ctx, userId, scorecard.tagIds);
@@ -596,7 +545,8 @@ async function toScorecardItem(
         const periodProgress = await getActivityPeriodProgress(
           ctx,
           signal,
-          periodBounds,
+          now,
+          timezone,
         );
         return {
           type: "signal" as const,
@@ -639,7 +589,7 @@ async function toScorecardItem(
         child,
         now,
         soonWindowMs,
-        periodBounds,
+        timezone,
         nextVisiting,
       );
       return {
@@ -656,6 +606,40 @@ async function toScorecardItem(
       };
     }),
   );
+  const baseEvaluation = evaluateScorecard(
+    members.map((member) => ({
+      role: member.role,
+      ratio: member.evaluation.ratio,
+      count: memberContributionCount(member.evaluation),
+    })),
+    scorecard.optionalQuota,
+    scorecard.targetCount,
+  );
+  const requiredMembers = members.filter(
+    (member) => member.role === "required",
+  );
+  const pacingTarget =
+    scorecard.targetCount ??
+    Math.max(1, requiredMembers.length + scorecard.optionalQuota);
+  const pacingCompleted =
+    scorecard.targetCount !== undefined
+      ? baseEvaluation.count
+      : requiredMembers.filter((member) => member.evaluation.isComplete).length +
+        Math.min(scorecard.optionalQuota, baseEvaluation.optionalDoneCount);
+  const scheduleProgress =
+    scorecard.schedule === undefined
+      ? undefined
+      : calendarProgress(
+          calendarWindow(
+            scorecard.schedule,
+            pacingTarget,
+            now,
+            timezone,
+          ),
+          pacingCompleted,
+          pacingTarget,
+          now,
+        );
   return {
     id: scorecard._id,
     creationTime: scorecard._creationTime,
@@ -665,17 +649,15 @@ async function toScorecardItem(
     members,
     optionalQuota: scorecard.optionalQuota,
     targetCount: scorecard.targetCount,
+    schedule: scorecard.schedule,
     createdAt: scorecard.createdAt,
     updatedAt: scorecard.updatedAt,
     archivedAt: scorecard.archivedAt,
-    evaluation: evaluateScorecard(
-      members.map((member) => ({
-        role: member.role,
-        ratio: member.evaluation.ratio,
-        count: memberContributionCount(member.evaluation),
-      })),
-      scorecard.optionalQuota,
-      scorecard.targetCount,
+    evaluation: withScorecardAttention(
+      baseEvaluation,
+      now,
+      soonWindowMs,
+      scheduleProgress,
     ),
   };
 }
@@ -704,7 +686,7 @@ async function listScorecardsForUser(
   },
 ): Promise<ScorecardItem[]> {
   validateReadClock(args.now, args.soonWindowMs);
-  const periodBounds = resolvePeriodBounds(args.now, args.periodBounds);
+  const timezone = await resolveUserTimezone(ctx, args.userId);
   const matchingTagIds =
     args.tagId === undefined
       ? undefined
@@ -734,11 +716,18 @@ async function listScorecardsForUser(
         scorecard,
         args.now,
         args.soonWindowMs,
-        periodBounds,
+        timezone,
       ),
     ),
   );
   return items.sort((left, right) => {
+    const rank = { due: 0, soon: 1, ok: 2 };
+    const attentionDifference =
+      rank[left.evaluation.attention ?? "due"] -
+      rank[right.evaluation.attention ?? "due"];
+    if (attentionDifference !== 0) {
+      return attentionDifference;
+    }
     if (left.evaluation.isComplete !== right.evaluation.isComplete) {
       return left.evaluation.isComplete ? 1 : -1;
     }
@@ -755,6 +744,7 @@ async function createScorecardForUser(
     members: LooseScorecardMember[];
     optionalQuota: number;
     targetCount?: number;
+    schedule?: CalendarSchedule;
     tagRootId?: Id<"tags">;
     now: number;
   },
@@ -774,6 +764,9 @@ async function createScorecardForUser(
     args.optionalQuota,
   );
   const targetCount = normalizeTargetCount(args.targetCount);
+  if (args.schedule) {
+    validateCalendarSchedule(args.schedule);
+  }
   return await ctx.db.insert("scorecards", {
     userId: args.userId,
     name,
@@ -781,6 +774,7 @@ async function createScorecardForUser(
     members,
     optionalQuota: args.optionalQuota,
     ...(targetCount !== undefined ? { targetCount } : {}),
+    ...(args.schedule !== undefined ? { schedule: args.schedule } : {}),
     createdAt: args.now,
     updatedAt: args.now,
   });
@@ -796,6 +790,7 @@ async function updateScorecardForUser(
     members?: LooseScorecardMember[];
     optionalQuota?: number;
     targetCount?: number | null;
+    schedule?: CalendarSchedule | null;
     tagRootId?: Id<"tags">;
     now: number;
   },
@@ -838,12 +833,20 @@ async function updateScorecardForUser(
     args.targetCount === undefined
       ? scorecard.targetCount
       : normalizeTargetCount(args.targetCount);
+  const schedule =
+    args.schedule === undefined
+      ? scorecard.schedule
+      : (args.schedule ?? undefined);
+  if (schedule) {
+    validateCalendarSchedule(schedule);
+  }
   await ctx.db.patch("scorecards", scorecard._id, {
     name,
     tagIds,
     members,
     optionalQuota,
     targetCount,
+    schedule,
     updatedAt: args.now,
   });
 }
@@ -945,14 +948,14 @@ export const get = query({
     if (!scorecard || scorecard.userId !== userId) {
       return null;
     }
-    const periodBounds = resolvePeriodBounds(args.now, args.periodBounds);
+    const timezone = await resolveUserTimezone(ctx, userId);
     return await toScorecardItem(
       ctx,
       userId,
       scorecard,
       args.now,
       args.soonWindowMs,
-      periodBounds,
+      timezone,
     );
   },
 });
@@ -964,6 +967,7 @@ export const create = mutation({
     members: v.array(scorecardMemberInput),
     optionalQuota: v.number(),
     targetCount: v.optional(v.number()),
+    schedule: v.optional(calendarSchedule),
   },
   returns: v.id("scorecards"),
   handler: async (ctx, args) => {
@@ -987,6 +991,7 @@ export const update = mutation({
     members: v.optional(v.array(scorecardMemberInput)),
     optionalQuota: v.optional(v.number()),
     targetCount: v.optional(v.union(v.number(), v.null())),
+    schedule: v.optional(v.union(calendarSchedule, v.null())),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -1049,7 +1054,7 @@ export const listForMcp = internalQuery({
         scorecard,
         args.tagRootId,
       );
-      const periodBounds = resolvePeriodBounds(args.now, args.periodBounds);
+      const timezone = await resolveUserTimezone(ctx, args.userId);
       return {
         scorecards: [
           await toScorecardItem(
@@ -1058,7 +1063,7 @@ export const listForMcp = internalQuery({
             scorecard,
             args.now,
             args.soonWindowMs,
-            periodBounds,
+            timezone,
           ),
         ],
       };

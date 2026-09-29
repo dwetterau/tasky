@@ -68,6 +68,14 @@ function ScorecardCard({
                 <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                   Complete
                 </span>
+              ) : scorecard.evaluation.attention === "due" ? (
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-red-600 dark:text-red-400">
+                  Due
+                </span>
+              ) : scorecard.evaluation.attention === "soon" ? (
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  Soon
+                </span>
               ) : null}
             </div>
             <p className="mt-1 text-sm text-(--muted)">

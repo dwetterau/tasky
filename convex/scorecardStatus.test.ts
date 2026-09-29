@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { evaluateScorecard } from "./lib/scorecardStatus";
+import {
+  evaluateScorecard,
+  withScorecardAttention,
+} from "./lib/scorecardStatus";
 
 describe("scorecard evaluation", () => {
   it("completes when all required members are done and quota is 0", () => {
@@ -141,6 +144,33 @@ describe("scorecard evaluation", () => {
       isComplete: false,
       optionalDoneCount: 1,
       count: 5,
+    });
+  });
+
+  it("keeps a scheduled scorecard due when required members block completion", () => {
+    const evaluation = evaluateScorecard(
+      [
+        { role: "required", ratio: 0, count: 0 },
+        { role: "optional", ratio: 1, count: 5 },
+      ],
+      0,
+      5,
+    );
+    expect(
+      withScorecardAttention(evaluation, 10, 0, {
+        period: "week",
+        startAt: 0,
+        endAt: 20,
+        completedCount: 5,
+        targetCount: 5,
+        remainingCount: 0,
+        requiredCountByNow: 5,
+        overdueCount: 0,
+      }),
+    ).toMatchObject({
+      attention: "due",
+      isComplete: false,
+      reason: "Required members are still incomplete",
     });
   });
 

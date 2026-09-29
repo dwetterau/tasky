@@ -46,6 +46,17 @@ type ActivityTarget =
       type: "period";
       period: "day" | "week" | "month";
       targetCount: number;
+    }
+  | {
+      type: "schedule";
+      schedule: {
+        rrule: string;
+        startDate: string;
+        due:
+          | { type: "evenly_spaced" }
+          | { type: "weekdays"; weekdays: number[] };
+      };
+      targetCount: number;
     };
 
 type RecordSignalOperation =
@@ -250,6 +261,57 @@ const activityTargetSchema = {
         },
       },
     },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "schedule", "targetCount"],
+      properties: {
+        type: { const: "schedule" },
+        schedule: {
+          type: "object",
+          additionalProperties: false,
+          required: ["rrule", "startDate", "due"],
+          properties: {
+            rrule: {
+              type: "string",
+              description:
+                "RFC 5545 cadence rule using FREQ, INTERVAL, and optionally WKST=MO.",
+            },
+            startDate: {
+              type: "string",
+              pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+              description:
+                "Local DTSTART date. Weekly dates must be Mondays; monthly dates must be the first.",
+            },
+            due: {
+              oneOf: [
+                {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["type"],
+                  properties: { type: { const: "evenly_spaced" } },
+                },
+                {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["type", "weekdays"],
+                  properties: {
+                    type: { const: "weekdays" },
+                    weekdays: {
+                      type: "array",
+                      minItems: 1,
+                      uniqueItems: true,
+                      items: { type: "integer", minimum: 1, maximum: 7 },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+        targetCount: { type: "integer", minimum: 0 },
+      },
+    },
   ],
 };
 
@@ -416,7 +478,7 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
   {
     name: "manageSignal",
     description:
-      "Create, update, archive, or restore an activity/inventory signal for the authenticated user.",
+      "Create, update, archive, or restore a signal. Activity targets may be rolling recency, legacy calendar periods, or RRULE-backed schedules with evenly paced or weekday due checkpoints.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -701,7 +763,7 @@ function parseActivityTarget(
   const object = parseStrictObject(
     rpcId,
     input,
-    ["type", "dueAfterMs", "period", "targetCount"],
+    ["type", "dueAfterMs", "period", "schedule", "targetCount"],
     "target",
   );
   if (object.error || !object.value) {
@@ -775,8 +837,110 @@ function parseActivityTarget(
       },
     };
   }
+  if (object.value.type === "schedule") {
+    const scheduledTarget = parseStrictObject(
+      rpcId,
+      input,
+      ["type", "schedule", "targetCount"],
+      "target",
+    );
+    if (scheduledTarget.error || !scheduledTarget.value) {
+      return { error: scheduledTarget.error };
+    }
+    const schedule = parseStrictObject(
+      rpcId,
+      scheduledTarget.value.schedule,
+      ["rrule", "startDate", "due"],
+      "target.schedule",
+    );
+    if (schedule.error || !schedule.value) {
+      return { error: schedule.error };
+    }
+    if (
+      typeof schedule.value.rrule !== "string" ||
+      typeof schedule.value.startDate !== "string"
+    ) {
+      return {
+        error: mcpError(
+          rpcId,
+          -32602,
+          "target.schedule requires rrule and startDate strings",
+        ),
+      };
+    }
+    const due = parseStrictObject(
+      rpcId,
+      schedule.value.due,
+      ["type", "weekdays"],
+      "target.schedule.due",
+    );
+    if (due.error || !due.value) {
+      return { error: due.error };
+    }
+    let parsedDue:
+      | { type: "evenly_spaced" }
+      | { type: "weekdays"; weekdays: number[] };
+    if (due.value.type === "evenly_spaced") {
+      parsedDue = { type: "evenly_spaced" };
+    } else if (
+      due.value.type === "weekdays" &&
+      Array.isArray(due.value.weekdays) &&
+      due.value.weekdays.every(
+        (weekday) =>
+          typeof weekday === "number" &&
+          Number.isInteger(weekday) &&
+          weekday >= 1 &&
+          weekday <= 7,
+      )
+    ) {
+      parsedDue = {
+        type: "weekdays",
+        weekdays: due.value.weekdays as number[],
+      };
+    } else {
+      return {
+        error: mcpError(
+          rpcId,
+          -32602,
+          "target.schedule.due must be evenly_spaced or valid ISO weekdays",
+        ),
+      };
+    }
+    const targetCount = parseFiniteNumber(
+      rpcId,
+      scheduledTarget.value.targetCount,
+      "target.targetCount",
+      { minimum: 0 },
+    );
+    if (
+      targetCount.error ||
+      targetCount.value === undefined ||
+      !Number.isInteger(targetCount.value)
+    ) {
+      return {
+        error:
+          targetCount.error ??
+          mcpError(rpcId, -32602, "target.targetCount must be an integer"),
+      };
+    }
+    return {
+      value: {
+        type: "schedule",
+        schedule: {
+          rrule: schedule.value.rrule,
+          startDate: schedule.value.startDate,
+          due: parsedDue,
+        },
+        targetCount: targetCount.value,
+      },
+    };
+  }
   return {
-    error: mcpError(rpcId, -32602, "target.type must be recency or period"),
+    error: mcpError(
+      rpcId,
+      -32602,
+      "target.type must be recency, period, or schedule",
+    ),
   };
 }
 

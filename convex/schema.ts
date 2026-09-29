@@ -163,6 +163,20 @@ export const activityPeriod = v.union(
   v.literal("month"),
 );
 
+export const calendarSchedule = v.object({
+  rrule: v.string(),
+  startDate: v.string(),
+  due: v.union(
+    v.object({
+      type: v.literal("evenly_spaced"),
+    }),
+    v.object({
+      type: v.literal("weekdays"),
+      weekdays: v.array(v.number()),
+    }),
+  ),
+});
+
 export const activityTarget = v.union(
   v.object({
     type: v.literal("recency"),
@@ -171,6 +185,11 @@ export const activityTarget = v.union(
   v.object({
     type: v.literal("period"),
     period: activityPeriod,
+    targetCount: v.number(),
+  }),
+  v.object({
+    type: v.literal("schedule"),
+    schedule: calendarSchedule,
     targetCount: v.number(),
   }),
 );
@@ -261,6 +280,12 @@ export const signalEntryOperation = v.union(
 // Note: better-auth manages its own tables (users, sessions, accounts, verifications)
 // through the component. Our app tables use string userId to reference better-auth users.
 export default defineSchema({
+  userSettings: defineTable({
+    userId: v.string(),
+    timezone: v.string(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   homepageEnrollments: defineTable({
     userId: v.string(), timezone: v.string(), enabled: v.boolean(),
     revision: v.number(), nextRunAt: v.number(), attempt: v.number(),
@@ -271,6 +296,10 @@ export default defineSchema({
     exportRequested: v.optional(v.boolean()),
     priceSyncStartedAt: v.optional(v.number()),
   }).index("by_user", ["userId"]).index("by_enabled_next_run", ["enabled", "nextRunAt"]),
+  portfolioSyncStates: defineTable({
+    userId: v.string(),
+    lastSyncedAt: v.number(),
+  }).index("by_user", ["userId"]),
   captures: defineTable({
     userId: v.string(),
     text: v.string(),
@@ -449,6 +478,7 @@ export default defineSchema({
     members: v.array(scorecardMember),
     optionalQuota: v.number(),
     targetCount: v.optional(v.number()),
+    schedule: v.optional(calendarSchedule),
     createdAt: v.number(),
     updatedAt: v.number(),
     archivedAt: v.optional(v.number()),

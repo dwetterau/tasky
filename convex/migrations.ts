@@ -1,6 +1,7 @@
 import { Migrations } from "@convex-dev/migrations";
 import { components, internal } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
+import { legacyCalendarSchedule } from "./lib/recurrence";
 
 const migrations = new Migrations<DataModel>(components.migrations);
 
@@ -87,6 +88,92 @@ export const backfillScorecardMemberType = migrations.define({
   },
 });
 
+export const backfillUserTimezoneFromHomepage = migrations.define({
+  table: "homepageEnrollments",
+  batchSize: 50,
+  migrateOne: async (ctx, enrollment) => {
+    const existing = await ctx.db
+      .query("userSettings")
+      .withIndex("by_user", (q) => q.eq("userId", enrollment.userId))
+      .unique();
+    if (!existing) {
+      await ctx.db.insert("userSettings", {
+        userId: enrollment.userId,
+        timezone: enrollment.timezone,
+        updatedAt: enrollment._creationTime,
+      });
+    }
+  },
+});
+
+export const backfillScorecardSchedules = migrations.define({
+  table: "scorecards",
+  batchSize: 50,
+  migrateOne: async (ctx, scorecard) => {
+    if (scorecard.schedule !== undefined) {
+      return;
+    }
+    const periods = new Set<"day" | "week" | "month">();
+    const visiting = new Set<string>();
+    const collectPeriods = async (
+      card: typeof scorecard,
+    ): Promise<boolean> => {
+      if (visiting.has(String(card._id))) {
+        return false;
+      }
+      visiting.add(String(card._id));
+      for (const member of card.members) {
+        if (member.type === "scorecard") {
+          const child = await ctx.db.get("scorecards", member.scorecardId);
+          if (!child || !(await collectPeriods(child))) {
+            return false;
+          }
+          continue;
+        }
+        const signal = await ctx.db.get("signals", member.signalId);
+        if (!signal || signal.model.kind !== "activity") {
+          return false;
+        }
+        const target = signal.model.target;
+        if (target?.type !== "period") {
+          return false;
+        }
+        periods.add(target.period);
+      }
+      visiting.delete(String(card._id));
+      return true;
+    };
+    if (!(await collectPeriods(scorecard)) || periods.size !== 1) {
+      return;
+    }
+    const [period] = periods;
+    return period ? { schedule: legacyCalendarSchedule(period) } : undefined;
+  },
+});
+
+export const backfillActivitySchedules = migrations.define({
+  table: "signals",
+  batchSize: 50,
+  migrateOne: (_ctx, signal) => {
+    if (
+      signal.model.kind !== "activity" ||
+      signal.model.target?.type !== "period"
+    ) {
+      return;
+    }
+    return {
+      model: {
+        ...signal.model,
+        target: {
+          type: "schedule" as const,
+          schedule: legacyCalendarSchedule(signal.model.target.period),
+          targetCount: signal.model.target.targetCount,
+        },
+      },
+    };
+  },
+});
+
 // General-purpose runner - can run any migration by name
 // Usage: npx convex run migrations:run '{"fn": "migrations:backfillTaskTagLinksAndHasTags"}'
 export const run = migrations.runner();
@@ -97,4 +184,7 @@ export const runAll = migrations.runner([
   internal.migrations.backfillTaskStatusUpdatedAt,
   internal.migrations.backfillTaskTagLinksAndHasTags,
   internal.migrations.backfillScorecardMemberType,
+  internal.migrations.backfillUserTimezoneFromHomepage,
+  internal.migrations.backfillScorecardSchedules,
+  internal.migrations.backfillActivitySchedules,
 ]);
