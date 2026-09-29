@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 
 export const SIGNAL_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const SIGNAL_QUERY_REFRESH_MS = 5 * 60 * 1000;
 
 export type SignalDashboardItem = FunctionReturnType<
   typeof api.signals.listDashboard
@@ -57,12 +58,26 @@ export function getSignalPeriodBounds(now: number): SignalPeriodBounds {
   };
 }
 
+export function getSignalQueryTime(now: number): number {
+  return Math.floor(now / SIGNAL_QUERY_REFRESH_MS) * SIGNAL_QUERY_REFRESH_MS;
+}
+
 export function useSignalClock(): number {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(interval);
+    const update = () => setNow(Date.now());
+    const interval = window.setInterval(update, 60_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") update();
+    };
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   return now;

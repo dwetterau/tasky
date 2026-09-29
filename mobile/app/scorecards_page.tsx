@@ -13,6 +13,7 @@ import { SignalRow } from "@/components/SignalRow";
 import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   getSignalPeriodBounds,
+  getSignalQueryTime,
   leftoverSignals,
   memberContributionCount,
   scorecardHeadline,
@@ -125,14 +126,15 @@ export default function ScorecardsPage() {
   const router = useRouter();
   const taskyAuth = useTaskyAuth();
   const now = useSignalClock();
-  const periodBounds = getSignalPeriodBounds(now);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = getSignalPeriodBounds(queryNow);
   const taskyEnabled =
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const scorecards = useTaskyQuery(
     taskyApi.scorecards.list,
     taskyEnabled
       ? {
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }
@@ -142,7 +144,7 @@ export default function ScorecardsPage() {
     taskyApi.signals.listDashboard,
     taskyEnabled
       ? {
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }

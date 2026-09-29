@@ -25,6 +25,7 @@ import {
   formatActivityMeasurements,
   formatSignalQuantity,
   getSignalPeriodBounds,
+  getSignalQueryTime,
   parseActivityMeasurements,
   SIGNAL_SOON_WINDOW_MS,
   type ActivityMeasurementDraft,
@@ -92,13 +93,14 @@ export default function SignalHistoryPage() {
   const taskyEnabled =
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const now = useSignalClock();
-  const periodBounds = getSignalPeriodBounds(now);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = getSignalPeriodBounds(queryNow);
   const signal = useTaskyQuery(
     taskyApi.signals.get,
     taskyEnabled && signalId
       ? {
           signalId,
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }

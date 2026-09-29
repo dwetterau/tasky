@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "convex/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "../../../convex/_generated/api";
 import { Navigation } from "@/components/Navigation";
@@ -13,6 +12,7 @@ import { useAuthSession } from "@/lib/useAuthSession";
 import { usePageTagFilter } from "@/lib/usePageTagFilter";
 import {
   getSignalPeriodBounds,
+  getSignalQueryTime,
   leftoverSignals,
   memberContributionCount,
   scorecardHeadline,
@@ -21,6 +21,7 @@ import {
   type SignalDashboardItem,
   useSignalClock,
 } from "@/lib/signalDisplay";
+import { useCachedConvexQuery } from "@/lib/useCachedConvexQuery";
 
 function formatPercent(ratio: number): string {
   return `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;
@@ -200,12 +201,16 @@ function LoadingState() {
   );
 }
 
-function ScorecardsContent() {
+function ScorecardsContent({ cacheScope }: { cacheScope: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const now = useSignalClock();
-  const periodBounds = useMemo(() => getSignalPeriodBounds(now), [now]);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = useMemo(
+    () => getSignalPeriodBounds(queryNow),
+    [queryNow],
+  );
   const [searchText, setSearchText] = useState("");
   const [selectedSignal, setSelectedSignal] =
     useState<SignalDashboardItem | null>(null);
@@ -214,7 +219,7 @@ function ScorecardsContent() {
   const expandedScorecardId = searchParams.get("expanded");
 
   const baseQueryArgs = {
-    now,
+    now: queryNow,
     soonWindowMs: SIGNAL_SOON_WINDOW_MS,
     periodBounds,
   };
@@ -222,11 +227,20 @@ function ScorecardsContent() {
     ...baseQueryArgs,
     tagId: selectedTagId ?? undefined,
   };
-  const scorecards = useQuery(api.scorecards.list, queryArgs);
-  const signals = useQuery(api.signals.listDashboard, queryArgs);
-  const scorecardsForExpansion = useQuery(
+  const scorecards = useCachedConvexQuery(
+    api.scorecards.list,
+    queryArgs,
+    `${cacheScope}:scorecards:${selectedTagId ?? "all"}`,
+  );
+  const signals = useCachedConvexQuery(
+    api.signals.listDashboard,
+    queryArgs,
+    `${cacheScope}:signals:${selectedTagId ?? "all"}`,
+  );
+  const scorecardsForExpansion = useCachedConvexQuery(
     api.scorecards.list,
     expandedScorecardId ? baseQueryArgs : "skip",
+    `${cacheScope}:scorecards:all`,
   );
 
   const matchingScorecards = useMemo(() => {
@@ -404,6 +418,7 @@ function ScorecardsContent() {
         <SignalInspectorModal
           signal={selectedSignal}
           now={now}
+          cacheScope={cacheScope}
           onClose={() => setSelectedSignal(null)}
         />
       ) : null}
@@ -422,5 +437,9 @@ export default function ScorecardsPage() {
     );
   }
 
-  return session ? <ScorecardsContent /> : <SignIn />;
+  return session ? (
+    <ScorecardsContent cacheScope={session.user.id} />
+  ) : (
+    <SignIn />
+  );
 }

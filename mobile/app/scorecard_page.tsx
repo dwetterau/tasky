@@ -14,6 +14,7 @@ import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
+  getSignalQueryTime,
   nestedScorecardDetail,
   scorecardHeadline,
   scorecardMemberDot,
@@ -176,7 +177,8 @@ export default function ScorecardPage() {
   const scorecardId = rawScorecardId as ScorecardId | undefined;
   const taskyAuth = useTaskyAuth();
   const now = useSignalClock();
-  const periodBounds = getSignalPeriodBounds(now);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = getSignalPeriodBounds(queryNow);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const taskyEnabled =
@@ -187,7 +189,7 @@ export default function ScorecardPage() {
     taskyEnabled && scorecardId
       ? {
           scorecardId,
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }
@@ -197,7 +199,7 @@ export default function ScorecardPage() {
     taskyApi.signals.listDashboard,
     taskyEnabled
       ? {
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }

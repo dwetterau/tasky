@@ -17,6 +17,7 @@ import { TaskyTagPicker } from "@/components/TaskyTagPicker";
 import { automaticKeyboardInsets } from "@/lib/headerItems";
 import {
   getSignalPeriodBounds,
+  getSignalQueryTime,
   SIGNAL_SOON_WINDOW_MS,
   useSignalClock,
 } from "@/lib/signals";
@@ -111,7 +112,8 @@ export default function ScorecardEditPage() {
   const scorecardId = rawScorecardId as ScorecardId | undefined;
   const taskyAuth = useTaskyAuth();
   const now = useSignalClock();
-  const periodBounds = getSignalPeriodBounds(now);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = getSignalPeriodBounds(queryNow);
   const taskyEnabled =
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
 
@@ -128,7 +130,7 @@ export default function ScorecardEditPage() {
     taskyEnabled && scorecardId
       ? {
           scorecardId,
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }
@@ -138,7 +140,7 @@ export default function ScorecardEditPage() {
     taskyApi.signals.listDashboard,
     taskyEnabled
       ? {
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }
@@ -148,7 +150,7 @@ export default function ScorecardEditPage() {
     taskyApi.scorecards.list,
     taskyEnabled
       ? {
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }

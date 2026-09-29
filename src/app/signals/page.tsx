@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Navigation } from "@/components/Navigation";
 import { SearchTagSelector } from "@/components/TagSelector";
@@ -12,11 +11,13 @@ import { useAuthSession } from "@/lib/useAuthSession";
 import { usePageTagFilter } from "@/lib/usePageTagFilter";
 import {
   getSignalPeriodBounds,
+  getSignalQueryTime,
   loggedTodaySignals,
   SIGNAL_SOON_WINDOW_MS,
   type SignalDashboardItem,
   useSignalClock,
 } from "@/lib/signalDisplay";
+import { useCachedConvexQuery } from "@/lib/useCachedConvexQuery";
 
 type SignalKind = "all" | "activity" | "inventory";
 type SignalView = "status" | "today";
@@ -41,9 +42,13 @@ function LoadingState() {
   );
 }
 
-function SignalsContent() {
+function SignalsContent({ cacheScope }: { cacheScope: string }) {
   const now = useSignalClock();
-  const periodBounds = useMemo(() => getSignalPeriodBounds(now), [now]);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = useMemo(
+    () => getSignalPeriodBounds(queryNow),
+    [queryNow],
+  );
   const [kind, setKind] = useState<SignalKind>("all");
   const [view, setView] = useState<SignalView>("status");
   const [searchText, setSearchText] = useState("");
@@ -52,13 +57,17 @@ function SignalsContent() {
   const { allTags, selectedTag, selectedTagId, handleTagChange } =
     usePageTagFilter();
 
-  const signals = useQuery(api.signals.listDashboard, {
-    now,
-    soonWindowMs: SIGNAL_SOON_WINDOW_MS,
-    periodBounds,
-    kind: kind === "all" ? undefined : kind,
-    tagId: selectedTagId ?? undefined,
-  });
+  const signals = useCachedConvexQuery(
+    api.signals.listDashboard,
+    {
+      now: queryNow,
+      soonWindowMs: SIGNAL_SOON_WINDOW_MS,
+      periodBounds,
+      kind: kind === "all" ? undefined : kind,
+      tagId: selectedTagId ?? undefined,
+    },
+    `${cacheScope}:signals:${kind}:${selectedTagId ?? "all"}`,
+  );
 
   const matchingSignals = useMemo(() => {
     if (!signals) return undefined;
@@ -251,6 +260,7 @@ function SignalsContent() {
         <SignalInspectorModal
           signal={selectedSignal}
           now={now}
+          cacheScope={cacheScope}
           onClose={() => setSelectedSignal(null)}
         />
       ) : null}
@@ -269,5 +279,5 @@ export default function SignalsPage() {
     );
   }
 
-  return session ? <SignalsContent /> : <SignIn />;
+  return session ? <SignalsContent cacheScope={session.user.id} /> : <SignIn />;
 }
