@@ -1,8 +1,10 @@
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useState } from "react";
+import { AppState } from "react-native";
 import { taskyApi } from "./tasky";
 
 export const SIGNAL_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const SIGNAL_QUERY_REFRESH_MS = 5 * 60 * 1000;
 
 export type SignalDashboardItem = FunctionReturnType<
   typeof taskyApi.signals.listDashboard
@@ -219,12 +221,28 @@ export function getSignalPeriodBounds(now: number): SignalPeriodBounds {
   };
 }
 
+export function getSignalQueryTime(now: number): number {
+  return Math.floor(now / SIGNAL_QUERY_REFRESH_MS) * SIGNAL_QUERY_REFRESH_MS;
+}
+
 export function useSignalClock(): number {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(interval);
+    const update = () => setNow(Date.now());
+    const interval = setInterval(update, 60_000);
+    const appStateSubscription = AppState.addEventListener(
+      "change",
+      (nextState) => {
+        if (nextState === "active") {
+          update();
+        }
+      },
+    );
+    return () => {
+      clearInterval(interval);
+      appStateSubscription.remove();
+    };
   }, []);
 
   return now;

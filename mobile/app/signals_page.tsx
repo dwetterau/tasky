@@ -15,6 +15,7 @@ import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
+  getSignalQueryTime,
   loggedTodaySignals,
   SIGNAL_SOON_WINDOW_MS,
   type SignalDashboardItem,
@@ -138,7 +139,8 @@ export default function SignalsPage() {
   const router = useRouter();
   const taskyAuth = useTaskyAuth();
   const now = useSignalClock();
-  const periodBounds = getSignalPeriodBounds(now);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = getSignalPeriodBounds(queryNow);
   const [tab, setTab] = useState<SignalsTab>("status");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [selectedTagId, setSelectedTagId] = useState<TaskyTagId | null>(null);
@@ -149,7 +151,7 @@ export default function SignalsPage() {
     taskyApi.signals.listDashboard,
     taskyEnabled
       ? {
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
           ...(selectedTagId === null ? {} : { tagId: selectedTagId }),

@@ -21,6 +21,7 @@ import { SignalRow } from "@/components/SignalRow";
 import {
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
+  getSignalQueryTime,
   SIGNAL_SOON_WINDOW_MS,
   type SignalDashboardItem,
   useSignalClock,
@@ -87,7 +88,8 @@ function SignalsCard() {
   const router = useRouter();
   const taskyAuth = useTaskyAuth();
   const now = useSignalClock();
-  const periodBounds = getSignalPeriodBounds(now);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = getSignalPeriodBounds(queryNow);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const taskyEnabled =
@@ -96,7 +98,7 @@ function SignalsCard() {
     taskyApi.signals.listDashboard,
     taskyEnabled
       ? {
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }
@@ -216,14 +218,15 @@ function TodayCard() {
   const router = useRouter();
   const taskyAuth = useTaskyAuth();
   const now = useSignalClock();
-  const periodBounds = getSignalPeriodBounds(now);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = getSignalPeriodBounds(queryNow);
   const taskyEnabled =
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const scorecards = useTaskyQuery(
     taskyApi.scorecards.list,
     taskyEnabled
       ? {
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }

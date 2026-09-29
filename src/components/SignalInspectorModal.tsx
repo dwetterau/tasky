@@ -2,18 +2,23 @@
 
 import Link from "next/link";
 import { useEffect, useRef } from "react";
-import { usePaginatedQuery, useQuery } from "convex/react";
+import { usePaginatedQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { SignalTrendCharts } from "@/components/SignalTrendCharts";
 import {
   formatSignalQuantity,
   getSignalPeriodBounds,
+  getSignalQueryTime,
   SIGNAL_SOON_WINDOW_MS,
   signalPrimaryText,
   signalSecondaryText,
   type SignalDashboardItem,
   type SignalEntry,
 } from "@/lib/signalDisplay";
+import {
+  useCachedConvexQuery,
+  useRecentValue,
+} from "@/lib/useCachedConvexQuery";
 
 const MEASUREMENT_LABELS = {
   weight: "Weight",
@@ -114,22 +119,29 @@ function Detail({
 export function SignalInspectorModal({
   signal: initialSignal,
   now,
+  cacheScope,
   onClose,
 }: {
   signal: SignalDashboardItem;
   now: number;
+  cacheScope: string;
   onClose: () => void;
 }) {
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
-  const periodBounds = getSignalPeriodBounds(now);
-  const currentSignal = useQuery(api.signals.get, {
-    signalId: initialSignal.id,
-    now,
-    soonWindowMs: SIGNAL_SOON_WINDOW_MS,
-    periodBounds,
-  });
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = getSignalPeriodBounds(queryNow);
+  const currentSignal = useCachedConvexQuery(
+    api.signals.get,
+    {
+      signalId: initialSignal.id,
+      now: queryNow,
+      soonWindowMs: SIGNAL_SOON_WINDOW_MS,
+      periodBounds,
+    },
+    `${cacheScope}:signal:${initialSignal.id}`,
+  );
   const {
-    results: entries,
+    results: liveEntries,
     status,
     loadMore,
   } = usePaginatedQuery(
@@ -137,6 +149,13 @@ export function SignalInspectorModal({
     { signalId: initialSignal.id },
     { initialNumItems: 50 },
   );
+  const recentEntries = useRecentValue(
+    `${cacheScope}:signal-history:${initialSignal.id}`,
+    status === "LoadingFirstPage" ? undefined : liveEntries,
+  );
+  const entries = recentEntries ?? [];
+  const isLoadingHistory =
+    status === "LoadingFirstPage" && recentEntries === undefined;
   const signal = currentSignal ?? initialSignal;
 
   useEffect(() => {
@@ -280,7 +299,7 @@ export function SignalInspectorModal({
             ) : null}
           </section>
 
-          {status !== "LoadingFirstPage" && entries.length > 0 ? (
+          {entries.length > 0 ? (
             <SignalTrendCharts signal={signal} entries={entries} />
           ) : null}
 
@@ -300,7 +319,7 @@ export function SignalInspectorModal({
               ) : null}
             </div>
 
-            {status === "LoadingFirstPage" ? (
+            {isLoadingHistory ? (
               <div className="flex items-center gap-2 py-8 text-sm text-(--muted)">
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
                 Loading history...

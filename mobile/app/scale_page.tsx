@@ -3,7 +3,12 @@ import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { PillButton } from "@/components/PillButton";
 import { automaticKeyboardInsets } from "@/lib/headerItems";
-import { getSignalPeriodBounds, SIGNAL_SOON_WINDOW_MS, useSignalClock } from "@/lib/signals";
+import {
+  getSignalPeriodBounds,
+  getSignalQueryTime,
+  SIGNAL_SOON_WINDOW_MS,
+  useSignalClock,
+} from "@/lib/signals";
 import { taskyApi, useTaskyAuth, useTaskyMutation, useTaskyQuery } from "@/lib/tasky";
 import { colors, fontSize, radius, sharedStyles, spacing } from "@/lib/theme";
 import { useYunmaiScale } from "@/lib/useYunmaiScale";
@@ -14,9 +19,12 @@ export default function ScalePage() {
   const scale = useYunmaiScale();
   const auth = useTaskyAuth();
   const now = useSignalClock();
+  const queryNow = getSignalQueryTime(now);
   const enabled = auth.isAuthenticated && auth.convexAuthenticated;
   const signals = useTaskyQuery(taskyApi.signals.listDashboard, enabled ? {
-    now, soonWindowMs: SIGNAL_SOON_WINDOW_MS, periodBounds: getSignalPeriodBounds(now),
+    now: queryNow,
+    soonWindowMs: SIGNAL_SOON_WINDOW_MS,
+    periodBounds: getSignalPeriodBounds(queryNow),
   } : "skip");
   const matches = signals.data?.filter(signal => signal.name === "Weight") ?? [];
   const signal = matches.length === 1 ? matches[0] : undefined;

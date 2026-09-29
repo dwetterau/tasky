@@ -3,10 +3,14 @@ import {
   convexClient,
   crossDomainClient,
 } from "@convex-dev/better-auth/client/plugins";
+import {
+  ConvexBetterAuthProvider,
+  type AuthClient as ConvexBetterAuthClient,
+} from "@convex-dev/better-auth/react";
 import { api as taskyApi } from "tasky-convex/_generated/api";
 import { createAuthClient } from "better-auth/react";
 import type { BetterAuthClientPlugin } from "better-auth/client";
-import { ConvexReactClient } from "convex/react";
+import { ConvexReactClient, useConvexAuth } from "convex/react";
 import type {
   FunctionArgs,
   FunctionReference,
@@ -74,22 +78,32 @@ const nativeOriginClient = (origin: string) => ({
   ],
 }) satisfies BetterAuthClientPlugin;
 
-export const taskyAuthClient = createAuthClient({
-  baseURL: taskyConvexSiteUrl,
-  plugins: [
-    convexClient(),
-    ...(Platform.OS === "web"
-      ? [crossDomainClient({ storagePrefix: "tasky" })]
-      : [
+export const taskyAuthClient =
+  Platform.OS === "web"
+    ? createAuthClient({
+        baseURL: taskyConvexSiteUrl,
+        plugins: [
+          convexClient(),
+          crossDomainClient({ storagePrefix: "tasky" }),
+        ],
+      })
+    : createAuthClient({
+        baseURL: taskyConvexSiteUrl,
+        plugins: [
+          convexClient(),
           expoClient({
             scheme: appScheme,
             storagePrefix: "tasky",
             storage: secureStore,
           }),
           nativeOriginClient(taskyNativeOrigin),
-        ]),
-  ],
-});
+        ],
+      });
+
+// The provider only uses useSession() and convex.token(), which this client has.
+// Its published AuthClient type does not account for @better-auth/expo plugins.
+const taskyProviderAuthClient =
+  taskyAuthClient as unknown as ConvexBetterAuthClient;
 
 export const taskyConvex = taskyConvexUrl
   ? new ConvexReactClient(taskyConvexUrl, {
@@ -97,59 +111,92 @@ export const taskyConvex = taskyConvexUrl
     })
   : null;
 
+const TASKY_QUERY_CACHE_TTL_MS = 5 * 60 * 1000;
+const TASKY_QUERY_CACHE_MAX_ENTRIES = 100;
+
+type TaskyQueryCacheEntry = {
+  data: unknown;
+  cachedAt: number;
+};
+
+const taskyQueryCache = new Map<string, TaskyQueryCacheEntry>();
+
+function stableQueryArgs(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(args).filter(
+      ([key]) => key !== "now" && key !== "periodBounds",
+    ),
+  );
+}
+
+function queryCacheKey(
+  cacheScope: string,
+  queryName: string,
+  args: Record<string, unknown>,
+): string {
+  return `${cacheScope}:${queryName}:${JSON.stringify(stableQueryArgs(args))}`;
+}
+
+function readCachedQuery<Result>(key: string): Result | undefined {
+  const cached = taskyQueryCache.get(key);
+  if (!cached) {
+    return undefined;
+  }
+  if (Date.now() - cached.cachedAt > TASKY_QUERY_CACHE_TTL_MS) {
+    taskyQueryCache.delete(key);
+    return undefined;
+  }
+  return cached.data as Result;
+}
+
+function cacheQueryResult<Result>(key: string, data: Result): void {
+  taskyQueryCache.delete(key);
+  taskyQueryCache.set(key, { data, cachedAt: Date.now() });
+  if (taskyQueryCache.size > TASKY_QUERY_CACHE_MAX_ENTRIES) {
+    const oldestKey = taskyQueryCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      taskyQueryCache.delete(oldestKey);
+    }
+  }
+}
+
+function clearTaskyQueryCache(): void {
+  taskyQueryCache.clear();
+}
+
 type TaskyAuthContextValue = {
   isConfigured: boolean;
   isPending: boolean;
   isAuthenticated: boolean;
   convexAuthenticated: boolean;
+  cacheScope: string;
   userName: string | null;
   userEmail: string | null;
   error: string | null;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
-  refreshToken: () => Promise<string | null>;
 };
 
 const TaskyAuthContext = createContext<TaskyAuthContextValue | null>(null);
 
-export function TaskyAuthProvider({ children }: { children: ReactNode }) {
+function ConfiguredTaskyAuthProvider({ children }: { children: ReactNode }) {
   const { data: session, isPending, refetch } = taskyAuthClient.useSession();
-  const [convexAuthenticated, setConvexAuthenticated] = useState(false);
+  const {
+    isAuthenticated: convexAuthenticated,
+    isLoading: convexAuthLoading,
+  } = useConvexAuth();
   const [error, setError] = useState<string | null>(null);
-  const pendingTokenRef = useRef<Promise<string | null> | null>(null);
-  const sessionId = session?.session?.id ?? null;
-
-  const refreshToken = useCallback(async () => {
-    if (!taskyConvexSiteUrl) return null;
-    const result = await taskyAuthClient.convex.token({
-      fetchOptions: { throw: false },
-    });
-    return result.data?.token ?? null;
-  }, []);
+  const lastUserId = useRef<string | null>(null);
+  if (session?.user?.id) {
+    lastUserId.current = session.user.id;
+  }
 
   useEffect(() => {
-    if (!taskyConvex) return;
-    taskyConvex.setAuth(
-      async ({ forceRefreshToken }) => {
-        if (!forceRefreshToken && pendingTokenRef.current) {
-          return pendingTokenRef.current;
-        }
-        pendingTokenRef.current = refreshToken()
-          .catch(() => null)
-          .finally(() => {
-            pendingTokenRef.current = null;
-          });
-        return pendingTokenRef.current;
-      },
-      (isAuthed) => {
-        setConvexAuthenticated(isAuthed);
-      },
-    );
-    return () => {
-      taskyConvex.clearAuth();
-      setConvexAuthenticated(false);
-    };
-  }, [refreshToken, sessionId]);
+    if (!isPending && !session && !convexAuthenticated) {
+      clearTaskyQueryCache();
+      lastUserId.current = null;
+    }
+  }, [convexAuthenticated, isPending, session]);
 
   const connect = useCallback(async () => {
     setError(null);
@@ -163,7 +210,6 @@ export function TaskyAuthProvider({ children }: { children: ReactNode }) {
       }
       await taskyAuthClient.getSession();
       await refetch();
-      await refreshToken();
     } catch (connectError) {
       const message =
         connectError instanceof Error
@@ -172,39 +218,40 @@ export function TaskyAuthProvider({ children }: { children: ReactNode }) {
       setError(message);
       throw connectError;
     }
-  }, [refetch, refreshToken]);
+  }, [refetch]);
 
   const disconnect = useCallback(async () => {
     setError(null);
     await taskyAuthClient.signOut();
     await refetch();
-    taskyConvex?.clearAuth();
-    setConvexAuthenticated(false);
+    clearTaskyQueryCache();
   }, [refetch]);
 
   const value = useMemo<TaskyAuthContextValue>(
     () => ({
       isConfigured: Boolean(taskyConvexUrl && taskyConvexSiteUrl && appScheme),
-      isPending,
-      isAuthenticated: Boolean(session?.session),
+      isPending:
+        (isPending || convexAuthLoading) && !convexAuthenticated,
+      isAuthenticated: Boolean(session?.session) || convexAuthenticated,
       convexAuthenticated,
+      cacheScope: lastUserId.current ?? "authenticated",
       userName: session?.user?.name ?? null,
       userEmail: session?.user?.email ?? null,
       error,
       connect,
       disconnect,
-      refreshToken,
     }),
     [
       isPending,
+      convexAuthLoading,
       session?.session,
+      session?.user?.id,
       session?.user?.name,
       session?.user?.email,
       convexAuthenticated,
       error,
       connect,
       disconnect,
-      refreshToken,
     ],
   );
 
@@ -212,6 +259,54 @@ export function TaskyAuthProvider({ children }: { children: ReactNode }) {
     <TaskyAuthContext.Provider value={value}>
       {children}
     </TaskyAuthContext.Provider>
+  );
+}
+
+function UnconfiguredTaskyAuthProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const value = useMemo<TaskyAuthContextValue>(
+    () => ({
+      isConfigured: false,
+      isPending: false,
+      isAuthenticated: false,
+      convexAuthenticated: false,
+      cacheScope: "unconfigured",
+      userName: null,
+      userEmail: null,
+      error: "Tasky Convex is not configured.",
+      connect: () =>
+        Promise.reject(new Error("Tasky Convex is not configured.")),
+      disconnect: () => Promise.resolve(),
+    }),
+    [],
+  );
+
+  return (
+    <TaskyAuthContext.Provider value={value}>
+      {children}
+    </TaskyAuthContext.Provider>
+  );
+}
+
+export function TaskyAuthProvider({ children }: { children: ReactNode }) {
+  if (!taskyConvex) {
+    return (
+      <UnconfiguredTaskyAuthProvider>
+        {children}
+      </UnconfiguredTaskyAuthProvider>
+    );
+  }
+
+  return (
+    <ConvexBetterAuthProvider
+      client={taskyConvex}
+      authClient={taskyProviderAuthClient}
+    >
+      <ConfiguredTaskyAuthProvider>{children}</ConfiguredTaskyAuthProvider>
+    </ConvexBetterAuthProvider>
   );
 }
 
@@ -231,25 +326,67 @@ export function useTaskyQuery<Query extends FunctionReference<"query">>(
   error: string | null;
   isLoading: boolean;
 } {
-  const { isAuthenticated, convexAuthenticated } = useTaskyAuth();
-  const [data, setData] = useState<FunctionReturnType<Query> | undefined>();
+  const { isAuthenticated, convexAuthenticated, cacheScope } = useTaskyAuth();
   const [error, setError] = useState<string | null>(null);
   const queryName = getFunctionName(query);
   const serializedArgs = JSON.stringify(args);
+  const cacheKey =
+    args === "skip"
+      ? null
+      : queryCacheKey(
+          cacheScope,
+          queryName,
+          args as Record<string, unknown>,
+        );
+  const [result, setResult] = useState<{
+    cacheKey: string | null;
+    data: FunctionReturnType<Query> | undefined;
+  }>(() => ({
+    cacheKey,
+    data:
+      cacheKey === null
+        ? undefined
+        : readCachedQuery<FunctionReturnType<Query>>(cacheKey),
+  }));
+  const data =
+    cacheKey === null
+      ? undefined
+      : result.cacheKey === cacheKey
+        ? result.data
+        : readCachedQuery<FunctionReturnType<Query>>(cacheKey);
   const canRun = Boolean(
     args !== "skip" && isAuthenticated && convexAuthenticated && taskyConvex,
   );
 
   useEffect(() => {
     if (!canRun || args === "skip" || !taskyConvex) {
-      setData(undefined);
       return;
     }
 
+    const currentCacheKey = queryCacheKey(
+      cacheScope,
+      queryName,
+      args as Record<string, unknown>,
+    );
+    setResult((current) =>
+      current.cacheKey === currentCacheKey
+        ? current
+        : {
+            cacheKey: currentCacheKey,
+            data:
+              readCachedQuery<FunctionReturnType<Query>>(currentCacheKey),
+          },
+    );
+    setError(null);
     const watch = taskyConvex.watchQuery(query, args);
     const update = () => {
       try {
-        setData(watch.localQueryResult());
+        const nextData = watch.localQueryResult();
+        if (nextData === undefined) {
+          return;
+        }
+        cacheQueryResult(currentCacheKey, nextData);
+        setResult({ cacheKey: currentCacheKey, data: nextData });
         setError(null);
       } catch (queryError) {
         setError(
@@ -263,7 +400,7 @@ export function useTaskyQuery<Query extends FunctionReference<"query">>(
     return watch.onUpdate(update);
     // Function references from generated APIs can have unstable object identity.
     // Use the function name plus serialized args to keep subscriptions stable.
-  }, [queryName, serializedArgs, canRun]);
+  }, [cacheScope, queryName, serializedArgs, canRun]);
 
   return { data, error, isLoading: Boolean(canRun && data === undefined) };
 }

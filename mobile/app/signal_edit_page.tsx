@@ -21,6 +21,7 @@ import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   ACTIVITY_MEASUREMENT_OPTIONS,
   getSignalPeriodBounds,
+  getSignalQueryTime,
   SIGNAL_SOON_WINDOW_MS,
   type ActivityMeasurementField,
   useSignalClock,
@@ -139,13 +140,14 @@ export default function SignalEditPage() {
   const taskyEnabled =
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const now = useSignalClock();
-  const periodBounds = getSignalPeriodBounds(now);
+  const queryNow = getSignalQueryTime(now);
+  const periodBounds = getSignalPeriodBounds(queryNow);
   const signal = useTaskyQuery(
     taskyApi.signals.get,
     taskyEnabled && signalId
       ? {
           signalId,
-          now,
+          now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
         }
