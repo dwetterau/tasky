@@ -528,6 +528,26 @@ details {
 summary {
   cursor: pointer;
 }
+.portfolio-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+  font:
+    11px system-ui,
+    sans-serif;
+}
+.portfolio-tabs button {
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--muted);
+}
+.portfolio-tabs button[aria-selected="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
 .portfolio-value {
   font-size: clamp(32px, 3.5vw, 44px);
   letter-spacing: -0.045em;
@@ -870,6 +890,36 @@ export function freshnessBanner(feed: Feed, now: number) {
 }
 export const browserScript = `
 (() => {
+  const portfolioStorageKey = "tasky:selected-portfolio";
+  const selectPortfolio = (requestedId) => {
+    const tabs = Array.from(document.querySelectorAll("[data-portfolio-tab]"));
+    if (!tabs.length) return;
+    const selected =
+      tabs.find((tab) => tab.getAttribute("data-portfolio-tab") === requestedId) ??
+      tabs[0];
+    const selectedId = selected.getAttribute("data-portfolio-tab");
+    tabs.forEach((tab) => {
+      const active = tab === selected;
+      tab.setAttribute("aria-selected", String(active));
+      tab.setAttribute("tabindex", active ? "0" : "-1");
+    });
+    document.querySelectorAll("[data-portfolio-panel]").forEach((panel) => {
+      panel.toggleAttribute(
+        "hidden",
+        panel.getAttribute("data-portfolio-panel") !== selectedId,
+      );
+    });
+    try {
+      localStorage.setItem(portfolioStorageKey, selectedId ?? "");
+    } catch {}
+  };
+  const applyPortfolioSelection = () => {
+    let selected = "";
+    try {
+      selected = localStorage.getItem(portfolioStorageKey) ?? "";
+    } catch {}
+    selectPortfolio(selected);
+  };
   const renewal = document.querySelector("form[data-auto-renew]");
   if (renewal instanceof HTMLFormElement) {
     const renew = async () => {
@@ -893,10 +943,15 @@ export const browserScript = `
   }
   document.addEventListener("click", (event) => {
     const element = event.target instanceof Element ? event.target : null;
+    const portfolioTab = element?.closest("[data-portfolio-tab]");
+    if (portfolioTab instanceof HTMLButtonElement) {
+      selectPortfolio(portfolioTab.dataset.portfolioTab ?? "");
+      return;
+    }
     const expand = element?.closest("[data-portfolio-expand]");
     if (expand instanceof HTMLButtonElement) {
       const table = expand
-        .closest(".module")
+        .closest("[data-portfolio-panel]")
         ?.querySelector("[data-portfolio-table]");
       if (!(table instanceof HTMLTableElement)) return;
       const open = table.dataset.expanded !== "true";
@@ -967,6 +1022,7 @@ export const browserScript = `
           document
             .querySelector(".paper")
             .replaceWith(page.querySelector(".paper"));
+          applyPortfolioSelection();
           revision = next;
           document.body.dataset.revision = String(next);
         }
@@ -980,6 +1036,7 @@ export const browserScript = `
       revision ? 120000 : Math.min(30000, 3000 * (failures + 1)),
     );
   };
+  applyPortfolioSelection();
   setTimeout(poll, revision ? 120000 : 3000);
   const scheduleRenew = (at) => {
     if (at > 0)

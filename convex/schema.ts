@@ -296,9 +296,23 @@ export default defineSchema({
     exportRequested: v.optional(v.boolean()),
     priceSyncStartedAt: v.optional(v.number()),
   }).index("by_user", ["userId"]).index("by_enabled_next_run", ["enabled", "nextRunAt"]),
+  portfolios: defineTable({
+    userId: v.string(),
+    name: v.string(),
+    airtableViewId: v.string(),
+    startDate: v.string(),
+    isDefault: v.boolean(),
+    displayOrder: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_view", ["userId", "airtableViewId"]),
   portfolioSyncStates: defineTable({
     userId: v.string(),
     lastSyncedAt: v.number(),
+    syncLeaseId: v.optional(v.string()),
+    syncStartedAt: v.optional(v.number()),
   }).index("by_user", ["userId"]),
   captures: defineTable({
     userId: v.string(),

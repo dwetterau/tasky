@@ -60,13 +60,15 @@ increments per publication so automatic updates work throughout the day.
 
 ## Portfolio
 
-The export reuses Tasky's saved Airtable Positions view and the user's existing
-portfolio credentials. It includes total value, unrealized return and the five
-largest positions initially, with up to 20 holdings embedded for expansion and
-client-side sorting. Every export refreshes current values and cost basis from
-the Positions view. Recent day-return data is fetched in one bounded batch only
-for the first detailed snapshot and after a successful price sync, then retained
-in the saved snapshot between exports. Page loads make no provider requests.
+The export reuses Tasky's configured Airtable Positions views and shared
+portfolio credentials. Each named portfolio includes total value, unrealized
+return and the five largest positions initially, with up to 20 holdings embedded
+for expansion and client-side sorting. The page switches between portfolios
+locally and remembers the selection; page loads make no provider requests.
+Every export refreshes current values and cost basis from each Positions view.
+Recent day-return data is fetched in bounded batches only for the first detailed
+snapshot and after a successful combined price sync, then retained in the saved
+snapshot between exports.
 “Checked” is the snapshot retrieval time, not a market quote timestamp. Failed
 reads preserve the last successful snapshot and its age; missing credentials
 hide the module.
@@ -75,8 +77,9 @@ hide the module.
 session and calls Convex `POST /api/homepage/sync-prices` with the same
 provisioning signature as the weather-key route. Convex runs the app's price
 sync for that enrolled user only, then exports a new edition. A click while a
-sync is already running does nothing. The page shows the new totals when that
-edition is published.
+sync is already running does nothing. One run reads all configured portfolio
+views, fetches each ticker once, updates every unique Airtable Position record,
+and publishes one new edition.
 
 ## Authentication
 

@@ -6,7 +6,7 @@ import {
   evictDurableObject,
 } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type Edition } from "@tasky/home-feed";
+import { type Edition, type PortfolioPayload } from "@tasky/home-feed";
 import worker from "../src/index";
 import { objectCall, type Env } from "../src/env";
 import { signedHeaders } from "../src/transport";
@@ -164,6 +164,45 @@ describe("durable ingestion and publication", () => {
         })),
       },
     };
+    const portfolioPayload = envelope.portfolio.payload as PortfolioPayload;
+    portfolioPayload.portfolios = [
+      {
+        id: "schwab",
+        name: "Schwab",
+        currency: portfolioPayload.currency,
+        totalValue: portfolioPayload.totalValue,
+        gainLoss: portfolioPayload.gainLoss,
+        gainLossPercent: portfolioPayload.gainLossPercent,
+        holdingsCount: portfolioPayload.holdingsCount,
+        lastSyncedAt: portfolioPayload.lastSyncedAt,
+        latestPriceDate: portfolioPayload.latestPriceDate,
+        holdings: portfolioPayload.holdings,
+      },
+      {
+        id: "vanguard",
+        name: "Vanguard",
+        currency: "USD",
+        totalValue: 500,
+        gainLoss: 50,
+        gainLossPercent: 11.11,
+        holdingsCount: 1,
+        lastSyncedAt: Date.now(),
+        latestPriceDate: "2026-09-29",
+        holdings: [
+          {
+            ticker: "VTI",
+            name: "Vanguard Total Stock Market",
+            value: 500,
+            allocation: 1,
+            shares: 2,
+            costBasis: 450,
+            dayReturn: 3,
+            dayReturnPercent: 0.6,
+            gainLossPercent: 11.11,
+          },
+        ],
+      },
+    ];
     expect((await send(envelope)).status).toBe(202);
     await tick();
     const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
@@ -178,6 +217,9 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Day %");
     expect(edition!.html).toContain("Total %");
     expect(edition!.html).toContain("Show all 6");
+    expect(edition!.html).toContain('data-portfolio-tab="schwab"');
+    expect(edition!.html).toContain('data-portfolio-tab="vanguard"');
+    expect(edition!.html).toContain(">Vanguard</button>");
     expect(edition!.html).toContain("Last synced");
     expect(edition!.html).not.toContain("Select a column to sort");
     expect(edition!.html).toContain(

@@ -1,6 +1,10 @@
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { readPortfolioSnapshot } from "../portfolio";
+import {
+  getPortfolioConfigurations,
+  readPortfolioSnapshot,
+  type PortfolioConfiguration,
+} from "../portfolio";
 import {
   LIMITS,
   moduleSchema,
@@ -27,6 +31,78 @@ function previousPortfolio(previous?: string): {
   }
 }
 
+type NamedPortfolio = NonNullable<PortfolioPayload["portfolios"]>[number];
+
+function portfolioKey(portfolio: PortfolioConfiguration): string {
+  return portfolio.id ? String(portfolio.id) : "legacy-schwab";
+}
+
+function legacyNamedPortfolio(payload: PortfolioPayload): NamedPortfolio {
+  return {
+    id: "legacy-schwab",
+    name: "Schwab",
+    currency: payload.currency,
+    totalValue: payload.totalValue,
+    gainLoss: payload.gainLoss,
+    gainLossPercent: payload.gainLossPercent,
+    holdingsCount: payload.holdingsCount,
+    lastSyncedAt: payload.lastSyncedAt,
+    latestPriceDate: payload.latestPriceDate,
+    holdings: payload.holdings,
+  };
+}
+
+function projectPortfolio(
+  portfolio: PortfolioConfiguration,
+  result: Awaited<ReturnType<typeof readPortfolioSnapshot>> & {
+    status: "ok";
+  },
+  lastSyncedAt: number | null,
+  refreshPriceStatus: boolean,
+  cached?: NamedPortfolio,
+): NamedPortfolio {
+  const cachedByTicker = new Map(
+    cached?.holdings.map((holding) => [holding.ticker, holding]) ?? [],
+  );
+  return {
+    id: portfolioKey(portfolio),
+    name: portfolio.name,
+    currency: "USD",
+    totalValue: result.summary.totalCurrentValue,
+    gainLoss: result.summary.gainLoss,
+    gainLossPercent: result.summary.gainLossPercent,
+    holdingsCount: result.summary.holdingsCount,
+    lastSyncedAt,
+    latestPriceDate: refreshPriceStatus
+      ? result.summary.latestPriceDate
+      : (cached?.latestPriceDate ?? null),
+    holdings: [...result.holdings]
+      .sort((a, b) => b.currentValue - a.currentValue)
+      .slice(0, LIMITS.portfolioHoldings)
+      .map((holding) => {
+        const previousHolding = cachedByTicker.get(holding.ticker);
+        return {
+          ticker: holding.ticker.slice(0, 24),
+          name: summary(holding.companyName),
+          value: holding.currentValue,
+          allocation:
+            result.summary.totalCurrentValue > 0
+              ? holding.currentValue / result.summary.totalCurrentValue
+              : 0,
+          shares: holding.shares,
+          costBasis: holding.costBasis,
+          dayReturn: refreshPriceStatus
+            ? holding.dayReturn
+            : (previousHolding?.dayReturn ?? null),
+          dayReturnPercent: refreshPriceStatus
+            ? holding.dayReturnPercent
+            : (previousHolding?.dayReturnPercent ?? null),
+          gainLossPercent: holding.gainLossPercent,
+        };
+      }),
+  };
+}
+
 export async function collectHomepagePortfolio(
   ctx: ActionCtx,
   userId: string,
@@ -49,71 +125,100 @@ export async function collectHomepagePortfolio(
       internal.portfolio.getSyncStateInternal,
       { userId },
     );
+    const configurations = await getPortfolioConfigurations(ctx, userId);
+    if (configurations.length === 0) {
+      return { ...empty, status: "disabled" };
+    }
+    const cachedPortfolios: NamedPortfolio[] =
+      cached?.payload.portfolios ??
+      (cached ? [legacyNamedPortfolio(cached.payload)] : []);
+    const cachedById = new Map(
+      cachedPortfolios.map((portfolio) => [portfolio.id, portfolio]),
+    );
     const hasDetailedRows =
-      cached !== null &&
-      cached.payload.holdings.every(
-        (holding) =>
-          holding.shares !== undefined &&
-          holding.costBasis !== undefined &&
-          holding.gainLossPercent !== undefined,
-      );
+      cachedPortfolios.length === configurations.length &&
+      configurations.every((configuration) => {
+        const portfolio = cachedById.get(portfolioKey(configuration));
+        return (
+          portfolio !== undefined &&
+          portfolio.holdings.every(
+          (holding) =>
+            holding.shares !== undefined &&
+            holding.costBasis !== undefined &&
+            holding.gainLossPercent !== undefined,
+          )
+        );
+      });
     const refreshPriceStatus =
       !hasDetailedRows ||
       (syncState?.lastSyncedAt ?? null) !==
         (cached?.payload.lastSyncedAt ?? null);
-    // Every export reads the saved Positions view once. Recent history is read
-    // in one bounded batch only for the first rich snapshot or after a sync.
-    const result = await readPortfolioSnapshot(
-      ctx,
-      userId,
-      refreshPriceStatus ? "recent" : false,
-    );
-    if (result.status === "no_credentials")
-      return { ...empty, status: "disabled" };
-    if (result.status !== "ok") throw new Error("Portfolio unavailable");
+    const projected: NamedPortfolio[] = [];
+    let freshPortfolioCount = 0;
+    for (const portfolio of configurations) {
+      const cachedPortfolio = cachedById.get(portfolioKey(portfolio));
+      try {
+        const result = await readPortfolioSnapshot(
+          ctx,
+          userId,
+          refreshPriceStatus ? "recent" : false,
+          portfolio,
+        );
+        if (result.status === "ok") {
+          freshPortfolioCount += 1;
+          projected.push(
+            projectPortfolio(
+              portfolio,
+              result,
+              syncState?.lastSyncedAt ?? null,
+              refreshPriceStatus,
+              cachedPortfolio,
+            ),
+          );
+        } else if (cachedPortfolio) {
+          projected.push({ ...cachedPortfolio, name: portfolio.name });
+        }
+      } catch {
+        if (cachedPortfolio) {
+          projected.push({ ...cachedPortfolio, name: portfolio.name });
+        }
+      }
+    }
+    if (freshPortfolioCount === 0) {
+      throw new Error("Portfolio unavailable");
+    }
+    const defaultConfiguration =
+      configurations.find((portfolio) => portfolio.isDefault) ??
+      configurations[0];
+    const defaultPortfolio =
+      projected.find(
+        (portfolio) =>
+          defaultConfiguration &&
+          portfolio.id === portfolioKey(defaultConfiguration),
+      ) ?? projected[0];
+    if (!defaultPortfolio) return { ...empty, status: "disabled" };
+    const orderedPortfolios = [
+      defaultPortfolio,
+      ...projected.filter(
+        (portfolio) => portfolio.id !== defaultPortfolio.id,
+      ),
+    ];
     const now = Date.now();
-    const cachedByTicker = new Map(
-      cached?.payload.holdings.map((holding) => [holding.ticker, holding]) ?? [],
-    );
     return {
       ...empty,
       status: "available",
       sourceDataAt: now,
       collectedAt: now,
       payload: portfolioPayloadSchema.parse({
-        currency: "USD",
-        totalValue: result.summary.totalCurrentValue,
-        gainLoss: result.summary.gainLoss,
-        gainLossPercent: result.summary.gainLossPercent,
-        holdingsCount: result.summary.holdingsCount,
-        lastSyncedAt: syncState?.lastSyncedAt ?? null,
-        latestPriceDate: refreshPriceStatus
-          ? result.summary.latestPriceDate
-          : (cached?.payload.latestPriceDate ?? null),
-        holdings: [...result.holdings]
-          .sort((a, b) => b.currentValue - a.currentValue)
-          .slice(0, LIMITS.portfolioHoldings)
-          .map((holding) => {
-            const previousHolding = cachedByTicker.get(holding.ticker);
-            return {
-              ticker: holding.ticker.slice(0, 24),
-              name: summary(holding.companyName),
-              value: holding.currentValue,
-              allocation:
-                result.summary.totalCurrentValue > 0
-                  ? holding.currentValue / result.summary.totalCurrentValue
-                  : 0,
-              shares: holding.shares,
-              costBasis: holding.costBasis,
-              dayReturn: refreshPriceStatus
-                ? holding.dayReturn
-                : (previousHolding?.dayReturn ?? null),
-              dayReturnPercent: refreshPriceStatus
-                ? holding.dayReturnPercent
-                : (previousHolding?.dayReturnPercent ?? null),
-              gainLossPercent: holding.gainLossPercent,
-            };
-          }),
+        currency: defaultPortfolio.currency,
+        totalValue: defaultPortfolio.totalValue,
+        gainLoss: defaultPortfolio.gainLoss,
+        gainLossPercent: defaultPortfolio.gainLossPercent,
+        holdingsCount: defaultPortfolio.holdingsCount,
+        lastSyncedAt: defaultPortfolio.lastSyncedAt,
+        latestPriceDate: defaultPortfolio.latestPriceDate,
+        holdings: defaultPortfolio.holdings,
+        portfolios: orderedPortfolios,
       }),
     };
   } catch {
