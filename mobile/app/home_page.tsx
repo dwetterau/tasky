@@ -105,8 +105,22 @@ function SignalsCard() {
       : "skip",
   );
   const recordSignal = useTaskyMutation(taskyApi.signals.record);
+  const weightSignals = (signals.data ?? []).filter(
+    (signal) => signal.name === "Weight",
+  );
+  const weightSignal =
+    weightSignals.length === 1 ? weightSignals[0] : undefined;
+  const showScaleCard =
+    weightSignal?.model.kind === "activity" &&
+    weightSignal.model.measurementFields?.length === 1 &&
+    weightSignal.model.measurementFields[0] === "weight" &&
+    !weightSignal.evaluation.isComplete;
   const needsAttention = (signals.data ?? [])
-    .filter((signal) => signal.evaluation.attention !== "ok")
+    .filter(
+      (signal) =>
+        signal.evaluation.attention !== "ok" &&
+        (!showScaleCard || signal.id !== weightSignal?.id),
+    )
     .slice(0, 3);
 
   const openSignal = (signalId: string) => {
@@ -161,49 +175,54 @@ function SignalsCard() {
   }
 
   return (
-    <View style={[sharedStyles.card, styles.signalsCard]}>
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => router.push("/signals_page" as Href)}
-      >
-        <CardHeader title="Signals" />
-      </TouchableOpacity>
-      {!taskyEnabled || signals.isLoading ? (
-        <View style={sharedStyles.inlineLoading}>
-          <ActivityIndicator />
-        </View>
-      ) : needsAttention.length === 0 ? (
-        <TouchableOpacity onPress={() => router.push("/signals_page" as Href)}>
-          <Text style={styles.allOnTrack}>
-            {signals.data?.length
-              ? "No signals need attention."
-              : "Add your first activity or inventory signal."}
-          </Text>
+    <>
+      <View style={[sharedStyles.card, styles.signalsCard]}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push("/signals_page" as Href)}
+        >
+          <CardHeader title="Signals" />
         </TouchableOpacity>
-      ) : (
-        <View style={styles.signalList}>
-          {needsAttention.map((signal, index) => (
-            <View key={signal.id}>
-              {index > 0 ? <View style={styles.signalDivider} /> : null}
-              <SignalRow
-                signal={signal}
-                now={now}
-                compact
-                onPress={() => openSignal(signal.id)}
-                onQuickAction={() => void handleQuickAction(signal)}
-                quickActionLabel={
-                  signal.model.kind === "activity" ? "Done" : "Update"
-                }
-                isSaving={savingId === signal.id}
-              />
-            </View>
-          ))}
-        </View>
-      )}
-      {error || signals.error ? (
-        <Text style={sharedStyles.error}>{error ?? signals.error}</Text>
-      ) : null}
-    </View>
+        {!taskyEnabled || signals.isLoading ? (
+          <View style={sharedStyles.inlineLoading}>
+            <ActivityIndicator />
+          </View>
+        ) : needsAttention.length === 0 ? (
+          <TouchableOpacity onPress={() => router.push("/signals_page" as Href)}>
+            <Text style={styles.allOnTrack}>
+              {signals.data?.length
+                ? showScaleCard
+                  ? "No other signals need attention."
+                  : "No signals need attention."
+                : "Add your first activity or inventory signal."}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.signalList}>
+            {needsAttention.map((signal, index) => (
+              <View key={signal.id}>
+                {index > 0 ? <View style={styles.signalDivider} /> : null}
+                <SignalRow
+                  signal={signal}
+                  now={now}
+                  compact
+                  onPress={() => openSignal(signal.id)}
+                  onQuickAction={() => void handleQuickAction(signal)}
+                  quickActionLabel={
+                    signal.model.kind === "activity" ? "Done" : "Update"
+                  }
+                  isSaving={savingId === signal.id}
+                />
+              </View>
+            ))}
+          </View>
+        )}
+        {error || signals.error ? (
+          <Text style={sharedStyles.error}>{error ?? signals.error}</Text>
+        ) : null}
+      </View>
+      {showScaleCard ? <ScaleCard /> : null}
+    </>
   );
 }
 
@@ -594,7 +613,6 @@ export default function HomePage() {
       >
         <TodayCard />
         <SignalsCard />
-        <ScaleCard />
         <TaskyCard />
         <PortfolioCard />
       </ScrollView>
