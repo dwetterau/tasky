@@ -76,7 +76,13 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
   },
   render(data, context) {
     const positive = data.gainLoss >= 0;
-    const rows = data.holdings
+    const holdings = [...data.holdings].sort((a, b) => {
+      if (a.dayReturn == null && b.dayReturn == null) return 0;
+      if (a.dayReturn == null) return 1;
+      if (b.dayReturn == null) return -1;
+      return b.dayReturn - a.dayReturn;
+    });
+    const rows = holdings
       .map((holding) => {
         const totalPercent =
           holding.gainLossPercent ?? holding.allocation * 100;
@@ -114,17 +120,16 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
       }</p>
       <div class="holdings-heading">
         <h3 class="section-label">Holdings</h3>
-        <span class="meta">Select a column to sort</span>
       </div>
       ${
-        data.holdings.length
+        holdings.length
           ? `<div class="portfolio-table-scroll">
         <table class="portfolio-table" data-portfolio-table data-expanded="false">
           <thead><tr>
             ${columns
               .map(
                 ([key, label]) =>
-                  `<th scope="col" aria-sort="${key === "value" ? "descending" : "none"}"><button type="button" data-portfolio-sort="${key}" data-direction="${key === "value" ? "desc" : ""}">${e(label)} <span class="sort-arrow" aria-hidden="true">${key === "value" ? "▼" : ""}</span></button></th>`,
+                  `<th scope="col" aria-sort="${key === "day-dollar" ? "descending" : "none"}"><button type="button" data-portfolio-sort="${key}" data-direction="${key === "day-dollar" ? "desc" : ""}">${e(label)} <span class="sort-arrow" aria-hidden="true">${key === "day-dollar" ? "▼" : ""}</span></button></th>`,
               )
               .join("")}
           </tr></thead>
@@ -132,8 +137,8 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
         </table>
       </div>
       ${
-        data.holdings.length > 5
-          ? `<button class="portfolio-expand" type="button" data-portfolio-expand aria-expanded="false">Show all ${data.holdings.length}</button>`
+        holdings.length > 5
+          ? `<button class="portfolio-expand" type="button" data-portfolio-expand aria-expanded="false">Show all ${holdings.length}</button>`
           : ""
       }`
           : '<p class="empty">No holdings yet.</p>'

@@ -179,6 +179,13 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Total %");
     expect(edition!.html).toContain("Show all 6");
     expect(edition!.html).toContain("Last synced");
+    expect(edition!.html).not.toContain("Select a column to sort");
+    expect(edition!.html).toContain(
+      'aria-sort="descending"><button type="button" data-portfolio-sort="day-dollar" data-direction="desc"',
+    );
+    expect(edition!.html.indexOf(">ABC5<")).toBeLessThan(
+      edition!.html.indexOf(">ABC0<"),
+    );
     expect(edition!.html).not.toContain('name="userId"');
     expect(await env.EDITIONS.get("edition:user-b")).toBeNull();
   });
