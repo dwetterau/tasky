@@ -593,6 +593,7 @@ summary {
 .preparation a,
 .preparation button {
   color: var(--accent);
+  font: inherit;
   text-decoration: underline;
 }
 .eyebrow {
@@ -793,6 +794,27 @@ export function freshnessBanner(feed: Feed, now: number) {
 }
 export const browserScript = `
 (() => {
+  const renewal = document.querySelector("form[data-auto-renew]");
+  if (renewal instanceof HTMLFormElement) {
+    const renew = async () => {
+      try {
+        const r = await fetch(renewal.action, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
+        });
+        if (r.ok) {
+          location.replace("/");
+          return;
+        }
+        if (r.status === 401) location.replace("/auth/sign-in");
+      } catch {
+        // Keep the manual form available when automatic renewal cannot connect.
+      }
+    };
+    renew();
+    return;
+  }
   let revision = Number(document.body.dataset.revision);
   let failures = 0;
   const poll = async () => {
