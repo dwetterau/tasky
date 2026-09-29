@@ -137,7 +137,7 @@ describe("signals backend", () => {
       idempotencyKey: "old-run",
       operation: {
         type: "activity.occurred",
-        occurredAt: 6 * DAY_MS,
+        occurredAt: 3 * DAY_MS,
       },
       now: 10 * DAY_MS,
       soonWindowMs: DAY_MS,
@@ -246,7 +246,7 @@ describe("signals backend", () => {
       periodBounds,
     });
     expect(first.signal.evaluation).toMatchObject({
-      attention: "due",
+      attention: "ok",
       periodProgress: {
         period: "month",
         completedCount: 1,

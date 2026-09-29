@@ -37,16 +37,22 @@ import { colors, fontSize, radius, sharedStyles, spacing } from "@/lib/theme";
 
 type SignalId = FunctionArgs<typeof taskyApi.signals.get>["signalId"];
 type SignalKind = "activity" | "inventory";
-type ActivityGoalMode = "tracking" | "daily" | "weekly" | "monthly";
+type ActivityGoalMode =
+  | "tracking"
+  | "daily"
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "weekday"
+  | "recency";
 type ActivityPeriod = "day" | "week" | "month";
-
-function periodForGoalMode(
-  mode: Exclude<ActivityGoalMode, "tracking">,
-): ActivityPeriod {
-  if (mode === "daily") return "day";
-  if (mode === "weekly") return "week";
-  return "month";
-}
+type CalendarSchedule = {
+  rrule: string;
+  startDate: string;
+  due:
+    | { type: "evenly_spaced" }
+    | { type: "weekdays"; weekdays: number[] };
+};
 
 function goalModeForPeriod(
   period: ActivityPeriod,
@@ -54,6 +60,91 @@ function goalModeForPeriod(
   if (period === "day") return "daily";
   if (period === "week") return "weekly";
   return "monthly";
+}
+
+const GOAL_OPTIONS: Array<{ value: ActivityGoalMode; label: string }> = [
+  { value: "tracking", label: "None" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "biweekly", label: "Every 2 weeks" },
+  { value: "monthly", label: "Monthly" },
+  { value: "weekday", label: "Weekday" },
+  { value: "recency", label: "After last time" },
+];
+
+const WEEKDAYS = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 7, label: "Sun" },
+];
+
+function localDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function scheduleStartDate(
+  mode: Exclude<ActivityGoalMode, "tracking" | "recency">,
+): string {
+  const date = new Date();
+  if (mode === "weekly" || mode === "biweekly" || mode === "weekday") {
+    const daysSinceMonday = (date.getDay() + 6) % 7;
+    date.setDate(date.getDate() - daysSinceMonday);
+  } else if (mode === "monthly") {
+    date.setDate(1);
+  }
+  return localDate(date);
+}
+
+function scheduleForGoalMode(
+  mode: Exclude<ActivityGoalMode, "tracking" | "recency">,
+  weekday: number,
+): CalendarSchedule {
+  if (mode === "daily") {
+    return {
+      rrule: "FREQ=DAILY",
+      startDate: scheduleStartDate(mode),
+      due: { type: "evenly_spaced" },
+    };
+  }
+  if (mode === "monthly") {
+    return {
+      rrule: "FREQ=MONTHLY",
+      startDate: scheduleStartDate(mode),
+      due: { type: "evenly_spaced" },
+    };
+  }
+  return {
+    rrule:
+      mode === "biweekly"
+        ? "FREQ=WEEKLY;INTERVAL=2;WKST=MO"
+        : "FREQ=WEEKLY;WKST=MO",
+    startDate: scheduleStartDate(mode),
+    due:
+      mode === "weekday"
+        ? { type: "weekdays", weekdays: [weekday] }
+        : { type: "evenly_spaced" },
+  };
+}
+
+function goalModeForSchedule(schedule: CalendarSchedule): ActivityGoalMode {
+  if (schedule.due.type === "weekdays") return "weekday";
+  if (schedule.rrule.includes("FREQ=DAILY")) return "daily";
+  if (schedule.rrule.includes("FREQ=MONTHLY")) return "monthly";
+  return schedule.rrule.includes("INTERVAL=2") ? "biweekly" : "weekly";
+}
+
+function goalWindowLabel(mode: ActivityGoalMode): string {
+  if (mode === "daily") return "day";
+  if (mode === "weekly") return "week";
+  if (mode === "monthly") return "month";
+  return "scheduled window";
 }
 
 type InventoryComparison = "atOrBelow" | "atOrAbove";
@@ -167,6 +258,8 @@ export default function SignalEditPage() {
   const [activityGoalMode, setActivityGoalMode] =
     useState<ActivityGoalMode>("tracking");
   const [targetCount, setTargetCount] = useState("1");
+  const [scheduledWeekday, setScheduledWeekday] = useState(2);
+  const [recencyDays, setRecencyDays] = useState("7");
   const [measurementFields, setMeasurementFields] = useState<
     ActivityMeasurementField[]
   >([]);
@@ -193,6 +286,17 @@ export default function SignalEditPage() {
       if (target?.type === "period") {
         setActivityGoalMode(goalModeForPeriod(target.period));
         setTargetCount(String(target.targetCount));
+      } else if (target?.type === "schedule") {
+        setActivityGoalMode(goalModeForSchedule(target.schedule));
+        setTargetCount(String(target.targetCount));
+        if (target.schedule.due.type === "weekdays") {
+          setScheduledWeekday(target.schedule.due.weekdays[0] ?? 2);
+        }
+      } else if (target?.type === "recency") {
+        setActivityGoalMode("recency");
+        setRecencyDays(
+          String(target.dueAfterMs / (24 * 60 * 60 * 1000)),
+        );
       } else {
         setActivityGoalMode("tracking");
       }
@@ -220,21 +324,35 @@ export default function SignalEditPage() {
       if (kind === "activity") {
         let target:
           | {
-              type: "period";
-              period: ActivityPeriod;
+              type: "schedule";
+              schedule: CalendarSchedule;
               targetCount: number;
             }
+          | { type: "recency"; dueAfterMs: number }
           | undefined;
-        if (activityGoalMode !== "tracking") {
-          const parsedTargetCount = Number(targetCount);
+        if (activityGoalMode === "recency") {
+          const parsedDays = Number(recencyDays);
+          if (!Number.isFinite(parsedDays) || parsedDays <= 0) {
+            throw new Error("Days after the last completion must be positive");
+          }
+          target = {
+            type: "recency",
+            dueAfterMs: parsedDays * 24 * 60 * 60 * 1000,
+          };
+        } else if (activityGoalMode !== "tracking") {
+          const parsedTargetCount =
+            activityGoalMode === "weekday" ? 1 : Number(targetCount);
           if (!Number.isInteger(parsedTargetCount) || parsedTargetCount < 0) {
             throw new Error(
               "Completion target must be a whole number, 0 or greater",
             );
           }
           target = {
-            type: "period",
-            period: periodForGoalMode(activityGoalMode),
+            type: "schedule",
+            schedule: scheduleForGoalMode(
+              activityGoalMode,
+              scheduledWeekday,
+            ),
             targetCount: parsedTargetCount,
           };
         }
@@ -487,27 +605,82 @@ export default function SignalEditPage() {
               <View style={styles.section}>
                 <Text style={sharedStyles.sectionTitle}>Goal</Text>
                 <View style={styles.card}>
-                  <Segmented
-                    value={activityGoalMode}
-                    onChange={setActivityGoalMode}
-                    options={[
-                      { value: "tracking", label: "None" },
-                      { value: "daily", label: "Daily" },
-                      { value: "weekly", label: "Weekly" },
-                      { value: "monthly", label: "Monthly" },
-                    ]}
-                  />
-                  {activityGoalMode !== "tracking" ? (
+                  <View style={styles.chipRow}>
+                    {GOAL_OPTIONS.map((option) => {
+                      const selected = activityGoalMode === option.value;
+                      return (
+                        <TouchableOpacity
+                          key={option.value}
+                          style={[
+                            styles.chip,
+                            selected && styles.chipSelected,
+                          ]}
+                          onPress={() => setActivityGoalMode(option.value)}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              selected && styles.chipTextSelected,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {activityGoalMode === "weekday" ? (
+                    <View style={styles.chipRow}>
+                      {WEEKDAYS.map((weekday) => {
+                        const selected = scheduledWeekday === weekday.value;
+                        return (
+                          <TouchableOpacity
+                            key={weekday.value}
+                            style={[
+                              styles.chip,
+                              selected && styles.chipSelected,
+                            ]}
+                            onPress={() =>
+                              setScheduledWeekday(weekday.value)
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.chipText,
+                                selected && styles.chipTextSelected,
+                              ]}
+                            >
+                              {weekday.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                  {activityGoalMode === "recency" ? (
+                    <NumberField
+                      label="Due this many days after the last completion"
+                      value={recencyDays}
+                      onChangeText={setRecencyDays}
+                      placeholder="7"
+                    />
+                  ) : activityGoalMode !== "tracking" ? (
                     <>
-                      <NumberField
-                        label={`Completions per ${periodForGoalMode(activityGoalMode)}`}
-                        value={targetCount}
-                        onChangeText={setTargetCount}
-                        placeholder="1"
-                      />
+                      {activityGoalMode !== "weekday" ? (
+                        <NumberField
+                          label={
+                            activityGoalMode === "biweekly"
+                              ? "Completions every two weeks"
+                              : `Completions per ${goalWindowLabel(activityGoalMode)}`
+                          }
+                          value={targetCount}
+                          onChangeText={setTargetCount}
+                          placeholder="1"
+                        />
+                      ) : null}
                       <Text style={sharedStyles.muted}>
-                        0 keeps the {periodForGoalMode(activityGoalMode)} window
-                        without making this signal due.
+                        0 keeps the calendar window without making this signal
+                        due. Positive goals are paced across the window.
                       </Text>
                     </>
                   ) : null}

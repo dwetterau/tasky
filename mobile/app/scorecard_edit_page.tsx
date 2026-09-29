@@ -34,9 +34,75 @@ type ScorecardId = FunctionArgs<typeof taskyApi.scorecards.get>["scorecardId"];
 type SignalId = FunctionArgs<typeof taskyApi.signals.get>["signalId"];
 type MemberRole = "required" | "optional";
 type GoalMode = "members" | "times";
+type ScheduleMode =
+  | "continuous"
+  | "daily"
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "weekday";
+type CalendarSchedule = {
+  rrule: string;
+  startDate: string;
+  due:
+    | { type: "evenly_spaced" }
+    | { type: "weekdays"; weekdays: number[] };
+};
 type DraftMember =
   | { type: "signal"; signalId: SignalId; role: MemberRole }
   | { type: "scorecard"; scorecardId: ScorecardId; role: MemberRole };
+
+const SCHEDULE_OPTIONS: Array<{ value: ScheduleMode; label: string }> = [
+  { value: "continuous", label: "Continuous" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "biweekly", label: "Every 2 weeks" },
+  { value: "monthly", label: "Monthly" },
+  { value: "weekday", label: "Weekday" },
+];
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function localDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function scheduleForMode(
+  mode: Exclude<ScheduleMode, "continuous">,
+  weekday: number,
+): CalendarSchedule {
+  const date = new Date();
+  if (mode === "weekly" || mode === "biweekly" || mode === "weekday") {
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  } else if (mode === "monthly") {
+    date.setDate(1);
+  }
+  return {
+    rrule:
+      mode === "daily"
+        ? "FREQ=DAILY"
+        : mode === "monthly"
+          ? "FREQ=MONTHLY"
+          : mode === "biweekly"
+            ? "FREQ=WEEKLY;INTERVAL=2;WKST=MO"
+            : "FREQ=WEEKLY;WKST=MO",
+    startDate: localDate(date),
+    due:
+      mode === "weekday"
+        ? { type: "weekdays", weekdays: [weekday] }
+        : { type: "evenly_spaced" },
+  };
+}
+
+function modeForSchedule(schedule: CalendarSchedule): ScheduleMode {
+  if (schedule.due.type === "weekdays") return "weekday";
+  if (schedule.rrule.includes("FREQ=DAILY")) return "daily";
+  if (schedule.rrule.includes("FREQ=MONTHLY")) return "monthly";
+  return schedule.rrule.includes("INTERVAL=2") ? "biweekly" : "weekly";
+}
 
 function Segmented<T extends string>({
   value,
@@ -122,6 +188,9 @@ export default function ScorecardEditPage() {
   const [members, setMembers] = useState<DraftMember[]>([]);
   const [goalMode, setGoalMode] = useState<GoalMode>("members");
   const [goalCount, setGoalCount] = useState("0");
+  const [scheduleMode, setScheduleMode] =
+    useState<ScheduleMode>("continuous");
+  const [scheduledWeekday, setScheduledWeekday] = useState(2);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -188,6 +257,14 @@ export default function ScorecardEditPage() {
     } else {
       setGoalMode("members");
       setGoalCount(String(scorecard.data.optionalQuota));
+    }
+    if (scorecard.data.schedule) {
+      setScheduleMode(modeForSchedule(scorecard.data.schedule));
+      if (scorecard.data.schedule.due.type === "weekdays") {
+        setScheduledWeekday(scorecard.data.schedule.due.weekdays[0] ?? 2);
+      }
+    } else {
+      setScheduleMode("continuous");
     }
   }, [scorecard.data]);
 
@@ -289,6 +366,10 @@ export default function ScorecardEditPage() {
     }
     const optionalQuota = goalMode === "members" ? parsedGoal : 0;
     const targetCount = goalMode === "times" ? parsedGoal : null;
+    const schedule =
+      scheduleMode === "continuous"
+        ? null
+        : scheduleForMode(scheduleMode, scheduledWeekday);
     setSaving(true);
     setError(null);
     try {
@@ -300,6 +381,7 @@ export default function ScorecardEditPage() {
           members,
           optionalQuota,
           targetCount,
+          schedule,
         });
       } else {
         await createScorecard({
@@ -308,6 +390,7 @@ export default function ScorecardEditPage() {
           members,
           optionalQuota,
           ...(targetCount !== null ? { targetCount } : {}),
+          ...(schedule !== null ? { schedule } : {}),
         });
       }
       router.back();
@@ -484,6 +567,43 @@ export default function ScorecardEditPage() {
                   : "Create another scorecard to nest it here."}
             </Text>
           ) : null}
+        </View>
+
+        <View style={sharedStyles.card}>
+          <Text style={styles.label}>Schedule</Text>
+          <Segmented
+            value={scheduleMode}
+            onChange={setScheduleMode}
+            options={SCHEDULE_OPTIONS.slice(0, 3)}
+          />
+          <Segmented
+            value={scheduleMode}
+            onChange={setScheduleMode}
+            options={SCHEDULE_OPTIONS.slice(3)}
+          />
+          {scheduleMode === "weekday" ? (
+            <>
+              <Segmented
+                value={String(scheduledWeekday)}
+                onChange={(value) => setScheduledWeekday(Number(value))}
+                options={WEEKDAYS.slice(0, 4).map((label, index) => ({
+                  value: String(index + 1),
+                  label,
+                }))}
+              />
+              <Segmented
+                value={String(scheduledWeekday)}
+                onChange={(value) => setScheduledWeekday(Number(value))}
+                options={WEEKDAYS.slice(4).map((label, index) => ({
+                  value: String(index + 5),
+                  label,
+                }))}
+              />
+            </>
+          ) : null}
+          <Text style={sharedStyles.muted}>
+            Scheduled scorecards become due only as their checkpoints arrive.
+          </Text>
         </View>
 
         <View style={sharedStyles.card}>

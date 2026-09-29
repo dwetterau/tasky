@@ -290,7 +290,11 @@ function TodayCard() {
                     {
                       backgroundColor: scorecard.evaluation.isComplete
                         ? colors.systemGreen
-                        : (scorecard.tags[0]?.color ?? colors.systemBlue),
+                        : scorecard.evaluation.attention === "due"
+                          ? colors.systemRed
+                          : scorecard.evaluation.attention === "soon"
+                            ? colors.systemOrange
+                            : (scorecard.tags[0]?.color ?? colors.systemBlue),
                       width: `${Math.min(100, Math.max(0, scorecard.evaluation.ratio * 100))}%`,
                     },
                   ]}

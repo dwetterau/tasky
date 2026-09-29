@@ -11,6 +11,14 @@ const DEFAULT_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type ScorecardMemberRole = "required" | "optional";
 
+type CalendarSchedule = {
+  rrule: string;
+  startDate: string;
+  due:
+    | { type: "evenly_spaced" }
+    | { type: "weekdays"; weekdays: number[] };
+};
+
 type ScorecardMemberInput =
   | {
       type: "signal";
@@ -31,6 +39,7 @@ type ManageScorecardOperation =
       members: ScorecardMemberInput[];
       optionalQuota: number;
       targetCount?: number;
+      schedule?: CalendarSchedule;
     }
   | {
       type: "scorecard.update";
@@ -40,6 +49,7 @@ type ManageScorecardOperation =
       members?: ScorecardMemberInput[];
       optionalQuota?: number;
       targetCount?: number | null;
+      schedule?: CalendarSchedule | null;
     }
   | {
       type: "scorecard.archive";
@@ -106,6 +116,43 @@ const membersSchema = {
   },
 };
 
+const calendarScheduleSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["rrule", "startDate", "due"],
+  properties: {
+    rrule: { type: "string" },
+    startDate: {
+      type: "string",
+      pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+    },
+    due: {
+      oneOf: [
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["type"],
+          properties: { type: { const: "evenly_spaced" } },
+        },
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["type", "weekdays"],
+          properties: {
+            type: { const: "weekdays" },
+            weekdays: {
+              type: "array",
+              minItems: 1,
+              uniqueItems: true,
+              items: { type: "integer", minimum: 1, maximum: 7 },
+            },
+          },
+        },
+      ],
+    },
+  },
+};
+
 export const scorecardToolDescriptors: McpToolDescriptor[] = [
   {
     name: "readScorecards",
@@ -141,7 +188,7 @@ export const scorecardToolDescriptors: McpToolDescriptor[] = [
   {
     name: "manageScorecard",
     description:
-      "Create, update, archive, or restore a scorecard. Members are an ordered list of signals or other scorecards with required or optional roles. Signal members may omit type or use type: signal. Nested scorecards use type: scorecard and scorecardId. optionalQuota is how many optional members must be fully complete when targetCount is omitted. targetCount is a session goal: member counts are summed (period occurrences, nested card count, or 1 if complete). On update, targetCount null clears it.",
+      "Create, update, archive, or restore a scorecard. Members are an ordered list of signals or other scorecards with required or optional roles. optionalQuota is how many optional members must be complete when targetCount is omitted. targetCount sums member contributions. schedule optionally adds an RRULE-backed calendar window and paced due checkpoints; null clears it on update.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -160,6 +207,7 @@ export const scorecardToolDescriptors: McpToolDescriptor[] = [
                 members: membersSchema,
                 optionalQuota: { type: "integer", minimum: 0 },
                 targetCount: { type: "integer", minimum: 1 },
+                schedule: calendarScheduleSchema,
               },
             },
             {
@@ -178,6 +226,9 @@ export const scorecardToolDescriptors: McpToolDescriptor[] = [
                     { type: "integer", minimum: 1 },
                     { type: "null" },
                   ],
+                },
+                schedule: {
+                  anyOf: [calendarScheduleSchema, { type: "null" }],
                 },
               },
             },
@@ -384,6 +435,79 @@ function parseMembers(
   return { value: members };
 }
 
+function parseCalendarSchedule(
+  rpcId: unknown,
+  value: unknown,
+  allowNull: boolean,
+): { value?: CalendarSchedule | null; error?: Response } {
+  if (value === undefined) return {};
+  if (value === null) {
+    return allowNull
+      ? { value: null }
+      : { error: mcpError(rpcId, -32602, "schedule cannot be null") };
+  }
+  const schedule = parseStrictObject(
+    rpcId,
+    value,
+    ["rrule", "startDate", "due"],
+    "schedule",
+  );
+  if (schedule.error || !schedule.value) return { error: schedule.error };
+  if (
+    typeof schedule.value.rrule !== "string" ||
+    typeof schedule.value.startDate !== "string"
+  ) {
+    return {
+      error: mcpError(
+        rpcId,
+        -32602,
+        "schedule requires rrule and startDate strings",
+      ),
+    };
+  }
+  const due = parseStrictObject(
+    rpcId,
+    schedule.value.due,
+    ["type", "weekdays"],
+    "schedule.due",
+  );
+  if (due.error || !due.value) return { error: due.error };
+  if (due.value.type === "evenly_spaced") {
+    return {
+      value: {
+        rrule: schedule.value.rrule,
+        startDate: schedule.value.startDate,
+        due: { type: "evenly_spaced" },
+      },
+    };
+  }
+  if (
+    due.value.type !== "weekdays" ||
+    !Array.isArray(due.value.weekdays) ||
+    !due.value.weekdays.every(
+      (weekday) =>
+        typeof weekday === "number" &&
+        Number.isInteger(weekday) &&
+        weekday >= 1 &&
+        weekday <= 7,
+    )
+  ) {
+    return {
+      error: mcpError(rpcId, -32602, "schedule.due weekdays are invalid"),
+    };
+  }
+  return {
+    value: {
+      rrule: schedule.value.rrule,
+      startDate: schedule.value.startDate,
+      due: {
+        type: "weekdays",
+        weekdays: due.value.weekdays as number[],
+      },
+    },
+  };
+}
+
 function parseManageOperation(
   rpcId: unknown,
   input: unknown,
@@ -398,6 +522,7 @@ function parseManageOperation(
       "members",
       "optionalQuota",
       "targetCount",
+      "schedule",
       "scorecardId",
       "archived",
     ],
@@ -447,6 +572,12 @@ function parseManageOperation(
     if (targetCount.error) {
       return { error: targetCount.error };
     }
+    const schedule = parseCalendarSchedule(
+      rpcId,
+      parsed.value.schedule,
+      false,
+    );
+    if (schedule.error) return { error: schedule.error };
     return {
       value: {
         type: "scorecard.create",
@@ -455,6 +586,7 @@ function parseManageOperation(
         members: members.value,
         optionalQuota: quota.value,
         targetCount: targetCount.value ?? undefined,
+        schedule: schedule.value ?? undefined,
       },
     };
   }
@@ -510,6 +642,12 @@ function parseManageOperation(
     if (targetCount.error) {
       return { error: targetCount.error };
     }
+    const schedule = parseCalendarSchedule(
+      rpcId,
+      parsed.value.schedule,
+      true,
+    );
+    if (schedule.error) return { error: schedule.error };
     return {
       value: {
         type: "scorecard.update",
@@ -519,6 +657,7 @@ function parseManageOperation(
         members: members.value,
         optionalQuota,
         targetCount: targetCount.value,
+        schedule: schedule.value,
       },
     };
   }

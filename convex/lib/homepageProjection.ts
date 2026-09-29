@@ -7,8 +7,14 @@ import {
   taskyPayloadSchema,
   type TaskyPayload,
 } from "../../packages/home-feed/src/index";
-import { evaluateSignal, type ActivityPeriodProgress } from "./signalStatus";
-import { evaluateScorecard, type ScorecardEvaluation } from "./scorecardStatus";
+import { evaluateSignal } from "./signalStatus";
+import {
+  evaluateScorecard,
+  withScorecardAttention,
+  type ScorecardEvaluation,
+} from "./scorecardStatus";
+import { getActivityPeriodProgress } from "./recurrenceData";
+import { calendarProgress, calendarWindow } from "./recurrence";
 
 const statuses = [
   "not_started",
@@ -84,38 +90,12 @@ export async function projectHomepage(
   }
   const evaluated = await Promise.all(
     signals.slice(0, 60).map(async (signal) => {
-      let progress: ActivityPeriodProgress | undefined;
-      if (
-        signal.model.kind === "activity" &&
-        signal.model.target?.type === "period"
-      ) {
-        const { period, targetCount } = signal.model.target;
-        const bounds = dates[period];
-        const entries = await ctx.db
-          .query("signalEntries")
-          .withIndex("by_signal_effective_at", (q) =>
-            q
-              .eq("signalId", signal._id)
-              .gte("effectiveAt", bounds.startAt)
-              .lt("effectiveAt", bounds.endAt),
-          )
-          .take(201);
-        if (entries.length > 200) truncated = true;
-        const completedCount = entries
-          .slice(0, 200)
-          .filter(
-            (entry) =>
-              entry.userId === userId &&
-              entry.operation.type === "activity.occurred",
-          ).length;
-        progress = {
-          period,
-          ...bounds,
-          targetCount,
-          completedCount,
-          remainingCount: Math.max(0, targetCount - completedCount),
-        };
-      }
+      const progress = await getActivityPeriodProgress(
+        ctx,
+        signal,
+        now,
+        timezone,
+      );
       const evaluation = evaluateSignal(signal.model, now, 86400_000, progress);
       return {
         signal,
@@ -161,10 +141,36 @@ export async function projectHomepage(
         count: item?.count ?? 0,
       };
     });
-    const result = evaluateScorecard(
+    const baseResult = evaluateScorecard(
       members,
       card.optionalQuota,
       card.targetCount,
+    );
+    const requiredMembers = members.filter(
+      (member) => member.role === "required",
+    );
+    const pacingTarget =
+      card.targetCount ??
+      Math.max(1, requiredMembers.length + card.optionalQuota);
+    const pacingCompleted =
+      card.targetCount !== undefined
+        ? baseResult.count
+        : requiredMembers.filter((member) => member.ratio >= 1).length +
+          Math.min(card.optionalQuota, baseResult.optionalDoneCount);
+    const progress =
+      card.schedule === undefined
+        ? undefined
+        : calendarProgress(
+            calendarWindow(card.schedule, pacingTarget, now, timezone),
+            pacingCompleted,
+            pacingTarget,
+            now,
+          );
+    const result = withScorecardAttention(
+      baseResult,
+      now,
+      86400_000,
+      progress,
     );
     memo.set(id, result);
     return result;

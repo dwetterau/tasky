@@ -11,6 +11,20 @@ export type ScorecardEvaluation = {
   isComplete: boolean;
   optionalDoneCount: number;
   count: number;
+  attention?: "ok" | "soon" | "due";
+  actionAt?: number;
+  reason?: string;
+  scheduleProgress?: {
+    period: "day" | "week" | "month";
+    startAt: number;
+    endAt: number;
+    completedCount: number;
+    targetCount: number;
+    remainingCount: number;
+    requiredCountByNow: number;
+    overdueCount: number;
+    nextDueAt?: number;
+  };
 };
 
 function clampedRatio(ratio: number): number {
@@ -96,5 +110,45 @@ export function evaluateScorecard(
     isComplete,
     optionalDoneCount,
     count,
+  };
+}
+
+export function withScorecardAttention(
+  evaluation: ScorecardEvaluation,
+  now: number,
+  soonWindowMs: number,
+  scheduleProgress?: NonNullable<
+    ScorecardEvaluation["scheduleProgress"]
+  >,
+): ScorecardEvaluation {
+  if (!scheduleProgress) {
+    return {
+      ...evaluation,
+      attention: evaluation.isComplete ? "ok" : "due",
+      reason: evaluation.isComplete ? "Scorecard is complete" : "Scorecard is incomplete",
+    };
+  }
+  const nextDueAt = scheduleProgress.nextDueAt;
+  const attention =
+    evaluation.isComplete
+      ? "ok"
+      : scheduleProgress.overdueCount > 0 ||
+          scheduleProgress.completedCount >= scheduleProgress.targetCount
+        ? "due"
+        : nextDueAt !== undefined && nextDueAt - now <= soonWindowMs
+          ? "soon"
+          : "ok";
+  return {
+    ...evaluation,
+    attention,
+    actionAt: evaluation.isComplete ? undefined : nextDueAt,
+    reason:
+      !evaluation.isComplete &&
+      scheduleProgress.completedCount >= scheduleProgress.targetCount
+        ? "Required members are still incomplete"
+        : scheduleProgress.overdueCount > 0
+        ? `${scheduleProgress.completedCount} of ${scheduleProgress.requiredCountByNow} due checkpoints completed`
+        : `${scheduleProgress.completedCount} of ${scheduleProgress.targetCount} completed this ${scheduleProgress.period}`,
+    scheduleProgress,
   };
 }

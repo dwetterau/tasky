@@ -24,6 +24,8 @@ import type * as lib_homepageProjection from "../lib/homepageProjection.js";
 import type * as lib_homepageTransport from "../lib/homepageTransport.js";
 import type * as lib_mcp from "../lib/mcp.js";
 import type * as lib_portfolioHistory from "../lib/portfolioHistory.js";
+import type * as lib_recurrence from "../lib/recurrence.js";
+import type * as lib_recurrenceData from "../lib/recurrenceData.js";
 import type * as lib_scorecardMembers from "../lib/scorecardMembers.js";
 import type * as lib_scorecardStatus from "../lib/scorecardStatus.js";
 import type * as lib_signalStatus from "../lib/signalStatus.js";
@@ -67,6 +69,8 @@ declare const fullApi: ApiFromModules<{
   "lib/homepageTransport": typeof lib_homepageTransport;
   "lib/mcp": typeof lib_mcp;
   "lib/portfolioHistory": typeof lib_portfolioHistory;
+  "lib/recurrence": typeof lib_recurrence;
+  "lib/recurrenceData": typeof lib_recurrenceData;
   "lib/scorecardMembers": typeof lib_scorecardMembers;
   "lib/scorecardStatus": typeof lib_scorecardStatus;
   "lib/signalStatus": typeof lib_signalStatus;

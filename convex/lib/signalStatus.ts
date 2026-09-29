@@ -12,6 +12,17 @@ export type ActivityTarget =
       type: "period";
       period: "day" | "week" | "month";
       targetCount: number;
+    }
+  | {
+      type: "schedule";
+      schedule: {
+        rrule: string;
+        startDate: string;
+        due:
+          | { type: "evenly_spaced" }
+          | { type: "weekdays"; weekdays: number[] };
+      };
+      targetCount: number;
     };
 
 export type ActivitySignalModel = {
@@ -63,6 +74,9 @@ export type ActivityPeriodProgress = {
   completedCount: number;
   targetCount: number;
   remainingCount: number;
+  requiredCountByNow?: number;
+  overdueCount?: number;
+  nextDueAt?: number;
 };
 
 export type ProjectedInventory = {
@@ -181,7 +195,10 @@ function evaluateActivity(
   soonWindowMs: number,
   periodProgress?: ActivityPeriodProgress,
 ): SignalEvaluationBase {
-  if (model.target?.type === "period") {
+  if (
+    model.target?.type === "period" ||
+    model.target?.type === "schedule"
+  ) {
     if (!periodProgress) {
       return {
         attention: "unknown",
@@ -196,20 +213,37 @@ function evaluateActivity(
     const targetMet =
       hasTarget && periodProgress.completedCount >= periodProgress.targetCount;
     const loggedThisPeriod = periodProgress.completedCount > 0;
+    const requiredCountByNow =
+      periodProgress.requiredCountByNow ?? periodProgress.targetCount;
+    const overdueCount = Math.max(
+      0,
+      periodProgress.overdueCount ??
+        requiredCountByNow - periodProgress.completedCount,
+    );
+    const nextDueAt = periodProgress.nextDueAt ?? periodProgress.endAt;
+    const remainingToNext =
+      nextDueAt === undefined ? undefined : nextDueAt - now;
+    const attention: SignalAttention = targetMet
+      ? "ok"
+      : overdueCount > 0
+        ? "due"
+        : remainingToNext !== undefined && remainingToNext <= soonWindowMs
+          ? "soon"
+          : "ok";
     const reason = hasTarget
-      ? `${periodProgress.completedCount} of ${periodProgress.targetCount} completed this ${periodProgress.period}`
+      ? overdueCount > 0
+        ? `${periodProgress.completedCount} of ${requiredCountByNow} due checkpoints completed`
+        : `${periodProgress.completedCount} of ${periodProgress.targetCount} completed this ${periodProgress.period}`
       : loggedThisPeriod
         ? `Recorded this ${periodProgress.period}`
         : `No activity this ${periodProgress.period}`;
     return {
-      attention: targetMet
-        ? "ok"
-        : hasTarget
-          ? "due"
-          : loggedThisPeriod
-            ? "ok"
-            : "unknown",
-      actionAt: hasTarget && !targetMet ? periodProgress.endAt : undefined,
+      attention: hasTarget
+        ? attention
+        : loggedThisPeriod
+          ? "ok"
+          : "unknown",
+      actionAt: hasTarget && !targetMet ? nextDueAt : undefined,
       reason,
       elapsedMs:
         model.lastOccurredAt === undefined
@@ -294,7 +328,10 @@ export function signalCompletionRatio(
   evaluation: SignalEvaluationBase,
 ): number {
   if (model.kind === "activity") {
-    if (model.target?.type === "period") {
+    if (
+      model.target?.type === "period" ||
+      model.target?.type === "schedule"
+    ) {
       const progress = evaluation.periodProgress;
       if (!progress) {
         return 0;

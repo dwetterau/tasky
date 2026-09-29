@@ -358,8 +358,16 @@ export function memberContributionCount(
 }
 
 export function scorecardHeadline(scorecard: ScorecardItem): string {
+  const periodLabel =
+    scorecard.evaluation.scheduleProgress?.period === "day"
+      ? "today"
+      : scorecard.evaluation.scheduleProgress?.period === "month"
+        ? "this month"
+        : scorecard.evaluation.scheduleProgress?.period === "week"
+          ? "this week"
+          : "current";
   if (scorecard.targetCount !== undefined) {
-    return `${scorecard.evaluation.count} of ${scorecard.targetCount}`;
+    return `${scorecard.evaluation.count} of ${scorecard.targetCount} · ${periodLabel}`;
   }
   if (scorecard.optionalQuota > 0) {
     const sessions = scorecard.evaluation.count;
@@ -367,7 +375,7 @@ export function scorecardHeadline(scorecard: ScorecardItem): string {
       scorecard.evaluation.optionalDoneCount % scorecard.optionalQuota;
     const inBundle =
       remainder === 0 && sessions > 0 ? scorecard.optionalQuota : remainder;
-    return `${sessions} this week · ${inBundle}/${scorecard.optionalQuota}`;
+    return `${sessions} ${periodLabel} · ${inBundle}/${scorecard.optionalQuota}`;
   }
   if (scorecard.evaluation.isComplete) {
     return "Done";
@@ -411,7 +419,8 @@ export function signalPrimaryText(
 ): string {
   if (signal.model.kind === "activity") {
     if (
-      signal.model.target?.type === "period" &&
+      (signal.model.target?.type === "period" ||
+        signal.model.target?.type === "schedule") &&
       signal.evaluation.periodProgress
     ) {
       const progress = signal.evaluation.periodProgress;
@@ -445,10 +454,14 @@ export function signalSecondaryText(
 ): string {
   if (
     signal.model.kind === "activity" &&
-    signal.model.target?.type === "period" &&
+    (signal.model.target?.type === "period" ||
+      signal.model.target?.type === "schedule") &&
     signal.evaluation.periodProgress
   ) {
     if (signal.evaluation.isComplete) return "done";
+    if (signal.evaluation.actionAt !== undefined) {
+      return formatFuture(signal.evaluation.actionAt, now);
+    }
     const periodEnd = signal.evaluation.periodProgress.endAt;
     const hours = Math.max(1, Math.ceil((periodEnd - now) / (60 * 60 * 1000)));
     return hours < 24

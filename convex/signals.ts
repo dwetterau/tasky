@@ -28,11 +28,15 @@ import {
   DAY_MS,
   evaluateSignal,
   materializeInventory,
-  type ActivityPeriodProgress,
   type ActivityTarget,
   type InventorySignalModel,
   type SignalAttention,
 } from "./lib/signalStatus";
+import { validateCalendarSchedule } from "./lib/recurrence";
+import {
+  getActivityPeriodProgress,
+  resolveUserTimezone,
+} from "./lib/recurrenceData";
 
 const signalKind = v.union(v.literal("activity"), v.literal("inventory"));
 const activityTargetInput = v.optional(v.union(activityTarget, v.null()));
@@ -61,10 +65,6 @@ type PeriodBoundsInput = {
   day: PeriodRange;
   week: PeriodRange;
   month?: PeriodRange;
-};
-
-type PeriodBounds = PeriodBoundsInput & {
-  month: PeriodRange;
 };
 
 const recordOperationInput = v.union(
@@ -97,6 +97,9 @@ const signalEvaluationValidator = v.object({
       completedCount: v.number(),
       targetCount: v.number(),
       remainingCount: v.number(),
+      requiredCountByNow: v.optional(v.number()),
+      overdueCount: v.optional(v.number()),
+      nextDueAt: v.optional(v.number()),
     }),
   ),
   projectedQuantity: v.optional(v.number()),
@@ -540,6 +543,17 @@ function validateActivityTarget(target: ActivityTarget | undefined): void {
   if (!Number.isInteger(target.targetCount) || target.targetCount < 0) {
     throw new Error("target.targetCount must be a non-negative integer");
   }
+  if (target.type === "schedule") {
+    validateCalendarSchedule(target.schedule);
+    if (
+      target.schedule.due.type === "weekdays" &&
+      target.targetCount !== target.schedule.due.weekdays.length
+    ) {
+      throw new Error(
+        "target.targetCount must match the number of scheduled weekdays",
+      );
+    }
+  }
 }
 
 function validateThreshold(threshold: {
@@ -573,92 +587,6 @@ function validateFlow(
 function validateReadClock(now: number, soonWindowMs: number): void {
   assertFiniteNumber(now, "now");
   assertNonNegative(soonWindowMs, "soonWindowMs");
-}
-
-function utcPeriodBounds(now: number): PeriodBounds {
-  const date = new Date(now);
-  const dayStart = Date.UTC(
-    date.getUTCFullYear(),
-    date.getUTCMonth(),
-    date.getUTCDate(),
-  );
-  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
-  const weekStart = dayStart - daysSinceMonday * DAY_MS;
-  const monthStart = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
-  const monthEnd = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
-  return {
-    day: {
-      startAt: dayStart,
-      endAt: dayStart + DAY_MS,
-    },
-    week: {
-      startAt: weekStart,
-      endAt: weekStart + 7 * DAY_MS,
-    },
-    month: {
-      startAt: monthStart,
-      endAt: monthEnd,
-    },
-  };
-}
-
-function resolvePeriodBounds(
-  now: number,
-  provided: PeriodBoundsInput | undefined,
-): PeriodBounds {
-  const fallback = utcPeriodBounds(now);
-  const bounds: PeriodBounds = {
-    day: provided?.day ?? fallback.day,
-    week: provided?.week ?? fallback.week,
-    month: provided?.month ?? fallback.month,
-  };
-  for (const [name, range] of Object.entries(bounds)) {
-    assertFiniteNumber(range.startAt, `periodBounds.${name}.startAt`);
-    assertFiniteNumber(range.endAt, `periodBounds.${name}.endAt`);
-    if (
-      range.startAt >= range.endAt ||
-      now < range.startAt ||
-      now >= range.endAt
-    ) {
-      throw new Error(
-        `periodBounds.${name} must be an ordered range containing now`,
-      );
-    }
-  }
-  return bounds;
-}
-
-async function getActivityPeriodProgress(
-  ctx: QueryCtx | MutationCtx,
-  signal: Doc<"signals">,
-  periodBounds: PeriodBounds,
-): Promise<ActivityPeriodProgress | undefined> {
-  if (
-    signal.model.kind !== "activity" ||
-    signal.model.target?.type !== "period"
-  ) {
-    return undefined;
-  }
-  const target = signal.model.target;
-  const range = periodBounds[target.period];
-  const entries = await ctx.db
-    .query("signalEntries")
-    .withIndex("by_signal_effective_at", (q) =>
-      q
-        .eq("signalId", signal._id)
-        .gte("effectiveAt", range.startAt)
-        .lt("effectiveAt", range.endAt),
-    )
-    .collect();
-  const completedCount = entries.length;
-  return {
-    period: target.period,
-    startAt: range.startAt,
-    endAt: range.endAt,
-    completedCount,
-    targetCount: target.targetCount,
-    remainingCount: Math.max(0, target.targetCount - completedCount),
-  };
 }
 
 async function loadScorecardMemberships(
@@ -712,7 +640,7 @@ async function toDashboardItem(
   signal: Doc<"signals">,
   now: number,
   soonWindowMs: number,
-  periodBounds: PeriodBounds,
+  timezone: string,
   memberships?: Map<
     Id<"signals">,
     Array<{
@@ -735,7 +663,8 @@ async function toDashboardItem(
   const periodProgress = await getActivityPeriodProgress(
     ctx,
     signal,
-    periodBounds,
+    now,
+    timezone,
   );
   const scorecards =
     memberships ?? (await loadScorecardMemberships(ctx, userId));
@@ -863,7 +792,7 @@ async function listDashboardForUser(
   },
 ): Promise<SignalDashboardItem[]> {
   validateReadClock(args.now, args.soonWindowMs);
-  const periodBounds = resolvePeriodBounds(args.now, args.periodBounds);
+  const timezone = await resolveUserTimezone(ctx, args.userId);
   const matchingTagIds =
     args.tagId === undefined
       ? undefined
@@ -902,7 +831,7 @@ async function listDashboardForUser(
           signal,
           args.now,
           args.soonWindowMs,
-          periodBounds,
+          timezone,
           memberships,
         ),
       ),
@@ -1235,7 +1164,7 @@ async function recordSignalForUser(
   signal: SignalDashboardItem;
 }> {
   validateReadClock(args.now, args.soonWindowMs);
-  const periodBounds = resolvePeriodBounds(args.now, args.periodBounds);
+  const timezone = await resolveUserTimezone(ctx, args.userId);
   const idempotencyKey = normalizeIdempotencyKey(args.idempotencyKey);
   const existing = await ctx.db
     .query("signalEntries")
@@ -1272,7 +1201,7 @@ async function recordSignalForUser(
         existingSignal,
         args.now,
         args.soonWindowMs,
-        periodBounds,
+        timezone,
       ),
     };
   }
@@ -1378,7 +1307,7 @@ async function recordSignalForUser(
       updatedSignal,
       args.now,
       args.soonWindowMs,
-      periodBounds,
+      timezone,
     ),
   };
 }
@@ -1574,14 +1503,14 @@ export const get = query({
     if (!signal || signal.userId !== userId) {
       return null;
     }
-    const periodBounds = resolvePeriodBounds(args.now, args.periodBounds);
+    const timezone = await resolveUserTimezone(ctx, userId);
     return await toDashboardItem(
       ctx,
       userId,
       signal,
       args.now,
       args.soonWindowMs,
-      periodBounds,
+      timezone,
     );
   },
 });

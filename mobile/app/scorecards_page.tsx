@@ -87,7 +87,11 @@ function ScorecardRow({ scorecard }: { scorecard: ScorecardItem }) {
               width: `${Math.min(100, Math.max(0, scorecard.evaluation.ratio * 100))}%`,
               backgroundColor: scorecard.evaluation.isComplete
                 ? colors.systemGreen
-                : colors.systemBlue,
+                : scorecard.evaluation.attention === "due"
+                  ? colors.systemRed
+                  : scorecard.evaluation.attention === "soon"
+                    ? colors.systemOrange
+                    : colors.systemBlue,
             },
           ]}
         />

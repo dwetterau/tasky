@@ -198,6 +198,14 @@ function ConfiguredTaskyAuthProvider({ children }: { children: ReactNode }) {
     }
   }, [convexAuthenticated, isPending, session]);
 
+  useEffect(() => {
+    if (!convexAuthenticated || !taskyConvex) return;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (timezone) {
+      void taskyConvex.mutation(taskyApi.users.updateTimezone, { timezone });
+    }
+  }, [convexAuthenticated]);
+
   const connect = useCallback(async () => {
     setError(null);
     try {

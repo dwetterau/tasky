@@ -338,7 +338,11 @@ export default function ScorecardPage() {
                   width: `${Math.min(100, Math.max(0, card.evaluation.ratio * 100))}%`,
                   backgroundColor: card.evaluation.isComplete
                     ? colors.systemGreen
-                    : colors.systemBlue,
+                    : card.evaluation.attention === "due"
+                      ? colors.systemRed
+                      : card.evaluation.attention === "soon"
+                        ? colors.systemOrange
+                        : colors.systemBlue,
                 },
               ]}
             />
