@@ -62,9 +62,14 @@ increments per publication so automatic updates work throughout the day.
 
 The export reuses Tasky's saved Airtable Positions view and the user's existing
 portfolio credentials. It includes total value, unrealized return and the five
-largest positions. “Checked” is the snapshot retrieval time, not a market quote
-timestamp. Failed reads preserve the last successful snapshot and its age;
-missing credentials hide the module.
+largest positions initially, with up to 20 holdings embedded for expansion and
+client-side sorting. Every export refreshes current values and cost basis from
+the Positions view. Recent day-return data is fetched in one bounded batch only
+for the first detailed snapshot and after a successful price sync, then retained
+in the saved snapshot between exports. Page loads make no provider requests.
+“Checked” is the snapshot retrieval time, not a market quote timestamp. Failed
+reads preserve the last successful snapshot and its age; missing credentials
+hide the module.
 
 **Sync prices** posts to `/api/sync-prices`. The Worker checks the homepage
 session and calls Convex `POST /api/homepage/sync-prices` with the same

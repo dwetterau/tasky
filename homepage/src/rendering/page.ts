@@ -208,8 +208,7 @@ p {
 }
 .scorecards,
 .signal-list,
-.logged-signals,
-.holdings {
+.logged-signals {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -553,18 +552,98 @@ summary {
 .portfolio-return span {
   font-size: 14px;
 }
-.holdings-label {
+.portfolio-market-time {
+  margin-top: 8px;
+}
+.holdings-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 24px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--ink);
 }
-.holdings {
-  margin-bottom: 16px;
+.holdings-heading .meta {
+  font-size: 9px;
 }
-.holdings li {
-  padding: 12px 0;
+.portfolio-table-scroll {
+  overflow-x: auto;
+}
+.portfolio-table {
+  width: 100%;
+  min-width: 360px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font:
+    11px/1.35 system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.portfolio-table th,
+.portfolio-table td {
+  padding: 9px 5px;
   border-bottom: 1px solid var(--rule);
+  text-align: right;
+  vertical-align: middle;
+  white-space: nowrap;
 }
-.holdings .row {
-  font-size: 12px;
+.portfolio-table th:first-child,
+.portfolio-table td:first-child {
+  width: 30%;
+  padding-left: 0;
+  text-align: left;
+}
+.portfolio-table th:last-child,
+.portfolio-table td:last-child {
+  padding-right: 0;
+}
+.portfolio-table th {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.portfolio-table th button {
+  width: 100%;
+  text-align: inherit;
+}
+.portfolio-table th[aria-sort="ascending"],
+.portfolio-table th[aria-sort="descending"] {
+  color: var(--ink);
+}
+.sort-arrow {
+  display: inline-block;
+  min-width: 8px;
+  color: var(--accent);
+}
+.portfolio-holding {
+  overflow: hidden;
+}
+.portfolio-holding strong,
+.portfolio-holding span,
+.portfolio-table td > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.portfolio-holding span,
+.portfolio-table td > span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 400;
+}
+.portfolio-table[data-expanded="false"] tbody tr:nth-child(n + 6) {
+  display: none;
+}
+.portfolio-expand {
+  margin-top: 10px;
+  color: var(--accent);
+  font:
+    10px system-ui,
+    sans-serif;
 }
 .empty {
   color: var(--muted);
@@ -815,6 +894,58 @@ export const browserScript = `
     renew();
     return;
   }
+  document.addEventListener("click", (event) => {
+    const element = event.target instanceof Element ? event.target : null;
+    const expand = element?.closest("[data-portfolio-expand]");
+    if (expand instanceof HTMLButtonElement) {
+      const table = expand
+        .closest(".module")
+        ?.querySelector("[data-portfolio-table]");
+      if (!(table instanceof HTMLTableElement)) return;
+      const open = table.dataset.expanded !== "true";
+      table.dataset.expanded = String(open);
+      expand.ariaExpanded = String(open);
+      expand.textContent = open
+        ? "Show fewer"
+        : "Show all " + table.tBodies[0].rows.length;
+      return;
+    }
+    const sort = element?.closest("[data-portfolio-sort]");
+    if (!(sort instanceof HTMLButtonElement)) return;
+    const table = sort.closest("[data-portfolio-table]");
+    if (!(table instanceof HTMLTableElement)) return;
+    const key = sort.dataset.portfolioSort;
+    if (!key) return;
+    const direction = sort.dataset.direction
+      ? sort.dataset.direction === "asc"
+        ? "desc"
+        : "asc"
+      : key === "ticker"
+        ? "asc"
+        : "desc";
+    const rows = Array.from(table.tBodies[0].rows);
+    rows.sort((a, b) => {
+      const av = a.getAttribute("data-sort-" + key) ?? "";
+      const bv = b.getAttribute("data-sort-" + key) ?? "";
+      if (!av && !bv) return 0;
+      if (!av) return 1;
+      if (!bv) return -1;
+      const compared =
+        key === "ticker" ? av.localeCompare(bv) : Number(av) - Number(bv);
+      return direction === "asc" ? compared : -compared;
+    });
+    rows.forEach((row) => table.tBodies[0].append(row));
+    table.querySelectorAll("[data-portfolio-sort]").forEach((button) => {
+      const active = button === sort;
+      button.dataset.direction = active ? direction : "";
+      const arrow = button.querySelector(".sort-arrow");
+      if (arrow) arrow.textContent = active ? (direction === "asc" ? "▲" : "▼") : "";
+      button.closest("th")?.setAttribute(
+        "aria-sort",
+        active ? (direction === "asc" ? "ascending" : "descending") : "none",
+      );
+    });
+  });
   let revision = Number(document.body.dataset.revision);
   let failures = 0;
   const poll = async () => {

@@ -148,10 +148,20 @@ describe("durable ingestion and publication", () => {
         totalValue: 1250,
         gainLoss: 250,
         gainLossPercent: 25,
-        holdingsCount: 1,
-        holdings: [
-          { ticker: "ABC", name: "Example", value: 1250, allocation: 1 },
-        ],
+        holdingsCount: 6,
+        lastSyncedAt: Date.now(),
+        latestPriceDate: "2026-09-29",
+        holdings: Array.from({ length: 6 }, (_, index) => ({
+          ticker: `ABC${index}`,
+          name: `Example ${index}`,
+          value: 1250 - index,
+          allocation: index === 0 ? 1 : 0,
+          shares: 10,
+          costBasis: 1000,
+          dayReturn: index,
+          dayReturnPercent: index / 10,
+          gainLossPercent: 25,
+        })),
       },
     };
     expect((await send(envelope)).status).toBe(202);
@@ -164,6 +174,11 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Unrealized return");
     expect(edition!.html).toContain('action="/api/sync-prices"');
     expect(edition!.html).toContain("Sync prices");
+    expect(edition!.html).toContain("Day $");
+    expect(edition!.html).toContain("Day %");
+    expect(edition!.html).toContain("Total %");
+    expect(edition!.html).toContain("Show all 6");
+    expect(edition!.html).toContain("Last synced");
     expect(edition!.html).not.toContain('name="userId"');
     expect(await env.EDITIONS.get("edition:user-b")).toBeNull();
   });

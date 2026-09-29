@@ -8,7 +8,8 @@ afterEach(() => vi.resetAllMocks());
 
 it("exports saved holdings for the enrolled user and retains their age on failure", async () => {
   const read = vi.mocked(readPortfolioSnapshot);
-  const ctx = {} as ActionCtx;
+  const runQuery = vi.fn().mockResolvedValue({ lastSyncedAt: 123 });
+  const ctx = { runQuery } as unknown as ActionCtx;
   read.mockResolvedValue({
     status: "ok",
     holdings: Array.from({ length: 7 }, (_, index) => ({
@@ -25,8 +26,8 @@ it("exports saved holdings for the enrolled user and retains their age on failur
       createdAt: "",
       latestPriceDate: null,
       previousPriceDate: null,
-      dayReturn: null,
-      dayReturnPercent: null,
+      dayReturn: index,
+      dayReturnPercent: index / 10,
     })),
     summary: {
       totalCost: 70,
@@ -34,24 +35,82 @@ it("exports saved holdings for the enrolled user and retains their age on failur
       gainLoss: 91,
       gainLossPercent: 130,
       holdingsCount: 7,
-      latestPriceDate: null,
+      latestPriceDate: "2026-09-29",
       dayReturnDate: null,
       dayReturn: null,
       dayReturnPercent: null,
     },
   });
   const fresh = await collectHomepagePortfolio(ctx, "user-a");
-  expect(read).toHaveBeenCalledExactlyOnceWith(ctx, "user-a", false);
-  expect(fresh.payload).toMatchObject({ totalValue: 161, holdingsCount: 7 });
-  const holdings = (fresh.payload as { holdings: { ticker: string }[] })
-    .holdings;
+  expect(read).toHaveBeenCalledExactlyOnceWith(ctx, "user-a", "recent");
+  expect(fresh.payload).toMatchObject({
+    totalValue: 161,
+    holdingsCount: 7,
+    lastSyncedAt: 123,
+    latestPriceDate: "2026-09-29",
+  });
+  const holdings = (
+    fresh.payload as {
+      holdings: { ticker: string; dayReturn: number | null }[];
+    }
+  ).holdings;
   expect(holdings.map((holding) => holding.ticker)).toEqual([
     "T6",
     "T5",
     "T4",
     "T3",
     "T2",
+    "T1",
+    "T0",
   ]);
+  expect(holdings[0].dayReturn).toBe(6);
+
+  read.mockReset();
+  read.mockResolvedValue({
+    status: "ok",
+    holdings: Array.from({ length: 7 }, (_, index) => ({
+      id: String(index),
+      ticker: `T${index}`,
+      companyName: "Holding",
+      costBasis: 10,
+      shares: 1,
+      currentPrice: 30 + index,
+      currentValue: 30 + index,
+      gainLoss: 20 + index,
+      gainLossPercent: 200,
+      targetAllocation: null,
+      createdAt: "",
+      latestPriceDate: null,
+      previousPriceDate: null,
+      dayReturn: null,
+      dayReturnPercent: null,
+    })),
+    summary: {
+      totalCost: 70,
+      totalCurrentValue: 231,
+      gainLoss: 161,
+      gainLossPercent: 230,
+      holdingsCount: 7,
+      latestPriceDate: null,
+      dayReturnDate: null,
+      dayReturn: null,
+      dayReturnPercent: null,
+    },
+  });
+  const routine = await collectHomepagePortfolio(
+    ctx,
+    "user-a",
+    JSON.stringify(fresh),
+  );
+  expect(read).toHaveBeenCalledExactlyOnceWith(ctx, "user-a", false);
+  expect(
+    (
+      routine.payload as {
+        holdings: { ticker: string; dayReturn: number | null }[];
+      }
+    ).holdings[0],
+  ).toMatchObject({ ticker: "T6", dayReturn: 6 });
+
   read.mockRejectedValue(new Error("Provider down"));
   const cached = await collectHomepagePortfolio(
     ctx,
@@ -61,4 +120,48 @@ it("exports saved holdings for the enrolled user and retains their age on failur
   expect(cached).toEqual({ ...fresh, error: "collection_failed" });
   const corrupt = await collectHomepagePortfolio(ctx, "user-a", "{");
   expect(corrupt).toMatchObject({ status: "unavailable", payload: null });
+});
+
+it("bounds the exported holdings at twenty", async () => {
+  vi.mocked(readPortfolioSnapshot).mockResolvedValue({
+    status: "ok",
+    holdings: Array.from({ length: 22 }, (_, index) => ({
+      id: String(index),
+      ticker: `T${index}`,
+      companyName: "Holding",
+      costBasis: 10,
+      shares: 1,
+      currentPrice: index,
+      currentValue: index,
+      gainLoss: index - 10,
+      gainLossPercent: index - 100,
+      targetAllocation: null,
+      createdAt: "",
+      latestPriceDate: null,
+      previousPriceDate: null,
+      dayReturn: null,
+      dayReturnPercent: null,
+    })),
+    summary: {
+      totalCost: 220,
+      totalCurrentValue: 231,
+      gainLoss: 11,
+      gainLossPercent: 5,
+      holdingsCount: 22,
+      latestPriceDate: null,
+      dayReturnDate: null,
+      dayReturn: null,
+      dayReturnPercent: null,
+    },
+  });
+  const ctx = {
+    runQuery: vi.fn().mockResolvedValue(null),
+  } as unknown as ActionCtx;
+
+  const snapshot = await collectHomepagePortfolio(ctx, "user-a");
+  const holdings = (snapshot.payload as { holdings: { ticker: string }[] })
+    .holdings;
+  expect(holdings).toHaveLength(20);
+  expect(holdings[0].ticker).toBe("T21");
+  expect(holdings[19].ticker).toBe("T2");
 });

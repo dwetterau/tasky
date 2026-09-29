@@ -7,6 +7,7 @@ export const LIMITS = {
   captures: 6,
   signals: 12,
   scorecards: 8,
+  portfolioHoldings: 20,
   text: 240,
   bytes: 96_000,
 } as const;
@@ -101,6 +102,8 @@ export const portfolioPayloadSchema = z
     gainLoss: z.number(),
     gainLossPercent: z.number(),
     holdingsCount: z.number().int().nonnegative(),
+    lastSyncedAt: timestamp.nullable().optional(),
+    latestPriceDate: z.string().nullable().optional(),
     holdings: z
       .array(
         z
@@ -109,10 +112,15 @@ export const portfolioPayloadSchema = z
             name: text,
             value: z.number(),
             allocation: z.number(),
+            shares: z.number().optional(),
+            costBasis: z.number().optional(),
+            dayReturn: z.number().nullable().optional(),
+            dayReturnPercent: z.number().nullable().optional(),
+            gainLossPercent: z.number().optional(),
           })
           .strict(),
       )
-      .max(5),
+      .max(LIMITS.portfolioHoldings),
   })
   .strict();
 export type PortfolioPayload = z.infer<typeof portfolioPayloadSchema>;
