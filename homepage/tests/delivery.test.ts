@@ -6,6 +6,7 @@ import worker, { handleRequest } from "../src/index";
 import {
   issueSession,
   verifySession,
+  REMEMBER_COOKIE,
   SESSION_COOKIE,
   cookie,
 } from "../src/auth/credentials";
@@ -43,6 +44,22 @@ describe("private delivery", () => {
     expect(legacy.headers.get("cache-control")).toBe(
       "public, max-age=0, must-revalidate",
     );
+  });
+  it("automatically renews remembered sessions with a matching manual fallback", async () => {
+    const response = await handleRequest(
+      new Request(`${env.HOME_ORIGIN}/auth/renew`, {
+        headers: { cookie: `${REMEMBER_COOKIE}=${"A".repeat(43)}` },
+      }),
+      env,
+    );
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).toContain("data-auto-renew");
+    expect(html).toContain(
+      `/assets/home.js?v=${browserScriptVersion}`,
+    );
+    expect(html).toContain('action="/auth/renew" method="post"');
+    expect(html).toContain("font: inherit");
   });
   it("renders a personal daily edition without task details or duplicate headings", () => {
     const { feed } = fixtureEdition(
