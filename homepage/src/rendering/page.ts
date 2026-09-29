@@ -564,9 +564,6 @@ summary {
   padding-bottom: 7px;
   border-bottom: 1px solid var(--ink);
 }
-.holdings-heading .meta {
-  font-size: 9px;
-}
 .portfolio-table-scroll {
   overflow-x: auto;
 }
