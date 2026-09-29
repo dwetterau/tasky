@@ -1,5 +1,10 @@
 import { v } from "convex/values";
-import { action, ActionCtx } from "./_generated/server";
+import {
+  action,
+  internalMutation,
+  internalQuery,
+  type ActionCtx,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getAuthUserId } from "./auth";
 import { decryptApiKey } from "./apiKeys";
@@ -110,6 +115,12 @@ function formatAirtableDate(value: unknown): string | null {
 function maxIsoDate(dates: string[]): string | null {
   if (dates.length === 0) return null;
   return dates.reduce((max, current) => (current > max ? current : max));
+}
+
+function recentHistoryCutoff(days = 14): string {
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - days);
+  return cutoff.toISOString().slice(0, 10);
 }
 
 function targetPercentFromAirtable(value: unknown): number | null {
@@ -545,25 +556,10 @@ function mapPriceHistoryPoint(record: AirtableRecord): {
   };
 }
 
-async function getRecentPriceStatus(
-  credentials: PortfolioCredentials,
-  ticker: string,
-): Promise<RecentPriceStatus> {
-  const params = new URLSearchParams();
-  params.set("filterByFormula", tickerHistoryNamePrefixFormula(ticker));
-  params.set("sort[0][field]", "Date");
-  params.set("sort[0][direction]", "desc");
-  params.set("maxRecords", "2");
-
-  const records = await fetchAirtableRecords({
-    apiKey: credentials.apiKey,
-    baseId: credentials.baseId,
-    table: PRICE_HISTORY_TABLE,
-    params,
-  });
-  const latest = records[0] ? mapPriceHistoryPoint(records[0]) : null;
-  const previous = records[1] ? mapPriceHistoryPoint(records[1]) : null;
-
+function recentPriceStatus(
+  latest: ReturnType<typeof mapPriceHistoryPoint> | null,
+  previous: ReturnType<typeof mapPriceHistoryPoint> | null,
+): RecentPriceStatus {
   if (!latest || !previous || previous.value === 0) {
     return {
       latestPriceDate: latest?.date ?? null,
@@ -587,6 +583,72 @@ async function getRecentPriceStatus(
   };
 }
 
+async function getRecentPriceStatus(
+  credentials: PortfolioCredentials,
+  ticker: string,
+): Promise<RecentPriceStatus> {
+  const params = new URLSearchParams();
+  params.set("filterByFormula", tickerHistoryNamePrefixFormula(ticker));
+  params.set("sort[0][field]", "Date");
+  params.set("sort[0][direction]", "desc");
+  params.set("maxRecords", "2");
+
+  const records = await fetchAirtableRecords({
+    apiKey: credentials.apiKey,
+    baseId: credentials.baseId,
+    table: PRICE_HISTORY_TABLE,
+    params,
+  });
+  const latest = records[0] ? mapPriceHistoryPoint(records[0]) : null;
+  const previous = records[1] ? mapPriceHistoryPoint(records[1]) : null;
+  return recentPriceStatus(latest, previous);
+}
+
+async function getRecentPriceStatuses(
+  credentials: PortfolioCredentials,
+  tickers: string[],
+): Promise<Array<{ ticker: string } & RecentPriceStatus>> {
+  if (tickers.length === 0) return [];
+  const params = new URLSearchParams();
+  params.set("filterByFormula", `{Date} >= '${recentHistoryCutoff()}'`);
+  params.set("sort[0][field]", "Date");
+  params.set("sort[0][direction]", "desc");
+  const records = await fetchAirtableRecords({
+    apiKey: credentials.apiKey,
+    baseId: credentials.baseId,
+    table: PRICE_HISTORY_TABLE,
+    params,
+  });
+  const tickerSet = new Set(tickers);
+  const points = new Map<
+    string,
+    Array<ReturnType<typeof mapPriceHistoryPoint>>
+  >();
+  for (const record of records) {
+    const point = mapPriceHistoryPoint(record);
+    if (!point.date) continue;
+    const name = asString(record.fields.Name);
+    const ticker = name.slice(0, -(point.date.length + 1)).toUpperCase();
+    if (
+      !tickerSet.has(ticker) ||
+      name.toUpperCase() !== `${ticker}-${point.date}`
+    )
+      continue;
+    const tickerPoints = points.get(ticker) ?? [];
+    if (tickerPoints.length < 2) {
+      tickerPoints.push(point);
+      points.set(ticker, tickerPoints);
+    }
+  }
+  return tickers.map((ticker) => {
+    const tickerPoints = points.get(ticker) ?? [];
+    return {
+      ticker,
+      ...recentPriceStatus(tickerPoints[0] ?? null, tickerPoints[1] ?? null),
+    };
+  });
+}
+
 async function getCredential(
   ctx: ActionCtx,
   userId: string,
@@ -600,6 +662,35 @@ async function getCredential(
   const value = await decryptApiKey(row.encryptedValue, row.iv);
   return value.trim() || null;
 }
+
+export const getSyncStateInternal = internalQuery({
+  args: { userId: v.string() },
+  returns: v.union(v.object({ lastSyncedAt: v.number() }), v.null()),
+  handler: async (ctx, { userId }) => {
+    const row = await ctx.db
+      .query("portfolioSyncStates")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique();
+    return row ? { lastSyncedAt: row.lastSyncedAt } : null;
+  },
+});
+
+export const recordSyncInternal = internalMutation({
+  args: { userId: v.string(), lastSyncedAt: v.number() },
+  returns: v.number(),
+  handler: async (ctx, { userId, lastSyncedAt }) => {
+    const row = await ctx.db
+      .query("portfolioSyncStates")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique();
+    if (row) {
+      await ctx.db.patch(row._id, { lastSyncedAt });
+    } else {
+      await ctx.db.insert("portfolioSyncStates", { userId, lastSyncedAt });
+    }
+    return lastSyncedAt;
+  },
+});
 
 export const getSnapshot = action({
   args: {
@@ -657,7 +748,7 @@ export const getSnapshot = action({
 export async function readPortfolioSnapshot(
   ctx: ActionCtx,
   userId: string,
-  includePriceStatus = false,
+  includePriceStatus: boolean | "recent" = false,
 ) {
   const [apiKey, baseId, positionsViewId] = await Promise.all([
     getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
@@ -704,14 +795,20 @@ export async function readPortfolioSnapshot(
 
     const holdings = records.map(calculateHolding);
 
-    const recentPriceStatuses = includePriceStatus
-      ? await Promise.all(
-          holdings.map(async (holding) => ({
-            ticker: holding.ticker,
-            ...(await getRecentPriceStatus(credentials, holding.ticker)),
-          })),
-        )
-      : [];
+    const recentPriceStatuses =
+      includePriceStatus === "recent"
+        ? await getRecentPriceStatuses(
+            credentials,
+            holdings.map((holding) => holding.ticker),
+          )
+        : includePriceStatus
+          ? await Promise.all(
+              holdings.map(async (holding) => ({
+                ticker: holding.ticker,
+                ...(await getRecentPriceStatus(credentials, holding.ticker)),
+              })),
+            )
+          : [];
     const recentPriceStatusByTicker = new Map(
       recentPriceStatuses.map((entry) => [entry.ticker, entry]),
     );
@@ -938,8 +1035,7 @@ const priceSyncResult = v.object({
   }),
 });
 
-/** Same Airtable/Alpaca sync the app runs. Caller supplies an already-authorized user id. */
-export async function syncPriceHistoryForUser(ctx: ActionCtx, userId: string) {
+async function performPriceHistorySync(ctx: ActionCtx, userId: string) {
     const [apiKey, baseId, positionsViewId, resetDate] = await Promise.all([
       getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
       getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
@@ -1194,6 +1290,18 @@ export async function syncPriceHistoryForUser(ctx: ActionCtx, userId: string) {
         yahooTickers,
       },
     };
+}
+
+/** Same Airtable/Alpaca sync the app runs. Caller supplies an already-authorized user id. */
+export async function syncPriceHistoryForUser(ctx: ActionCtx, userId: string) {
+  const result = await performPriceHistorySync(ctx, userId);
+  if (result.success) {
+    await ctx.runMutation(internal.portfolio.recordSyncInternal, {
+      userId,
+      lastSyncedAt: Date.now(),
+    });
+  }
+  return result;
 }
 
 export const syncPriceHistory = action({

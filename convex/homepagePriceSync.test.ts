@@ -1,7 +1,8 @@
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./portfolio", () => ({
+vi.mock("./portfolio", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./portfolio")>()),
   syncPriceHistoryForUser: vi.fn(),
   readPortfolioSnapshot: vi.fn(async () => ({
     status: "no_credentials" as const,

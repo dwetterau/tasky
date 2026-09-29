@@ -10,6 +10,27 @@ const money = (value: number) =>
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
+const signedMoney = (value: number | null | undefined) =>
+  value == null ? "—" : `${value >= 0 ? "+" : "−"}${money(Math.abs(value))}`;
+const percent = (value: number | null | undefined) =>
+  value == null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+const marketDate = (value: string | null | undefined) =>
+  value
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone: "UTC",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }).format(new Date(`${value}T12:00:00Z`))
+    : "—";
+
+const columns = [
+  ["ticker", "Ticker"],
+  ["day-dollar", "Day $"],
+  ["day-percent", "Day %"],
+  ["value", "Value"],
+  ["total-percent", "Total %"],
+] as const;
 
 export const portfolioModule: HomeModule<PortfolioPayload> = {
   id: "portfolio",
@@ -53,8 +74,27 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
       </div>
     </div>`;
   },
-  render(data) {
+  render(data, context) {
     const positive = data.gainLoss >= 0;
+    const rows = data.holdings
+      .map((holding) => {
+        const totalPercent =
+          holding.gainLossPercent ?? holding.allocation * 100;
+        return `<tr
+          data-sort-ticker="${e(holding.ticker.toLowerCase())}"
+          data-sort-day-dollar="${holding.dayReturn ?? ""}"
+          data-sort-day-percent="${holding.dayReturnPercent ?? ""}"
+          data-sort-value="${holding.value}"
+          data-sort-total-percent="${totalPercent}"
+        >
+          <td class="portfolio-holding"><strong>${e(holding.ticker)}</strong><span title="${e(holding.name)}">${e(holding.name)}</span></td>
+          <td class="${(holding.dayReturn ?? 0) < 0 ? "warning" : (holding.dayReturn ?? 0) > 0 ? "positive" : ""}">${e(signedMoney(holding.dayReturn))}</td>
+          <td class="${(holding.dayReturnPercent ?? 0) < 0 ? "warning" : (holding.dayReturnPercent ?? 0) > 0 ? "positive" : ""}">${e(percent(holding.dayReturnPercent))}</td>
+          <td><strong>${e(money(holding.value))}</strong>${holding.shares === undefined ? "" : `<span>${e(holding.shares.toLocaleString())} sh</span>`}</td>
+          <td class="${totalPercent < 0 ? "warning" : totalPercent > 0 ? "positive" : ""}">${e(percent(totalPercent))}</td>
+        </tr>`;
+      })
+      .join("");
     return /* HTML */ `<div class="portfolio-value">
         ${e(money(data.totalValue))}
       </div>
@@ -67,16 +107,36 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
         </p>
         <p class="meta">Unrealized return · ${data.holdingsCount} holdings</p>
       </div>
-      <h3 class="section-label holdings-label">Largest positions</h3>
-      <ul class="holdings">
-        ${data.holdings
-          .map(
-            (holding) => `
-        <li><div class="row"><strong title="${e(holding.name)}">${e(holding.ticker)}</strong>
-          <span>${e(money(holding.value))} <span class="muted">· ${(holding.allocation * 100).toFixed(0)}%</span></span></div>
-          <progress max="1" value="${Math.max(0, Math.min(1, holding.allocation))}" aria-label="${e(holding.ticker)} allocation"></progress></li>`,
-          )
-          .join("") || '<li class="empty">No holdings yet.</li>'}
-      </ul>`;
+      <p class="portfolio-market-time meta">Prices ${e(marketDate(data.latestPriceDate))} · ${
+        data.lastSyncedAt
+          ? `Last synced ${sourceTime(data.lastSyncedAt, context.timezone)}`
+          : "Last sync unavailable"
+      }</p>
+      <div class="holdings-heading">
+        <h3 class="section-label">Holdings</h3>
+        <span class="meta">Select a column to sort</span>
+      </div>
+      ${
+        data.holdings.length
+          ? `<div class="portfolio-table-scroll">
+        <table class="portfolio-table" data-portfolio-table data-expanded="false">
+          <thead><tr>
+            ${columns
+              .map(
+                ([key, label]) =>
+                  `<th scope="col" aria-sort="${key === "value" ? "descending" : "none"}"><button type="button" data-portfolio-sort="${key}" data-direction="${key === "value" ? "desc" : ""}">${e(label)} <span class="sort-arrow" aria-hidden="true">${key === "value" ? "▼" : ""}</span></button></th>`,
+              )
+              .join("")}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${
+        data.holdings.length > 5
+          ? `<button class="portfolio-expand" type="button" data-portfolio-expand aria-expanded="false">Show all ${data.holdings.length}</button>`
+          : ""
+      }`
+          : '<p class="empty">No holdings yet.</p>'
+      }`;
   },
 };
