@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
@@ -66,9 +66,15 @@ function SettingsContent() {
   }
 }`;
   const keys = useQuery(api.apiKeys.list, {});
+  const portfolios = useQuery(api.portfolios.list, {});
   const [name, setName] = useState("");
   const [type, setType] = useState<ApiKeyType>("github");
   const [value, setValue] = useState("");
+  const [portfolioName, setPortfolioName] = useState("");
+  const [portfolioViewId, setPortfolioViewId] = useState("");
+  const [portfolioStartDate, setPortfolioStartDate] = useState("");
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
+  const legacyMigrationAttempted = useRef(false);
   const namePlaceholder =
     type === "github"
       ? "Production GitHub token"
@@ -106,6 +112,30 @@ function SettingsContent() {
       );
     },
   );
+  const migrateLegacyPortfolio = useTrackedMutation(
+    api.portfolios.migrateLegacy,
+  );
+  const createPortfolio = useTrackedMutation(api.portfolios.create);
+  const removePortfolio = useTrackedMutation(api.portfolios.remove);
+  const setDefaultPortfolio = useTrackedMutation(api.portfolios.setDefault);
+
+  useEffect(() => {
+    if (
+      portfolios === undefined ||
+      portfolios.length > 0 ||
+      legacyMigrationAttempted.current
+    ) {
+      return;
+    }
+    legacyMigrationAttempted.current = true;
+    void migrateLegacyPortfolio({}).catch((migrationError: unknown) => {
+      setPortfolioError(
+        migrationError instanceof Error
+          ? migrationError.message
+          : "Failed to import the existing portfolio",
+      );
+    });
+  }, [migrateLegacyPortfolio, portfolios]);
 
   const canCreate = name.trim() && value.trim();
 
@@ -119,6 +149,33 @@ function SettingsContent() {
     setValue("");
   };
 
+  const handleCreatePortfolio = async () => {
+    if (
+      !portfolioName.trim() ||
+      !portfolioViewId.trim() ||
+      !portfolioStartDate.trim()
+    ) {
+      return;
+    }
+    setPortfolioError(null);
+    try {
+      await createPortfolio({
+        name: portfolioName.trim(),
+        airtableViewId: portfolioViewId.trim(),
+        startDate: portfolioStartDate.trim(),
+      });
+      setPortfolioName("");
+      setPortfolioViewId("");
+      setPortfolioStartDate("");
+    } catch (createError) {
+      setPortfolioError(
+        createError instanceof Error
+          ? createError.message
+          : "Failed to create portfolio",
+      );
+    }
+  };
+
   return (
     <div className="min-h-screen pt-20 pb-10 px-4">
       <div className="max-w-3xl mx-auto">
@@ -128,6 +185,120 @@ function SettingsContent() {
             Manage user-scoped API keys used by integrations. Keys are encrypted
             at rest and never shown again after saving.
           </p>
+        </div>
+
+        <div className="bg-(--card-bg) border border-(--card-border) rounded-xl p-5 mb-6">
+          <h2 className="text-base font-medium mb-2">Portfolios</h2>
+          <p className="text-sm text-(--muted) mb-4">
+            Each portfolio maps to one Airtable Positions view. Price syncs
+            update every configured portfolio together and reuse market prices
+            for shared tickers.
+          </p>
+          <div className="grid sm:grid-cols-3 gap-3 mb-3">
+            <div>
+              <label className="block text-xs font-medium text-(--muted) mb-1">
+                Name
+              </label>
+              <input
+                type="text"
+                value={portfolioName}
+                onChange={(event) => setPortfolioName(event.target.value)}
+                placeholder="Vanguard Brokerage"
+                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-(--muted) mb-1">
+                Airtable View ID
+              </label>
+              <input
+                type="text"
+                value={portfolioViewId}
+                onChange={(event) => setPortfolioViewId(event.target.value)}
+                placeholder="viw..."
+                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-(--muted) mb-1">
+                History Start Date
+              </label>
+              <input
+                type="date"
+                value={portfolioStartDate}
+                onChange={(event) => setPortfolioStartDate(event.target.value)}
+                className="w-full h-[38px] px-3 bg-background border border-(--card-border) rounded-lg focus:outline-none focus:border-accent transition-colors text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end mb-4">
+            <button
+              type="button"
+              onClick={() => void handleCreatePortfolio()}
+              disabled={
+                !portfolioName.trim() ||
+                !portfolioViewId.trim() ||
+                !portfolioStartDate.trim()
+              }
+              className="px-4 py-2 text-sm bg-accent hover:bg-(--accent-hover) text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Add Portfolio
+            </button>
+          </div>
+          {portfolioError ? (
+            <p className="text-sm text-red-400 mb-3">{portfolioError}</p>
+          ) : null}
+          {portfolios === undefined ? (
+            <p className="text-sm text-(--muted)">Loading...</p>
+          ) : portfolios.length === 0 ? (
+            <p className="text-sm text-(--muted)">
+              No portfolios configured yet.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {portfolios.map((portfolio) => (
+                <div
+                  key={portfolio._id}
+                  className="flex items-center justify-between gap-4 rounded-lg border border-(--card-border) px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {portfolio.name}
+                      {portfolio.isDefault ? (
+                        <span className="ml-2 text-xs text-accent">Default</span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-(--muted) truncate">
+                      {portfolio.airtableViewId} · history from{" "}
+                      {portfolio.startDate}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {!portfolio.isDefault ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void setDefaultPortfolio({ id: portfolio._id })
+                        }
+                        className="text-xs text-accent hover:underline"
+                      >
+                        Make default
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void removePortfolio({ id: portfolio._id })
+                      }
+                      className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="bg-(--card-bg) border border-(--card-border) rounded-xl p-5 mb-6">
@@ -163,15 +334,6 @@ function SettingsContent() {
                 </option>
                 <option value="portfolio_airtable_base_id">
                   Portfolio Airtable Base ID
-                </option>
-                <option value="portfolio_schwab_positions_view_id">
-                  Portfolio Schwab Positions View ID
-                </option>
-                <option value="portfolio_schwab_brokerage_account_record_id">
-                  Portfolio Schwab Account Record ID
-                </option>
-                <option value="portfolio_reset_date">
-                  Portfolio Reset Date
                 </option>
               </select>
             </div>
@@ -222,7 +384,8 @@ function SettingsContent() {
               <p className="mt-2 text-xs text-(--muted)">
                 Portfolio values are used server-side by Tasky to read
                 Airtable/market data. They are encrypted at rest and are never
-                sent to the mobile app. Use YYYY-MM-DD for the reset date.
+                sent to the mobile app. View IDs and history dates are
+                configured in the Portfolios section above.
               </p>
             ) : null}
           </div>

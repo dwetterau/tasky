@@ -95,32 +95,40 @@ export const taskyPayloadSchema = z
     truncated: z.boolean(),
   })
   .strict();
+const portfolioHoldingSchema = z
+  .object({
+    ticker: z.string().max(24),
+    name: text,
+    value: z.number(),
+    allocation: z.number(),
+    shares: z.number().optional(),
+    costBasis: z.number().optional(),
+    dayReturn: z.number().nullable().optional(),
+    dayReturnPercent: z.number().nullable().optional(),
+    gainLossPercent: z.number().optional(),
+  })
+  .strict();
+const portfolioDataFields = {
+  currency: z.literal("USD"),
+  totalValue: z.number(),
+  gainLoss: z.number(),
+  gainLossPercent: z.number(),
+  holdingsCount: z.number().int().nonnegative(),
+  lastSyncedAt: timestamp.nullable().optional(),
+  latestPriceDate: z.string().nullable().optional(),
+  holdings: z.array(portfolioHoldingSchema).max(LIMITS.portfolioHoldings),
+};
+export const namedPortfolioSchema = z
+  .object({
+    id,
+    name: z.string().min(1).max(80),
+    ...portfolioDataFields,
+  })
+  .strict();
 export const portfolioPayloadSchema = z
   .object({
-    currency: z.literal("USD"),
-    totalValue: z.number(),
-    gainLoss: z.number(),
-    gainLossPercent: z.number(),
-    holdingsCount: z.number().int().nonnegative(),
-    lastSyncedAt: timestamp.nullable().optional(),
-    latestPriceDate: z.string().nullable().optional(),
-    holdings: z
-      .array(
-        z
-          .object({
-            ticker: z.string().max(24),
-            name: text,
-            value: z.number(),
-            allocation: z.number(),
-            shares: z.number().optional(),
-            costBasis: z.number().optional(),
-            dayReturn: z.number().nullable().optional(),
-            dayReturnPercent: z.number().nullable().optional(),
-            gainLossPercent: z.number().optional(),
-          })
-          .strict(),
-      )
-      .max(LIMITS.portfolioHoldings),
+    ...portfolioDataFields,
+    portfolios: z.array(namedPortfolioSchema).max(5).optional(),
   })
   .strict();
 export type PortfolioPayload = z.infer<typeof portfolioPayloadSchema>;

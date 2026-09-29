@@ -1,5 +1,5 @@
 import type { FunctionReturnType } from "convex/server";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -9,7 +9,12 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { taskyApi, useTaskyAction, useTaskyAuth } from "@/lib/tasky";
+import {
+  taskyApi,
+  useTaskyAction,
+  useTaskyAuth,
+  useTaskyQuery,
+} from "@/lib/tasky";
 import {
   colors,
   fontSize,
@@ -27,6 +32,9 @@ type PortfolioSnapshot = FunctionReturnType<
 type PriceHistoryResult = FunctionReturnType<
   typeof taskyApi.portfolio.getPriceHistory
 >;
+type PortfolioConfig = FunctionReturnType<
+  typeof taskyApi.portfolios.list
+>[number];
 type Holding = PortfolioSnapshot["holdings"][number];
 
 type SortKey = "ticker" | "value" | "dayDollar" | "dayPercent" | "totalPercent";
@@ -501,6 +509,10 @@ export default function PortfolioPage() {
   const getPortfolioSnapshot = useTaskyAction(taskyApi.portfolio.getSnapshot);
   const getPriceHistory = useTaskyAction(taskyApi.portfolio.getPriceHistory);
   const syncPriceHistory = useTaskyAction(taskyApi.portfolio.syncPriceHistory);
+  const { data: portfolios } = useTaskyQuery(
+    taskyApi.portfolios.list,
+    taskyEnabled ? {} : "skip",
+  );
 
   const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryResult | null>(
@@ -514,14 +526,54 @@ export default function PortfolioPage() {
   const [syncFeedback, setSyncFeedback] = useState<SyncFeedback | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("value");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(
+    null,
+  );
+  const selectedPortfolioIdRef = useRef<string | null>(null);
+  const selectedPortfolio = useMemo<PortfolioConfig | null>(
+    () =>
+      portfolios?.find(
+        (candidate) => String(candidate._id) === selectedPortfolioId,
+      ) ??
+      portfolios?.find((candidate) => candidate.isDefault) ??
+      portfolios?.[0] ??
+      null,
+    [portfolios, selectedPortfolioId],
+  );
+
+  useEffect(() => {
+    if (
+      !selectedPortfolio ||
+      selectedPortfolioId === String(selectedPortfolio._id)
+    ) {
+      return;
+    }
+    const id = String(selectedPortfolio._id);
+    selectedPortfolioIdRef.current = id;
+    setSelectedPortfolioId(id);
+  }, [selectedPortfolio, selectedPortfolioId]);
+
+  useEffect(() => {
+    selectedPortfolioIdRef.current = selectedPortfolioId;
+  }, [selectedPortfolioId]);
 
   const refreshPortfolio = useCallback(async () => {
     if (!taskyEnabled) return;
+    const requestedPortfolioId = selectedPortfolio
+      ? String(selectedPortfolio._id)
+      : null;
     setIsLoading(true);
     setError(null);
     try {
-      const snapshot = await getPortfolioSnapshot({ includePriceStatus: true });
-      setPortfolio(snapshot);
+      const snapshot = await getPortfolioSnapshot({
+        includePriceStatus: true,
+        ...(selectedPortfolio
+          ? { portfolioId: selectedPortfolio._id }
+          : {}),
+      });
+      if (selectedPortfolioIdRef.current === requestedPortfolioId) {
+        setPortfolio(snapshot);
+      }
     } catch (refreshError) {
       setError(
         refreshError instanceof Error
@@ -531,21 +583,30 @@ export default function PortfolioPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [getPortfolioSnapshot, taskyEnabled]);
+  }, [getPortfolioSnapshot, selectedPortfolio, taskyEnabled]);
 
   const refreshHistory = useCallback(async () => {
     if (!taskyEnabled) return;
+    const requestedPortfolioId = selectedPortfolio
+      ? String(selectedPortfolio._id)
+      : null;
     setIsHistoryLoading(true);
     setHistoryError(null);
     try {
-      const history = await getPriceHistory({});
+      const history = await getPriceHistory(
+        selectedPortfolio
+          ? { portfolioId: selectedPortfolio._id }
+          : {},
+      );
       if (!history) {
         setHistoryError("Tasky session is unavailable.");
         return;
       }
-      setPriceHistory(history);
-      if (history.status !== "ok") {
-        setHistoryError(history.message ?? "Price history unavailable.");
+      if (selectedPortfolioIdRef.current === requestedPortfolioId) {
+        setPriceHistory(history);
+        if (history.status !== "ok") {
+          setHistoryError(history.message ?? "Price history unavailable.");
+        }
       }
     } catch (refreshError) {
       setHistoryError(
@@ -556,11 +617,14 @@ export default function PortfolioPage() {
     } finally {
       setIsHistoryLoading(false);
     }
-  }, [getPriceHistory, taskyEnabled]);
+  }, [getPriceHistory, selectedPortfolio, taskyEnabled]);
 
   useEffect(() => {
+    setPortfolio(null);
+    setPriceHistory(null);
+    setSyncFeedback(null);
     void refreshPortfolio();
-  }, [refreshPortfolio]);
+  }, [refreshPortfolio, selectedPortfolioId]);
 
   useEffect(() => {
     if (portfolio?.status === "ok") {
@@ -695,6 +759,42 @@ export default function PortfolioPage() {
       contentContainerStyle={sharedStyles.screenContent}
       {...automaticKeyboardInsets}
     >
+      {portfolios && portfolios.length > 1 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.portfolioTabs}
+        >
+          {portfolios.map((candidate) => {
+            const selected = candidate._id === selectedPortfolio?._id;
+            return (
+              <TouchableOpacity
+                key={candidate._id}
+                style={[
+                  styles.portfolioTab,
+                  selected && styles.portfolioTabSelected,
+                ]}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                onPress={() => {
+                  const id = String(candidate._id);
+                  selectedPortfolioIdRef.current = id;
+                  setSelectedPortfolioId(id);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.portfolioTabText,
+                    selected && styles.portfolioTabTextSelected,
+                  ]}
+                >
+                  {candidate.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      ) : null}
       <SummaryStrip
         summary={portfolio.summary}
         onRefresh={() => {
@@ -707,6 +807,7 @@ export default function PortfolioPage() {
         canSync={taskyEnabled}
       />
       <PortfolioHistoryChart
+        key={selectedPortfolioId ?? "default"}
         points={priceHistory?.status === "ok" ? priceHistory.points : []}
         holdings={portfolio.holdings}
         startDate={priceHistory?.startDate ?? null}
@@ -736,6 +837,27 @@ export default function PortfolioPage() {
 }
 
 const styles = StyleSheet.create({
+  portfolioTabs: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  portfolioTab: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.secondarySystemGroupedBackground,
+  },
+  portfolioTabSelected: {
+    backgroundColor: colors.systemBlue,
+  },
+  portfolioTabText: {
+    fontSize: fontSize.small,
+    fontWeight: "700",
+    color: colors.secondaryLabel,
+  },
+  portfolioTabTextSelected: {
+    color: "white",
+  },
   summaryCard: {
     borderRadius: radius.lg,
     backgroundColor: colors.secondarySystemGroupedBackground,

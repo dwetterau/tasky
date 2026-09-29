@@ -1,10 +1,29 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { collectHomepagePortfolio } from "./lib/homepagePortfolio";
-import { readPortfolioSnapshot } from "./portfolio";
+import {
+  getPortfolioConfigurations,
+  readPortfolioSnapshot,
+} from "./portfolio";
 
-vi.mock("./portfolio", () => ({ readPortfolioSnapshot: vi.fn() }));
-afterEach(() => vi.resetAllMocks());
+vi.mock("./portfolio", () => ({
+  readPortfolioSnapshot: vi.fn(),
+  getPortfolioConfigurations: vi.fn(),
+}));
+beforeEach(() => {
+  vi.mocked(getPortfolioConfigurations).mockResolvedValue([
+    {
+      id: "portfolio-schwab" as Id<"portfolios">,
+      name: "Schwab",
+      positionsViewId: "view-schwab",
+      startDate: "2026-01-01",
+      isDefault: true,
+      displayOrder: 0,
+    },
+  ]);
+});
+afterEach(() => vi.clearAllMocks());
 
 it("exports saved holdings for the enrolled user and retains their age on failure", async () => {
   const read = vi.mocked(readPortfolioSnapshot);
@@ -42,7 +61,12 @@ it("exports saved holdings for the enrolled user and retains their age on failur
     },
   });
   const fresh = await collectHomepagePortfolio(ctx, "user-a");
-  expect(read).toHaveBeenCalledExactlyOnceWith(ctx, "user-a", "recent");
+  expect(read).toHaveBeenCalledExactlyOnceWith(
+    ctx,
+    "user-a",
+    "recent",
+    expect.objectContaining({ name: "Schwab" }),
+  );
   expect(fresh.payload).toMatchObject({
     totalValue: 161,
     holdingsCount: 7,
@@ -102,7 +126,12 @@ it("exports saved holdings for the enrolled user and retains their age on failur
     "user-a",
     JSON.stringify(fresh),
   );
-  expect(read).toHaveBeenCalledExactlyOnceWith(ctx, "user-a", false);
+  expect(read).toHaveBeenCalledExactlyOnceWith(
+    ctx,
+    "user-a",
+    false,
+    expect.objectContaining({ name: "Schwab" }),
+  );
   expect(
     (
       routine.payload as {
@@ -164,4 +193,100 @@ it("bounds the exported holdings at twenty", async () => {
   expect(holdings).toHaveLength(20);
   expect(holdings[0].ticker).toBe("T21");
   expect(holdings[19].ticker).toBe("T2");
+});
+
+it("exports multiple named portfolios in one homepage module", async () => {
+  vi.mocked(getPortfolioConfigurations).mockResolvedValue([
+    {
+      id: "portfolio-schwab" as Id<"portfolios">,
+      name: "Schwab",
+      positionsViewId: "view-schwab",
+      startDate: "2026-01-01",
+      isDefault: true,
+      displayOrder: 0,
+    },
+    {
+      id: "portfolio-vanguard" as Id<"portfolios">,
+      name: "Vanguard",
+      positionsViewId: "view-vanguard",
+      startDate: "2026-02-01",
+      isDefault: false,
+      displayOrder: 1,
+    },
+  ]);
+  vi.mocked(readPortfolioSnapshot).mockImplementation(
+    async (_ctx, _userId, _includePriceStatus, portfolio) => {
+      const vanguard = portfolio?.name === "Vanguard";
+      const value = vanguard ? 500 : 1_000;
+      return {
+        status: "ok",
+        holdings: [
+          {
+            id: vanguard ? "vanguard-position" : "schwab-position",
+            ticker: vanguard ? "VTI" : "SCHB",
+            companyName: vanguard ? "Vanguard Total Market" : "Schwab Broad Market",
+            costBasis: value - 100,
+            shares: 2,
+            currentPrice: value / 2,
+            currentValue: value,
+            gainLoss: 100,
+            gainLossPercent: 10,
+            targetAllocation: null,
+            createdAt: "",
+            latestPriceDate: "2026-09-29",
+            previousPriceDate: "2026-09-28",
+            dayReturn: 5,
+            dayReturnPercent: 0.5,
+          },
+        ],
+        summary: {
+          totalCost: value - 100,
+          totalCurrentValue: value,
+          gainLoss: 100,
+          gainLossPercent: 10,
+          holdingsCount: 1,
+          latestPriceDate: "2026-09-29",
+          dayReturnDate: "2026-09-29",
+          dayReturn: 5,
+          dayReturnPercent: 0.5,
+        },
+      };
+    },
+  );
+  const ctx = {
+    runQuery: vi.fn().mockResolvedValue({ lastSyncedAt: 123 }),
+  } as unknown as ActionCtx;
+
+  const snapshot = await collectHomepagePortfolio(ctx, "user-a");
+  const payload = snapshot.payload as {
+    totalValue: number;
+    portfolios: Array<{ name: string; totalValue: number }>;
+  };
+  expect(payload.totalValue).toBe(1_000);
+  expect(payload.portfolios).toEqual([
+    expect.objectContaining({ name: "Schwab", totalValue: 1_000 }),
+    expect.objectContaining({ name: "Vanguard", totalValue: 500 }),
+  ]);
+
+  const successfulRead = vi
+    .mocked(readPortfolioSnapshot)
+    .getMockImplementation()!;
+  vi.mocked(readPortfolioSnapshot).mockImplementation(async (...args) => {
+    if (args[3]?.name === "Vanguard") {
+      throw new Error("Invalid Airtable view");
+    }
+    return await successfulRead(...args);
+  });
+  const partial = await collectHomepagePortfolio(
+    ctx,
+    "user-a",
+    JSON.stringify(snapshot),
+  );
+  expect(partial.status).toBe("available");
+  expect(
+    (partial.payload as { portfolios: Array<{ name: string }> }).portfolios,
+  ).toEqual([
+    expect.objectContaining({ name: "Schwab" }),
+    expect.objectContaining({ name: "Vanguard", totalValue: 500 }),
+  ]);
 });
