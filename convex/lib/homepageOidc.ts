@@ -33,6 +33,9 @@ export function homepageOidc(options: {
     ],
     scopes: ["openid", "profile", "email", "offline_access"],
     defaultScope: "openid profile email offline_access",
+    // Match the homepage's remembered-grant ceiling instead of the provider's
+    // seven-day default.
+    refreshTokenExpiresIn: 30 * 24 * 60 * 60,
     useJWTPlugin: true,
     requirePKCE: true,
     allowPlainCodeChallengeMethod: false,

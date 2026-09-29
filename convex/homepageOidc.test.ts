@@ -299,6 +299,14 @@ it("keeps homepage login, signed identity, single-use codes, confidential renewa
   const tokens = (await issued.json()) as Tokens;
   expect(tokens).toHaveProperty("id_token", expect.any(String));
   expect(tokens.scope).toBe(scope);
+  const storedGrant = f.db.oauthAccessToken.find(
+    (grant) => grant.refreshToken === tokens.refresh_token,
+  );
+  expect(storedGrant).toBeDefined();
+  const refreshLifetime =
+    storedGrant!.refreshTokenExpiresAt.getTime() - Date.now();
+  expect(refreshLifetime).toBeGreaterThan(29 * 24 * 60 * 60 * 1000);
+  expect(refreshLifetime).toBeLessThanOrEqual(30 * 24 * 60 * 60 * 1000);
   const keys = await (
     await f.auth.handler(new Request(`${issuer}/api/auth/jwks`))
   ).json();
