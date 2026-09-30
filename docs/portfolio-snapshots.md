@@ -30,12 +30,13 @@ Snapshot names are deterministic:
 <Investment Account record ID>:<YYYY-MM-DD>
 ```
 
-Dates use the `America/New_York` calendar day. Running sync more than once on
-the same day updates the existing account/day rows. The JSON payload preserves
-every raw Position record, including positions with the same ticker and
-positions with an empty ticker (cash). It stores each Position's record ID,
-ticker, name, quantity, cost basis, value, and prior market value when
-available, along with account-level totals and a schema version.
+Dates use the Tasky user's stored IANA timezone. If no user setting exists,
+Tasky falls back to the homepage enrollment timezone and then UTC. Running sync
+more than once on the same day updates the existing account/day rows. The JSON
+payload preserves every raw Position record, including positions with the same
+ticker and positions with an empty ticker (cash). It stores each Position's
+record ID, ticker, name, quantity, cost basis, value, and prior market value
+when available, along with account-level totals and a schema version.
 
 The old `Price History` table is no longer read or written and can remain as
 archival data.
