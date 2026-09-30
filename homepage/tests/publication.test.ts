@@ -225,7 +225,7 @@ describe("durable ingestion and publication", () => {
       edition!.feed.modules.find((m) => m.id === "portfolio")!.payload,
     ).toMatchObject({ totalValue: 1250 });
     expect(edition!.html).toContain("$1,250");
-    expect(edition!.html).toContain("Unrealized return");
+    expect(edition!.html).not.toContain("Unrealized return");
     expect(edition!.html).toContain('action="/api/sync-prices"');
     expect(edition!.html).toContain("Sync prices");
     expect(edition!.html).toContain("Day $");
