@@ -24,6 +24,7 @@ const POSITIONS_TABLE = "Positions";
 const INVESTMENT_ACCOUNTS_TABLE = "Investment Accounts";
 const ACCOUNT_SNAPSHOTS_TABLE = "Account Snapshots";
 const ALPACA_BASE_URL = "https://data.alpaca.markets/v2";
+const PORTFOLIO_TIME_ZONE = "America/New_York";
 const AIRTABLE_BATCH_SIZE = 10;
 const AIRTABLE_THROTTLE_MS = 220;
 const AIRTABLE_MAX_RETRIES = 3;
@@ -223,7 +224,15 @@ function isValidIsoDate(value: string): boolean {
 }
 
 function getTodayDate(): string {
-  return new Date().toISOString().slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: PORTFOLIO_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 function getAlpacaCredentials(): AlpacaCredentials | null {
@@ -524,7 +533,15 @@ async function fetchLatestPrices(
   endDate: string,
   credentials: AlpacaCredentials,
 ): Promise<{
-  prices: Map<string, { date: string; close: number }>;
+  prices: Map<
+    string,
+    {
+      date: string;
+      close: number;
+      previousDate: string | null;
+      previousClose: number | null;
+    }
+  >;
   yahooTickers: string[];
 }> {
   if (tickers.length === 0) {
@@ -546,17 +563,27 @@ async function fetchLatestPrices(
       yahooTickers.push(ticker);
     }
   }
-  const prices = new Map<string, { date: string; close: number }>();
+  const prices = new Map<
+    string,
+    {
+      date: string;
+      close: number;
+      previousDate: string | null;
+      previousClose: number | null;
+    }
+  >();
   for (const ticker of tickers) {
-    const latest = (bars[ticker] ?? []).reduce<AlpacaBar | null>(
-      (current, bar) =>
-        !current || datePart(bar.t) > datePart(current.t) ? bar : current,
-      null,
+    const sortedBars = [...(bars[ticker] ?? [])].sort((a, b) =>
+      datePart(a.t).localeCompare(datePart(b.t)),
     );
+    const latest = sortedBars[sortedBars.length - 1];
+    const previous = sortedBars[sortedBars.length - 2];
     if (latest) {
       prices.set(ticker, {
         date: datePart(latest.t),
         close: latest.c,
+        previousDate: previous ? datePart(previous.t) : null,
+        previousClose: previous?.c ?? null,
       });
     }
   }
@@ -963,7 +990,36 @@ export async function readPortfolioSnapshot(
         const previousDay = completeDays[completeDays.length - 2];
         latestSnapshotDate = latestDay?.date ?? null;
         previousSnapshotDate = previousDay?.date ?? null;
-        if (previousDay) {
+        const latestPositions =
+          latestDay?.snapshots.flatMap((snapshot) => snapshot.positions) ?? [];
+        const hasStoredMarketBaseline =
+          latestPositions.length > 0 &&
+          latestPositions.every(
+            (position) => position.previousValue !== undefined,
+          );
+        if (hasStoredMarketBaseline) {
+          const marketDates = latestPositions.flatMap((position) =>
+            position.marketDate ? [position.marketDate] : [],
+          );
+          const previousMarketDates = latestPositions.flatMap((position) =>
+            position.previousMarketDate ? [position.previousMarketDate] : [],
+          );
+          latestSnapshotDate = marketDates.sort().at(-1) ?? latestSnapshotDate;
+          previousSnapshotDate =
+            previousMarketDates.sort().at(-1) ?? previousSnapshotDate;
+          previousPortfolioValue = latestPositions.reduce(
+            (sum, position) => sum + position.previousValue!,
+            0,
+          );
+          for (const position of latestPositions) {
+            const ticker = position.ticker.trim().toUpperCase();
+            previousValuesByTicker.set(
+              ticker,
+              (previousValuesByTicker.get(ticker) ?? 0) +
+                position.previousValue!,
+            );
+          }
+        } else if (previousDay) {
           previousPortfolioValue = previousDay.snapshots.reduce(
             (sum, snapshot) => sum + snapshot.totalValue,
             0,
@@ -1327,6 +1383,14 @@ async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
       quantity: holding.shares,
       costBasis: holding.costBasis,
       value,
+      previousValue:
+        latest?.previousClose == null
+          ? value
+          : latest.previousClose * holding.shares,
+      ...(latest ? { marketDate: latest.date } : {}),
+      ...(latest?.previousDate
+        ? { previousMarketDate: latest.previousDate }
+        : {}),
     });
     positionsByAccount.set(accountRecordId, positions);
   }

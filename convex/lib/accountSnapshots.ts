@@ -7,6 +7,9 @@ export type AccountSnapshotPosition = {
   quantity: number;
   costBasis: number;
   value: number;
+  marketDate?: string;
+  previousMarketDate?: string;
+  previousValue?: number;
 };
 
 export type AccountSnapshotPayload = {
@@ -59,7 +62,11 @@ function parsePosition(value: unknown): AccountSnapshotPosition | null {
     typeof value.name !== "string" ||
     !isFiniteNumber(value.quantity) ||
     !isFiniteNumber(value.costBasis) ||
-    !isFiniteNumber(value.value)
+    !isFiniteNumber(value.value) ||
+    (value.marketDate !== undefined && typeof value.marketDate !== "string") ||
+    (value.previousMarketDate !== undefined &&
+      typeof value.previousMarketDate !== "string") ||
+    (value.previousValue !== undefined && !isFiniteNumber(value.previousValue))
   ) {
     return null;
   }
@@ -70,6 +77,13 @@ function parsePosition(value: unknown): AccountSnapshotPosition | null {
     quantity: value.quantity,
     costBasis: value.costBasis,
     value: value.value,
+    ...(value.marketDate === undefined ? {} : { marketDate: value.marketDate }),
+    ...(value.previousMarketDate === undefined
+      ? {}
+      : { previousMarketDate: value.previousMarketDate }),
+    ...(value.previousValue === undefined
+      ? {}
+      : { previousValue: value.previousValue }),
   };
 }
 
