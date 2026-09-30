@@ -24,6 +24,10 @@ import {
   createScorecardToolHandlers,
   scorecardToolDescriptors,
 } from "./mcpTools/scorecards";
+import {
+  createWidgetToolHandlers,
+  widgetToolDescriptors,
+} from "./mcpTools/widgets";
 
 function parseScopes(scopeString: string): ParsedMcpScopes {
   const scopeValues = new Set<string>();
@@ -786,6 +790,7 @@ function getToolsList() {
     },
     ...signalToolDescriptors,
     ...scorecardToolDescriptors,
+    ...widgetToolDescriptors,
   ];
 }
 
@@ -883,6 +888,12 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           manage: (args) =>
             ctx.runMutation(internal.scorecards.manageFromMcp, args),
         });
+        const widgetHandlers = createWidgetToolHandlers({
+          read: (args) =>
+            ctx.runQuery(internal.widgetData.latestForMcp, args),
+          publish: (args) =>
+            ctx.runMutation(internal.widgetData.publishFromMcp, args),
+        });
         const toolHandlers: Record<string, () => Promise<Response>> = {
           readTasks: () =>
             handleReadTasksTool(
@@ -935,7 +946,11 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
               params.arguments
             ),
           ...Object.fromEntries(
-            Object.entries({ ...signalHandlers, ...scorecardHandlers }).map(
+            Object.entries({
+              ...signalHandlers,
+              ...scorecardHandlers,
+              ...widgetHandlers,
+            }).map(
               ([name, handler]) => [
               name,
               () =>

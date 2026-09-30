@@ -128,6 +128,8 @@ export type EventAction = typeof eventAction.type;
 export const eventSource = v.union(v.literal("APP"), v.literal("MCP"));
 export type EventSource = "APP" | "MCP";
 
+export const widgetKind = v.union(v.literal("briefing"));
+
 export const signalAttention = v.union(
   v.literal("ok"),
   v.literal("soon"),
@@ -296,6 +298,21 @@ export default defineSchema({
     exportRequested: v.optional(v.boolean()),
     priceSyncStartedAt: v.optional(v.number()),
   }).index("by_user", ["userId"]).index("by_enabled_next_run", ["enabled", "nextRunAt"]),
+  widgetData: defineTable({
+    userId: v.string(),
+    kind: widgetKind,
+    schemaVersion: v.number(),
+    dataJson: v.string(),
+    idempotencyKey: v.optional(v.string()),
+  })
+    // Convex indexes implicitly end in _creationTime, so descending order on
+    // this index returns the newest row for a user's widget kind.
+    .index("by_user_kind", ["userId", "kind"])
+    .index("by_user_kind_idempotency", [
+      "userId",
+      "kind",
+      "idempotencyKey",
+    ]),
   portfolios: defineTable({
     userId: v.string(),
     name: v.string(),

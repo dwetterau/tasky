@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { Temporal } from "@js-temporal/polyfill";
 
+export * from "./widgets";
+
 export const VERSION = 1 as const;
 export const LIMITS = {
   tasks: 12,
@@ -213,6 +215,9 @@ export const exportSchema = z
     payload: taskyPayloadSchema,
     portfolio: moduleSchema
       .refine((module) => module.id === "portfolio")
+      .optional(),
+    briefing: moduleSchema
+      .refine((module) => module.id === "briefing")
       .optional(),
   })
   .strict();

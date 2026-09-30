@@ -14,11 +14,12 @@
   "dependencies": {
     "@tasky/home-feed": "file:../packages/home-feed",
     "jose": "^6.1.3",
+    "micromark": "^4.0.3",
     "oauth4webapi": "^3.8.5"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260915.1",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260915.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
     "wrangler": "^4.131.2"

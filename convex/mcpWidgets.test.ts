@@ -1,0 +1,162 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  WIDGETS_READ_SCOPE,
+  WIDGETS_WRITE_SCOPE,
+  type ParsedMcpScopes,
+} from "./mcpScopes";
+import {
+  createWidgetToolHandlers,
+  widgetToolDescriptors,
+  type WidgetExecutors,
+} from "./mcpTools/widgets";
+
+type JsonRpcBody = {
+  error?: { code: number; message: string };
+  result?: {
+    content: Array<{ type: string; text: string }>;
+  };
+};
+
+async function responseBody(response: Response): Promise<JsonRpcBody> {
+  return (await response.json()) as JsonRpcBody;
+}
+
+function scopes(...values: string[]): ParsedMcpScopes {
+  return { scopes: new Set(values) };
+}
+
+function makeHandler() {
+  const read = vi.fn<WidgetExecutors["read"]>(async () => ({
+    id: "widget-data-1" as never,
+    createdAt: 123,
+    kind: "briefing",
+    schemaVersion: 1,
+    dataJson: JSON.stringify({ markdown: "# Morning" }),
+  }));
+  const publish = vi.fn<WidgetExecutors["publish"]>(async () => ({
+    id: "widget-data-1" as never,
+    createdAt: 123,
+    duplicate: false,
+  }));
+  return {
+    read,
+    publish,
+    handlers: createWidgetToolHandlers({ read, publish }),
+  };
+}
+
+describe("widget MCP tool", () => {
+  it("advertises one generated, strict schema for all widget kinds", () => {
+    expect(widgetToolDescriptors.map((tool) => tool.name)).toEqual([
+      "readWidgetData",
+      "publishWidgetData",
+    ]);
+    expect(widgetToolDescriptors[1]!.inputSchema).toMatchObject({
+      oneOf: [
+        {
+          properties: {
+            kind: { const: "briefing" },
+            schemaVersion: { const: 1 },
+          },
+          additionalProperties: false,
+        },
+      ],
+    });
+  });
+
+  it("requires widgets:write", async () => {
+    const { handlers, publish } = makeHandler();
+    const response = await handlers.publishWidgetData(
+      1,
+      "user-1",
+      scopes("tasks:write"),
+      {
+        kind: "briefing",
+        schemaVersion: 1,
+        data: { markdown: "# Morning" },
+      },
+    );
+    expect((await responseBody(response)).error).toEqual({
+      code: -32001,
+      message: `Missing required scope: ${WIDGETS_WRITE_SCOPE}`,
+    });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("publishes canonical JSON without a caller-provided row ID", async () => {
+    const { handlers, publish } = makeHandler();
+    const response = await handlers.publishWidgetData(
+      2,
+      "user-1",
+      scopes(WIDGETS_WRITE_SCOPE),
+      {
+        kind: "briefing",
+        schemaVersion: 1,
+        data: { markdown: "  # Evening briefing  " },
+        idempotencyKey: "briefing:2026-09-30:evening",
+      },
+    );
+    expect((await responseBody(response)).error).toBeUndefined();
+    expect(publish).toHaveBeenCalledWith({
+      userId: "user-1",
+      kind: "briefing",
+      schemaVersion: 1,
+      dataJson: JSON.stringify({ markdown: "# Evening briefing" }),
+      idempotencyKey: "briefing:2026-09-30:evening",
+    });
+  });
+
+  it("returns all useful Zod paths for incompatible data", async () => {
+    const { handlers, publish } = makeHandler();
+    const response = await handlers.publishWidgetData(
+      3,
+      "user-1",
+      scopes(WIDGETS_WRITE_SCOPE),
+      {
+        kind: "briefing",
+        schemaVersion: 1,
+        data: { markdown: "", unexpected: true },
+        extra: "no",
+      },
+    );
+    const body = await responseBody(response);
+    expect(body.error?.code).toBe(-32602);
+    expect(body.error?.message).toContain("data.markdown");
+    expect(body.error?.message).toContain("arguments");
+    expect(body.error?.message).toContain("Expected briefing@1 shape");
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("requires widgets:read and returns parsed latest data", async () => {
+    const { handlers, read } = makeHandler();
+    const denied = await handlers.readWidgetData(
+      4,
+      "user-1",
+      scopes(WIDGETS_WRITE_SCOPE),
+      { kind: "briefing" },
+    );
+    expect((await responseBody(denied)).error).toEqual({
+      code: -32001,
+      message: `Missing required scope: ${WIDGETS_READ_SCOPE}`,
+    });
+    expect(read).not.toHaveBeenCalled();
+
+    const response = await handlers.readWidgetData(
+      5,
+      "user-1",
+      scopes(WIDGETS_READ_SCOPE),
+      { kind: "briefing" },
+    );
+    const body = await responseBody(response);
+    expect(body.error).toBeUndefined();
+    expect(read).toHaveBeenCalledWith({
+      userId: "user-1",
+      kind: "briefing",
+    });
+    expect(JSON.parse(body.result!.content[0]!.text)).toMatchObject({
+      kind: "briefing",
+      schemaVersion: 1,
+      data: { markdown: "# Morning" },
+    });
+  });
+});
