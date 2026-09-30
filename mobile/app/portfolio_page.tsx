@@ -330,7 +330,7 @@ function HoldingRow({ holding }: { holding: Holding }) {
     <View style={styles.tableRow}>
       <View style={[styles.cell, { width: COLUMN_WIDTHS.ticker }]}>
         <Text style={styles.tickerText} numberOfLines={1}>
-          {holding.ticker}
+          {holding.ticker || "Cash"}
         </Text>
         {holding.companyName ? (
           <Text style={styles.companyText} numberOfLines={1}>

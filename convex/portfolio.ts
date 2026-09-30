@@ -154,19 +154,27 @@ function currentPriceFromValueAndQuantity(
   return v / q;
 }
 
-function calculateHolding(record: AirtableRecord) {
+export function calculateHolding(record: AirtableRecord) {
   const shares = asNumber(record.fields.Quantity);
-  const costBasis = asNumber(record.fields["Cost Basis"]);
+  const ticker = asString(record.fields.Ticker).trim().toUpperCase();
+  const currentValue = asNumber(record.fields.Value);
+  const rawCostBasis = record.fields["Cost Basis"];
+  const costBasis =
+    !ticker &&
+    (rawCostBasis === undefined ||
+      rawCostBasis === null ||
+      rawCostBasis === "")
+      ? currentValue
+      : asNumber(rawCostBasis);
   const currentPrice = currentPriceFromValueAndQuantity(
     record.fields.Value,
     shares,
   );
-  const currentValue = currentPrice === null ? 0 : currentPrice * shares;
   const gainLoss = currentValue - costBasis;
 
   return {
     id: record.id,
-    ticker: asString(record.fields.Ticker).toUpperCase(),
+    ticker,
     companyName: asString(record.fields.Name),
     costBasis,
     shares,
@@ -177,6 +185,44 @@ function calculateHolding(record: AirtableRecord) {
     targetAllocation: targetPercentFromAirtable(record.fields["Target %"]),
     createdAt: record.createdTime ?? new Date().toISOString(),
   };
+}
+
+type CalculatedHolding = ReturnType<typeof calculateHolding>;
+
+export function aggregateHoldingsByTicker(
+  holdings: CalculatedHolding[],
+): CalculatedHolding[] {
+  const aggregated = new Map<string, CalculatedHolding>();
+  for (const holding of holdings) {
+    const existing = aggregated.get(holding.ticker);
+    if (!existing) {
+      aggregated.set(holding.ticker, { ...holding });
+      continue;
+    }
+
+    existing.shares += holding.shares;
+    existing.costBasis += holding.costBasis;
+    existing.currentValue += holding.currentValue;
+    existing.companyName ||= holding.companyName;
+    existing.createdAt =
+      holding.createdAt < existing.createdAt
+        ? holding.createdAt
+        : existing.createdAt;
+    if (holding.targetAllocation !== null) {
+      existing.targetAllocation =
+        (existing.targetAllocation ?? 0) + holding.targetAllocation;
+    }
+    existing.currentPrice =
+      existing.shares === 0
+        ? null
+        : existing.currentValue / existing.shares;
+    existing.gainLoss = existing.currentValue - existing.costBasis;
+    existing.gainLossPercent =
+      existing.costBasis > 0
+        ? (existing.gainLoss / existing.costBasis) * 100
+        : 0;
+  }
+  return [...aggregated.values()];
 }
 
 function tickerHistoryNamePrefixFormula(ticker: string): string {
@@ -950,12 +996,12 @@ export async function readPortfolioSnapshot(
       params,
     });
 
-    const holdings = records.map(calculateHolding);
+    const holdings = aggregateHoldingsByTicker(records.map(calculateHolding));
 
     const recentPriceStatuses = includePriceStatus
       ? await getRecentPriceStatuses(
           credentials,
-          [...new Set(holdings.map((holding) => holding.ticker))],
+          holdings.map((holding) => holding.ticker).filter(Boolean),
         )
       : [];
     const recentPriceStatusByTicker = new Map(
@@ -1022,15 +1068,11 @@ export async function readPortfolioSnapshot(
     const latestDayReturnDates = holdingsWithDayReturn
       .map((holding) => holding.latestPriceDate)
       .filter((date): date is string => Boolean(date));
-    const totalLatestHistoryValue = holdingsWithDayReturn.reduce(
-      (sum, holding) => sum + holding.currentValue,
-      0,
-    );
     const dayReturn = holdingsWithDayReturn.reduce(
       (sum, holding) => sum + holding.dayReturn,
       0,
     );
-    const totalPreviousHistoryValue = totalLatestHistoryValue - dayReturn;
+    const totalPreviousHistoryValue = totalCurrentValue - dayReturn;
     const hasDayReturn =
       holdingsWithDayReturn.length > 0 && totalPreviousHistoryValue > 0;
 
@@ -1047,9 +1089,7 @@ export async function readPortfolioSnapshot(
         dayReturnDate: maxIsoDate(latestDayReturnDates),
         dayReturn: hasDayReturn ? dayReturn : null,
         dayReturnPercent: hasDayReturn
-          ? ((totalLatestHistoryValue - totalPreviousHistoryValue) /
-              totalPreviousHistoryValue) *
-            100
+          ? (dayReturn / totalPreviousHistoryValue) * 100
           : null,
       },
     };

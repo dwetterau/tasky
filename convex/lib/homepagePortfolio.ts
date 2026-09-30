@@ -82,7 +82,7 @@ function projectPortfolio(
       .map((holding) => {
         const previousHolding = cachedByTicker.get(holding.ticker);
         return {
-          ticker: holding.ticker.slice(0, 24),
+          ticker: holding.ticker ? holding.ticker.slice(0, 24) : "Cash",
           name: summary(holding.companyName),
           value: holding.currentValue,
           allocation:
@@ -141,6 +141,8 @@ export async function collectHomepagePortfolio(
         const portfolio = cachedById.get(portfolioKey(configuration));
         return (
           portfolio !== undefined &&
+          new Set(portfolio.holdings.map((holding) => holding.ticker)).size ===
+            portfolio.holdings.length &&
           portfolio.holdings.every(
           (holding) =>
             holding.shares !== undefined &&

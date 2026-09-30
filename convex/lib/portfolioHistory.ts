@@ -81,7 +81,8 @@ export function buildHistoricalChartData(
 
   const sharesMap = new Map<string, number>();
   for (const holding of holdings) {
-    sharesMap.set(holding.ticker.toUpperCase(), holding.shares);
+    const ticker = holding.ticker.toUpperCase();
+    sharesMap.set(ticker, (sharesMap.get(ticker) ?? 0) + holding.shares);
   }
 
   const priceMap = new Map<
