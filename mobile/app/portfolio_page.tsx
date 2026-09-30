@@ -1,4 +1,4 @@
-import type { FunctionReturnType } from "convex/server";
+import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -36,10 +36,23 @@ type PortfolioConfig = FunctionReturnType<
   typeof taskyApi.portfolios.list
 >[number];
 type Holding = PortfolioSnapshot["holdings"][number];
+type PortfolioSnapshotArgs = FunctionArgs<
+  typeof taskyApi.portfolio.getSnapshot
+>;
+type SnapshotHistoryArgs = FunctionArgs<
+  typeof taskyApi.portfolio.getSnapshotHistory
+>;
+
+type PortfolioSelection = {
+  key: string;
+  snapshotArgs: PortfolioSnapshotArgs;
+  historyArgs: SnapshotHistoryArgs;
+};
 
 type SortKey = "ticker" | "value" | "dayDollar" | "dayPercent" | "totalPercent";
 type SortDirection = "asc" | "desc";
 const ALL_PORTFOLIOS_ID = "__all_portfolios__";
+const DEFAULT_PORTFOLIO_ID = "__default_portfolio__";
 
 function formatCurrency(value: number, digits = 0): string {
   return new Intl.NumberFormat("en-US", {
@@ -520,18 +533,37 @@ export default function PortfolioPage() {
     taskyApi.portfolio.getSnapshotHistory,
   );
   const syncPortfolio = useTaskyAction(taskyApi.portfolio.syncPortfolio);
-  const { data: portfolios } = useTaskyQuery(
+  const { data: portfolios, isLoading: portfoliosLoading } = useTaskyQuery(
     taskyApi.portfolios.list,
     taskyEnabled ? {} : "skip",
   );
 
-  const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
-  const [snapshotHistory, setSnapshotHistory] =
-    useState<SnapshotHistoryResult | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const portfolioCacheRef = useRef(
+    new Map<string, PortfolioSnapshot>(),
+  );
+  const historyCacheRef = useRef(
+    new Map<string, SnapshotHistoryResult>(),
+  );
+  const portfolioRequestsRef = useRef(new Map<string, Promise<void>>());
+  const historyRequestsRef = useRef(new Map<string, Promise<void>>());
+  const [portfolioCache, setPortfolioCache] = useState<
+    ReadonlyMap<string, PortfolioSnapshot>
+  >(() => new Map());
+  const [historyCache, setHistoryCache] = useState<
+    ReadonlyMap<string, SnapshotHistoryResult>
+  >(() => new Map());
+  const [portfolioLoading, setPortfolioLoading] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [historyLoading, setHistoryLoading] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [portfolioErrors, setPortfolioErrors] = useState<
+    ReadonlyMap<string, string>
+  >(() => new Map());
+  const [historyErrors, setHistoryErrors] = useState<
+    ReadonlyMap<string, string>
+  >(() => new Map());
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<SyncFeedback | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("value");
@@ -539,7 +571,6 @@ export default function PortfolioPage() {
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(
     null,
   );
-  const selectedPortfolioIdRef = useRef<string | null>(null);
   const allPortfoliosSelected = selectedPortfolioId === ALL_PORTFOLIOS_ID;
   const selectedPortfolio = useMemo<PortfolioConfig | null>(() => {
     if (allPortfoliosSelected) return null;
@@ -561,107 +592,220 @@ export default function PortfolioPage() {
     ) {
       return;
     }
-    const id = String(selectedPortfolio._id);
-    selectedPortfolioIdRef.current = id;
-    setSelectedPortfolioId(id);
+    setSelectedPortfolioId(String(selectedPortfolio._id));
   }, [allPortfoliosSelected, selectedPortfolio, selectedPortfolioId]);
 
+  const portfolioSelections = useMemo<PortfolioSelection[]>(() => {
+    if (!portfolios) return [];
+    if (portfolios.length === 0) {
+      return [
+        {
+          key: DEFAULT_PORTFOLIO_ID,
+          snapshotArgs: { includePriceStatus: true },
+          historyArgs: {},
+        },
+      ];
+    }
+    const individualSelections = portfolios.map((candidate) => ({
+      key: String(candidate._id),
+      snapshotArgs: {
+        includePriceStatus: true,
+        portfolioId: candidate._id,
+      },
+      historyArgs: { portfolioId: candidate._id },
+    }));
+    return portfolios.length > 1
+      ? [
+          {
+            key: ALL_PORTFOLIOS_ID,
+            snapshotArgs: {
+              includePriceStatus: true,
+              allPortfolios: true,
+            },
+            historyArgs: { allPortfolios: true },
+          },
+          ...individualSelections,
+        ]
+      : individualSelections;
+  }, [portfolios]);
+
+  const selectedKey = allPortfoliosSelected
+    ? ALL_PORTFOLIOS_ID
+    : selectedPortfolio
+      ? String(selectedPortfolio._id)
+      : portfolios
+        ? DEFAULT_PORTFOLIO_ID
+        : null;
+  const selectedSelection =
+    portfolioSelections.find((selection) => selection.key === selectedKey) ??
+    null;
+  const portfolio =
+    selectedKey === null ? null : (portfolioCache.get(selectedKey) ?? null);
+  const snapshotHistory =
+    selectedKey === null ? null : (historyCache.get(selectedKey) ?? null);
+  const error =
+    selectedKey === null ? null : (portfolioErrors.get(selectedKey) ?? null);
+  const historyError =
+    selectedKey === null ? null : (historyErrors.get(selectedKey) ?? null);
+  const isLoading =
+    portfoliosLoading ||
+    (selectedKey !== null &&
+      (portfolioLoading.has(selectedKey) || (!portfolio && !error)));
+  const isHistoryLoading =
+    selectedKey !== null &&
+    (historyLoading.has(selectedKey) ||
+      (!snapshotHistory && !historyError));
+
+  const loadPortfolio = useCallback(
+    (selection: PortfolioSelection, force = false): Promise<void> => {
+      if (!taskyEnabled) return Promise.resolve();
+      if (!force && portfolioCacheRef.current.has(selection.key)) {
+        return Promise.resolve();
+      }
+      const pending = portfolioRequestsRef.current.get(selection.key);
+      if (pending) {
+        return force
+          ? pending.then(() => loadPortfolio(selection, true))
+          : pending;
+      }
+
+      setPortfolioLoading((current) => {
+        const next = new Set(current);
+        next.add(selection.key);
+        return next;
+      });
+      setPortfolioErrors((current) => {
+        const next = new Map(current);
+        next.delete(selection.key);
+        return next;
+      });
+
+      const request = (async () => {
+        try {
+          const snapshot = await getPortfolioSnapshot(selection.snapshotArgs);
+          if (!snapshot) {
+            throw new Error("Tasky session is unavailable.");
+          }
+          portfolioCacheRef.current.set(selection.key, snapshot);
+          setPortfolioCache(new Map(portfolioCacheRef.current));
+        } catch (refreshError) {
+          const message =
+            refreshError instanceof Error
+              ? refreshError.message
+              : "Failed to load portfolio";
+          setPortfolioErrors((current) => {
+            const next = new Map(current);
+            next.set(selection.key, message);
+            return next;
+          });
+        } finally {
+          portfolioRequestsRef.current.delete(selection.key);
+          setPortfolioLoading((current) => {
+            const next = new Set(current);
+            next.delete(selection.key);
+            return next;
+          });
+        }
+      })();
+      portfolioRequestsRef.current.set(selection.key, request);
+      return request;
+    },
+    [getPortfolioSnapshot, taskyEnabled],
+  );
+
+  const loadHistory = useCallback(
+    (selection: PortfolioSelection, force = false): Promise<void> => {
+      if (!taskyEnabled) return Promise.resolve();
+      if (!force && historyCacheRef.current.has(selection.key)) {
+        return Promise.resolve();
+      }
+      const pending = historyRequestsRef.current.get(selection.key);
+      if (pending) {
+        return force ? pending.then(() => loadHistory(selection, true)) : pending;
+      }
+
+      setHistoryLoading((current) => {
+        const next = new Set(current);
+        next.add(selection.key);
+        return next;
+      });
+      setHistoryErrors((current) => {
+        const next = new Map(current);
+        next.delete(selection.key);
+        return next;
+      });
+
+      const request = (async () => {
+        try {
+          const history = await getSnapshotHistory(selection.historyArgs);
+          if (!history) {
+            throw new Error("Tasky session is unavailable.");
+          }
+          historyCacheRef.current.set(selection.key, history);
+          setHistoryCache(new Map(historyCacheRef.current));
+          if (history.status !== "ok") {
+            setHistoryErrors((current) => {
+              const next = new Map(current);
+              next.set(
+                selection.key,
+                history.message ?? "Account history unavailable.",
+              );
+              return next;
+            });
+          }
+        } catch (refreshError) {
+          const message =
+            refreshError instanceof Error
+              ? refreshError.message
+              : "Failed to load account history";
+          setHistoryErrors((current) => {
+            const next = new Map(current);
+            next.set(selection.key, message);
+            return next;
+          });
+        } finally {
+          historyRequestsRef.current.delete(selection.key);
+          setHistoryLoading((current) => {
+            const next = new Set(current);
+            next.delete(selection.key);
+            return next;
+          });
+        }
+      })();
+      historyRequestsRef.current.set(selection.key, request);
+      return request;
+    },
+    [getSnapshotHistory, taskyEnabled],
+  );
+
+  const loadSelection = useCallback(
+    async (selection: PortfolioSelection, force = false): Promise<void> => {
+      await Promise.all([
+        loadPortfolio(selection, force),
+        loadHistory(selection, force),
+      ]);
+    },
+    [loadHistory, loadPortfolio],
+  );
+
   useEffect(() => {
-    selectedPortfolioIdRef.current = selectedPortfolioId;
-  }, [selectedPortfolioId]);
+    if (!taskyEnabled || portfolioSelections.length === 0) return;
+    void Promise.all(
+      portfolioSelections.map((selection) => loadSelection(selection)),
+    );
+  }, [loadSelection, portfolioSelections, taskyEnabled]);
 
   const refreshPortfolio = useCallback(async () => {
-    if (!taskyEnabled) return;
-    const requestedPortfolioId = allPortfoliosSelected
-      ? ALL_PORTFOLIOS_ID
-      : selectedPortfolio
-        ? String(selectedPortfolio._id)
-        : null;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const snapshot = await getPortfolioSnapshot({
-        includePriceStatus: true,
-        ...(allPortfoliosSelected
-          ? { allPortfolios: true }
-          : selectedPortfolio
-            ? { portfolioId: selectedPortfolio._id }
-            : {}),
-      });
-      if (selectedPortfolioIdRef.current === requestedPortfolioId) {
-        setPortfolio(snapshot);
-      }
-    } catch (refreshError) {
-      setError(
-        refreshError instanceof Error
-          ? refreshError.message
-          : "Failed to load portfolio",
-      );
-    } finally {
-      setIsLoading(false);
+    if (selectedSelection) {
+      await loadPortfolio(selectedSelection, true);
     }
-  }, [
-    allPortfoliosSelected,
-    getPortfolioSnapshot,
-    selectedPortfolio,
-    taskyEnabled,
-  ]);
+  }, [loadPortfolio, selectedSelection]);
 
   const refreshHistory = useCallback(async () => {
-    if (!taskyEnabled) return;
-    const requestedPortfolioId = allPortfoliosSelected
-      ? ALL_PORTFOLIOS_ID
-      : selectedPortfolio
-        ? String(selectedPortfolio._id)
-        : null;
-    setIsHistoryLoading(true);
-    setHistoryError(null);
-    try {
-      const history = await getSnapshotHistory(
-        allPortfoliosSelected
-          ? { allPortfolios: true }
-          : selectedPortfolio
-            ? { portfolioId: selectedPortfolio._id }
-            : {},
-      );
-      if (!history) {
-        setHistoryError("Tasky session is unavailable.");
-        return;
-      }
-      if (selectedPortfolioIdRef.current === requestedPortfolioId) {
-        setSnapshotHistory(history);
-        if (history.status !== "ok") {
-          setHistoryError(history.message ?? "Account history unavailable.");
-        }
-      }
-    } catch (refreshError) {
-      setHistoryError(
-        refreshError instanceof Error
-          ? refreshError.message
-          : "Failed to load account history",
-      );
-    } finally {
-      setIsHistoryLoading(false);
+    if (selectedSelection) {
+      await loadHistory(selectedSelection, true);
     }
-  }, [
-    allPortfoliosSelected,
-    getSnapshotHistory,
-    selectedPortfolio,
-    taskyEnabled,
-  ]);
-
-  useEffect(() => {
-    setPortfolio(null);
-    setSnapshotHistory(null);
-    setSyncFeedback(null);
-    void refreshPortfolio();
-  }, [refreshPortfolio, selectedPortfolioId]);
-
-  useEffect(() => {
-    if (portfolio?.status === "ok") {
-      void refreshHistory();
-    }
-  }, [portfolio?.status, refreshHistory]);
+  }, [loadHistory, selectedSelection]);
 
   const handleSyncPortfolio = useCallback(async () => {
     if (!taskyEnabled || isSyncing || isLoading) return;
@@ -683,8 +827,11 @@ export default function PortfolioPage() {
         details: result.details,
       });
       if (result.success) {
-        await refreshPortfolio();
-        await refreshHistory();
+        await Promise.all(
+          portfolioSelections.map((selection) =>
+            loadSelection(selection, true),
+          ),
+        );
       }
     } catch (syncError) {
       setSyncFeedback({
@@ -702,8 +849,8 @@ export default function PortfolioPage() {
     isSyncing,
     isLoading,
     syncPortfolio,
-    refreshPortfolio,
-    refreshHistory,
+    portfolioSelections,
+    loadSelection,
   ]);
 
   const handleSort = (key: SortKey) => {
@@ -803,10 +950,7 @@ export default function PortfolioPage() {
             ]}
             accessibilityRole="tab"
             accessibilityState={{ selected: allPortfoliosSelected }}
-            onPress={() => {
-              selectedPortfolioIdRef.current = ALL_PORTFOLIOS_ID;
-              setSelectedPortfolioId(ALL_PORTFOLIOS_ID);
-            }}
+            onPress={() => setSelectedPortfolioId(ALL_PORTFOLIOS_ID)}
           >
             <Text
               style={[
@@ -828,11 +972,7 @@ export default function PortfolioPage() {
                 ]}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                onPress={() => {
-                  const id = String(candidate._id);
-                  selectedPortfolioIdRef.current = id;
-                  setSelectedPortfolioId(id);
-                }}
+                onPress={() => setSelectedPortfolioId(String(candidate._id))}
               >
                 <Text
                   style={[
@@ -865,7 +1005,7 @@ export default function PortfolioPage() {
         />
       ) : null}
       <PortfolioHistoryChart
-        key={selectedPortfolioId ?? "default"}
+        key={selectedKey ?? "default"}
         points={snapshotHistory?.status === "ok" ? snapshotHistory.points : []}
         startDate={snapshotHistory?.startDate ?? null}
         isLoading={isHistoryLoading && !snapshotHistory}
