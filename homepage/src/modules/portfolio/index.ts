@@ -36,6 +36,9 @@ type NamedPortfolio = NonNullable<PortfolioPayload["portfolios"]>[number];
 
 function renderPortfolio(data: NamedPortfolio, timezone: string) {
   const positive = data.gainLoss >= 0;
+  const hasDailyBaseline = data.holdings.some(
+    (holding) => holding.dayReturn !== null && holding.dayReturn !== undefined,
+  );
   const holdings = [...data.holdings].sort((a, b) => {
     if (a.dayReturn == null && b.dayReturn == null) return 0;
     if (a.dayReturn == null) return 1;
@@ -71,7 +74,9 @@ function renderPortfolio(data: NamedPortfolio, timezone: string) {
       </p>
       <p class="meta">Unrealized return · ${data.holdingsCount} holdings</p>
     </div>
-    <p class="portfolio-market-time meta">Prices ${e(marketDate(data.latestPriceDate))} · ${
+    <p class="portfolio-market-time meta">Snapshot ${e(marketDate(data.latestPriceDate))}${hasDailyBaseline
+      ? ""
+      : " · Daily change needs a prior snapshot"} · ${
       data.lastSyncedAt
         ? `Last synced ${sourceTime(data.lastSyncedAt, timezone)}`
         : "Last sync unavailable"

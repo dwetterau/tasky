@@ -203,6 +203,21 @@ describe("durable ingestion and publication", () => {
         ],
       },
     ];
+    portfolioPayload.portfolios.unshift({
+      id: "all",
+      name: "All",
+      currency: "USD",
+      totalValue: 1750,
+      gainLoss: 300,
+      gainLossPercent: 20.69,
+      holdingsCount: 7,
+      lastSyncedAt: Date.now(),
+      latestPriceDate: "2026-09-29",
+      holdings: [
+        ...portfolioPayload.holdings,
+        ...portfolioPayload.portfolios[1]!.holdings,
+      ],
+    });
     expect((await send(envelope)).status).toBe(202);
     await tick();
     const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
@@ -217,10 +232,13 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Day %");
     expect(edition!.html).toContain("Total %");
     expect(edition!.html).toContain("Show all 6");
+    expect(edition!.html).toContain('data-portfolio-tab="all"');
+    expect(edition!.html).toContain(">All</button>");
     expect(edition!.html).toContain('data-portfolio-tab="schwab"');
     expect(edition!.html).toContain('data-portfolio-tab="vanguard"');
     expect(edition!.html).toContain(">Vanguard</button>");
     expect(edition!.html).toContain("Last synced");
+    expect(edition!.html).toContain("Snapshot Sep 29, 2026");
     expect(edition!.html).not.toContain("Select a column to sort");
     expect(edition!.html).toContain(
       'aria-sort="descending"><button type="button" data-portfolio-sort="day-dollar" data-direction="desc"',
