@@ -1085,16 +1085,19 @@ export async function readPortfolioSnapshot(
       previousPortfolioValue === null
         ? null
         : totalCurrentValue - previousPortfolioValue;
+    const visibleHoldings = holdingsWithPriceStatus.filter(
+      (holding) => holding.currentValue !== 0,
+    );
 
     return {
       status: "ok" as const,
-      holdings: holdingsWithPriceStatus,
+      holdings: visibleHoldings,
       summary: {
         totalCost,
         totalCurrentValue,
         gainLoss,
         gainLossPercent: totalCost > 0 ? (gainLoss / totalCost) * 100 : 0,
-        holdingsCount: holdings.length,
+        holdingsCount: visibleHoldings.length,
         latestPriceDate: latestSnapshotDate,
         dayReturnDate: latestSnapshotDate,
         dayReturn,
