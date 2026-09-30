@@ -545,6 +545,7 @@ export default function PortfolioPage() {
   const historyCacheRef = useRef(
     new Map<string, SnapshotHistoryResult>(),
   );
+  const pendingSelectionRef = useRef<string | null>(null);
   const portfolioRequestsRef = useRef(new Map<string, Promise<void>>());
   const historyRequestsRef = useRef(new Map<string, Promise<void>>());
   const [portfolioCache, setPortfolioCache] = useState<
@@ -814,6 +815,21 @@ export default function PortfolioPage() {
     }
   }, [loadHistory, selectedSelection]);
 
+  const selectPortfolio = useCallback(
+    async (portfolioId: string): Promise<void> => {
+      const selection = portfolioSelections.find(
+        (candidate) => candidate.id === portfolioId,
+      );
+      if (!selection) return;
+      pendingSelectionRef.current = portfolioId;
+      await loadSelection(selection);
+      if (pendingSelectionRef.current === portfolioId) {
+        setSelectedPortfolioId(portfolioId);
+      }
+    },
+    [loadSelection, portfolioSelections],
+  );
+
   const handleSyncPortfolio = useCallback(async () => {
     if (!taskyEnabled || isSyncing || isLoading) return;
     setIsSyncing(true);
@@ -957,7 +973,7 @@ export default function PortfolioPage() {
             ]}
             accessibilityRole="tab"
             accessibilityState={{ selected: allPortfoliosSelected }}
-            onPress={() => setSelectedPortfolioId(ALL_PORTFOLIOS_ID)}
+            onPress={() => void selectPortfolio(ALL_PORTFOLIOS_ID)}
           >
             <Text
               style={[
@@ -979,7 +995,7 @@ export default function PortfolioPage() {
                 ]}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                onPress={() => setSelectedPortfolioId(String(candidate._id))}
+                onPress={() => void selectPortfolio(String(candidate._id))}
               >
                 <Text
                   style={[
