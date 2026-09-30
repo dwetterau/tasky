@@ -18,6 +18,8 @@ const permissionLabels: Record<string, string> = {
   "tasks:write": "Create and update your tasks",
   "signals:read": "Read your signals",
   "signals:write": "Create and update your signals",
+  "widgets:read": "Read content published to your home widgets",
+  "widgets:write": "Publish content to your home widgets",
 };
 
 function OAuthConsentPageContent() {

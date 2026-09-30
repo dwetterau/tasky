@@ -4,6 +4,8 @@ export const TASKS_READ_SCOPE = "tasks:read";
 export const TASKS_WRITE_SCOPE = "tasks:write";
 export const SIGNALS_READ_SCOPE = "signals:read";
 export const SIGNALS_WRITE_SCOPE = "signals:write";
+export const WIDGETS_READ_SCOPE = "widgets:read";
+export const WIDGETS_WRITE_SCOPE = "widgets:write";
 export const TAG_ROOT_PREFIX = "tag:root=";
 
 export type ParsedMcpScopes = {

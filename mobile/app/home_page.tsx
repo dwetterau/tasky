@@ -1,6 +1,10 @@
 import type { FunctionReturnType } from "convex/server";
 import { type Href, useRouter } from "expo-router";
+import { briefingPayloadSchema } from "@tasky/home-feed/widgets";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Markdown, {
+  type RenderRules,
+} from "react-native-markdown-display";
 import {
   ActivityIndicator,
   ScrollView,
@@ -39,6 +43,10 @@ type PortfolioSnapshot = FunctionReturnType<
   typeof taskyApi.portfolio.getSnapshot
 >;
 type Task = FunctionReturnType<typeof taskyApi.tasks.list>[number];
+
+const briefingMarkdownRules: RenderRules = {
+  image: () => null,
+};
 
 function formatPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -80,6 +88,47 @@ function CardHeader({
         {subtitle ? <Text style={styles.cardSubtitle}>{subtitle}</Text> : null}
       </View>
       {trailing ?? <CardChevron />}
+    </View>
+  );
+}
+
+function BriefingCard() {
+  const taskyAuth = useTaskyAuth();
+  const taskyEnabled =
+    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
+  const latest = useTaskyQuery(
+    taskyApi.widgetData.latest,
+    taskyEnabled ? { kind: "briefing" } : "skip",
+  );
+  const briefing = useMemo(() => {
+    if (!latest.data) return null;
+    try {
+      return briefingPayloadSchema.safeParse(JSON.parse(latest.data.dataJson));
+    } catch {
+      return null;
+    }
+  }, [latest.data]);
+
+  if (!taskyEnabled || latest.isLoading || !briefing?.success) return null;
+
+  const published = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(latest.data!.createdAt);
+
+  return (
+    <View style={[sharedStyles.card, styles.briefingCard]}>
+      <CardHeader
+        title="Briefing"
+        trailing={<Text style={styles.briefingTime}>{published}</Text>}
+      />
+      <Markdown
+        style={markdownStyles}
+        rules={briefingMarkdownRules}
+        onLinkPress={(url) => /^https?:\/\//i.test(url)}
+      >
+        {briefing.data.markdown}
+      </Markdown>
     </View>
   );
 }
@@ -616,6 +665,7 @@ export default function HomePage() {
           },
         ]}
       >
+        <BriefingCard />
         <TodayCard />
         <SignalsCard />
         <TaskyCard />
@@ -648,7 +698,71 @@ export const HOME_PAGE_STYLES = StyleSheet.create({
   },
 });
 
+const markdownStyles = StyleSheet.create({
+  body: {
+    color: colors.label,
+    fontSize: fontSize.body,
+    lineHeight: 22,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: spacing.md,
+  },
+  heading1: {
+    color: colors.label,
+    fontSize: fontSize.subhead,
+    fontWeight: "800",
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  heading2: {
+    color: colors.label,
+    fontSize: fontSize.body,
+    fontWeight: "800",
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  heading3: {
+    color: colors.label,
+    fontSize: fontSize.body,
+    fontWeight: "700",
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  bullet_list: {
+    marginBottom: spacing.md,
+  },
+  ordered_list: {
+    marginBottom: spacing.md,
+  },
+  link: {
+    color: colors.systemBlue,
+  },
+  blockquote: {
+    backgroundColor: colors.tertiarySystemGroupedBackground,
+    borderLeftColor: colors.separator,
+    borderLeftWidth: 3,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  code_inline: {
+    color: colors.label,
+    backgroundColor: colors.tertiarySystemGroupedBackground,
+  },
+  fence: {
+    color: colors.label,
+    backgroundColor: colors.tertiarySystemGroupedBackground,
+  },
+});
+
 const styles = StyleSheet.create({
+  briefingCard: {
+    paddingBottom: spacing.sm,
+  },
+  briefingTime: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.caption,
+  },
   signalsCard: {
     paddingBottom: spacing.sm,
   },

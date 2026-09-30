@@ -35,6 +35,7 @@ import type * as mcpScopes from "../mcpScopes.js";
 import type * as mcpTools_common from "../mcpTools/common.js";
 import type * as mcpTools_scorecards from "../mcpTools/scorecards.js";
 import type * as mcpTools_signals from "../mcpTools/signals.js";
+import type * as mcpTools_widgets from "../mcpTools/widgets.js";
 import type * as migrations from "../migrations.js";
 import type * as notes from "../notes.js";
 import type * as onboarding from "../onboarding.js";
@@ -46,6 +47,7 @@ import type * as signals from "../signals.js";
 import type * as tags from "../tags.js";
 import type * as tasks from "../tasks.js";
 import type * as users from "../users.js";
+import type * as widgetData from "../widgetData.js";
 
 import type {
   ApiFromModules,
@@ -81,6 +83,7 @@ declare const fullApi: ApiFromModules<{
   "mcpTools/common": typeof mcpTools_common;
   "mcpTools/scorecards": typeof mcpTools_scorecards;
   "mcpTools/signals": typeof mcpTools_signals;
+  "mcpTools/widgets": typeof mcpTools_widgets;
   migrations: typeof migrations;
   notes: typeof notes;
   onboarding: typeof onboarding;
@@ -92,6 +95,7 @@ declare const fullApi: ApiFromModules<{
   tags: typeof tags;
   tasks: typeof tasks;
   users: typeof users;
+  widgetData: typeof widgetData;
 }>;
 
 /**

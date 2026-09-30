@@ -58,6 +58,15 @@ The cover edition counts calendar days, with September 15, 2026 as Edition 1.
 The generated time changes with each publication; the internal revision still
 increments per publication so automatic updates work throughout the day.
 
+## Briefing widget
+
+MCP agents publish strongly validated `briefing@1` rows to Convex. A row contains
+bounded Markdown plus an optional retry idempotency key; Convex generates its
+ID. The `widgetData.by_user_kind` index implicitly orders equal user/kind rows
+by `_creationTime`, so exports select the newest briefing. Publishing requests
+a fresh homepage export, which safely pre-renders the Markdown into the normal
+KV edition. Mobile reads the same latest row reactively.
+
 ## Portfolio
 
 The export reuses Tasky's configured Airtable Positions views and shared

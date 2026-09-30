@@ -131,6 +131,38 @@ describe("durable ingestion and publication", () => {
       next!.feed.modules.find((m) => m.id === "tasky")!.payload,
     ).toMatchObject({ tasks: [], captures: [], counts: { active: 0 } });
   });
+  it("pre-renders the latest briefing markdown as safe homepage HTML", async () => {
+    await enroll();
+    const envelope = fixtureExport();
+    envelope.briefing = {
+      id: "briefing",
+      schemaVersion: 1,
+      scope: "user",
+      sourceRevision: 1,
+      sourceDataAt: Date.now(),
+      collectedAt: Date.now(),
+      freshForMs: 18 * 60 * 60_000,
+      maxAgeMs: 7 * 24 * 60 * 60_000,
+      status: "available",
+      payload: {
+        markdown:
+          "# Morning briefing\n\n- Review the launch plan\n\n<script>alert('no')</script>",
+      },
+    };
+
+    expect((await send(envelope)).status).toBe(202);
+    await tick();
+    const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(
+      edition!.feed.modules.find((module) => module.id === "briefing")!.payload,
+    ).toMatchObject({ markdown: expect.stringContaining("Morning briefing") });
+    expect(edition!.html).toContain("<h1>Morning briefing</h1>");
+    expect(edition!.html).toContain("<li>Review the launch plan</li>");
+    expect(edition!.html).toContain(
+      "&lt;script&gt;alert('no')&lt;/script&gt;",
+    );
+    expect(edition!.html).not.toContain("<script>alert('no')</script>");
+  });
   it("publishes the saved portfolio alongside Tasky in the same user-scoped edition", async () => {
     await enroll();
     const envelope = fixtureExport();

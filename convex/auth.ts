@@ -46,6 +46,8 @@ export const oauthScopes = [
   "tasks:write",
   "signals:read",
   "signals:write",
+  "widgets:read",
+  "widgets:write",
 ] as const;
 
 export const authComponent = createClient<DataModel>(components.betterAuth);

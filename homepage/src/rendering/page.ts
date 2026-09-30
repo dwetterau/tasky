@@ -203,6 +203,33 @@ p {
   text-transform: uppercase;
   color: var(--muted);
 }
+.briefing-markdown {
+  overflow-wrap: anywhere;
+}
+.briefing-markdown > * + * {
+  margin-top: 12px;
+}
+.briefing-markdown h1,
+.briefing-markdown h2,
+.briefing-markdown h3 {
+  font-size: 18px;
+  line-height: 1.25;
+}
+.briefing-markdown ul,
+.briefing-markdown ol {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+.briefing-markdown blockquote {
+  margin: 12px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--rule);
+  color: var(--muted);
+}
+.briefing-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+}
 .tasky-section {
   margin-bottom: 20px;
 }

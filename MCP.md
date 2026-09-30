@@ -17,7 +17,7 @@ This document explains how Tasky's MCP server is wired today and why key design 
 - MCP support is enabled via Better Auth's `mcp` plugin.
 - `oauthScopes` declares currently supported scopes:
   - identity/session scopes: `openid`, `profile`, `email`, `offline_access`
-  - capability scopes: `tasks:read`, `tasks:write`, `signals:read`, `signals:write`
+  - capability scopes: `tasks:read`, `tasks:write`, `signals:read`, `signals:write`, `widgets:read`, `widgets:write`
 - `defaultScope` is currently `openid offline_access tasks:read`.
 - Dynamic client registration is enabled (`allowDynamicClientRegistration: true`).
 
@@ -73,7 +73,7 @@ Why this design:
 
 Current scope model includes:
 
-- Capability scopes (`tasks:read`, `tasks:write`, `signals:read`, `signals:write`)
+- Capability scopes (`tasks:read`, `tasks:write`, `signals:read`, `signals:write`, `widgets:read`, `widgets:write`)
 - Resource constraint scope prefix: `tag:root=<tagId>`
 
 Current behavior:
@@ -283,6 +283,23 @@ cycle. Updates may replace name, tags, members, quota, or `targetCount`
 (`null` clears it). `optionalQuota` cannot exceed the number of optional
 members. Tag-root tokens constrain list/create to that subtree and prevent
 updates from leaving it.
+
+### `readWidgetData` (`widgets:read`)
+
+Returns the authenticated user's newest row for a registered widget kind, or
+`null` when none exists. The result contains the server-generated row ID,
+creation time, kind/version, and parsed data.
+
+### `publishWidgetData` (`widgets:write`)
+
+Publishes an immutable data row for a registered widget kind. The server
+generates the row ID, and homepage/mobile clients select the newest row by
+authenticated user and kind. The first registered contract is
+`briefing@1`: `{ data: { markdown: string } }`. An optional `idempotencyKey`
+deduplicates retries (for example, `briefing:2026-09-30:morning`) and cannot be
+reused with different data. The MCP input JSON Schema is generated from the
+same strict Zod schema used at write time, and validation errors include every
+failing field path.
 
 ## Architectural Decisions and Trade-offs
 

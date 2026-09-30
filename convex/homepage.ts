@@ -19,6 +19,7 @@ import {
 } from "../packages/home-feed/src/index";
 import { projectHomepage } from "./lib/homepageProjection";
 import { collectHomepagePortfolio } from "./lib/homepagePortfolio";
+import { projectLatestBriefing } from "./widgetData";
 import { syncPortfolioForUser } from "./portfolio";
 import {
   homepageHeaders,
@@ -135,6 +136,7 @@ export const freeze = internalMutation({
     if (!row.pendingBody) {
       const now = Date.now();
       const payload = await projectHomepage(ctx, row.userId, row.timezone, now);
+      const briefing = await projectLatestBriefing(ctx, row.userId, now);
       const sourceRevision = row.revision + 1;
       const exportId = `${row.userId}-${sourceRevision}`;
       const envelope = exportSchema.parse({
@@ -145,6 +147,7 @@ export const freeze = internalMutation({
         sourceRevision,
         exportedAt: now,
         payload,
+        ...(briefing ? { briefing } : {}),
         ...(portfolioSnapshot
           ? { portfolio: JSON.parse(portfolioSnapshot) }
           : {}),

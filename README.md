@@ -76,6 +76,8 @@ Supported capability scopes:
   `readScorecards`)
 - `signals:write` (required for `recordSignal`, `manageSignal`,
   `manageSignalEntry`, and `manageScorecard`)
+- `widgets:read` (required for `readWidgetData`)
+- `widgets:write` (required for `publishWidgetData`)
 
 Supported resource scope:
 
@@ -90,3 +92,6 @@ signals can request structured weight, reps, sets, duration, and distance data;
 agents can read, update, or delete those history entries through MCP.
 Scorecards compose required and optional signals into a single completion
 ratio; `readScorecards` and `manageScorecard` use the same signal scopes.
+`readWidgetData` and `publishWidgetData` use one strongly validated payload
+union for all registered widget kinds. Briefing rows contain bounded Markdown;
+clients show the newest row for the authenticated user and kind.
