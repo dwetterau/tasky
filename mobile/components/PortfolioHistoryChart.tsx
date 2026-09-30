@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -12,12 +12,6 @@ import {
 import { matchFont } from "@shopify/react-native-skia";
 import { CartesianChart, StackedArea } from "victory-native";
 import {
-  buildHistoricalChartData,
-  sortTickersByLatestValue,
-  type HoldingShares,
-  type PriceHistoryPoint,
-} from "tasky-convex/lib/portfolioHistory";
-import {
   colors,
   fontSize,
   radius,
@@ -26,7 +20,7 @@ import {
   tone,
 } from "@/lib/theme";
 
-const TICKER_COLORS = [
+const ACCOUNT_COLORS = [
   "#6366f1",
   "#059669",
   "#dc2626",
@@ -38,7 +32,6 @@ const TICKER_COLORS = [
   "#f97316",
   "#14b8a6",
 ];
-const CASH_SERIES = "__tasky_cash__";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -66,47 +59,57 @@ function formatShortDate(value: string | null): string {
   );
 }
 
-function colorForTicker(ticker: string, allTickers: string[]): string {
-  const index = Math.max(0, allTickers.indexOf(ticker));
-  return TICKER_COLORS[index % TICKER_COLORS.length] ?? TICKER_COLORS[0];
+function colorForAccount(accountId: string, accountIds: string[]): string {
+  const index = Math.max(0, accountIds.indexOf(accountId));
+  return ACCOUNT_COLORS[index % ACCOUNT_COLORS.length] ?? ACCOUNT_COLORS[0];
 }
 
-function nextSelectedTickers(
+function nextSelectedAccounts(
   current: Set<string>,
-  ticker: string,
-  allTickers: string[],
+  accountId: string,
+  accountIds: string[],
 ): Set<string> {
   const allSelected =
-    current.size === allTickers.length &&
-    allTickers.every((item) => current.has(item));
+    current.size === accountIds.length &&
+    accountIds.every((item) => current.has(item));
   if (allSelected) {
-    return new Set([ticker]);
+    return new Set([accountId]);
   }
-  if (current.size === 1 && current.has(ticker)) {
-    return new Set(allTickers);
+  if (current.size === 1 && current.has(accountId)) {
+    return new Set(accountIds);
   }
   const next = new Set(current);
-  if (next.has(ticker)) {
-    next.delete(ticker);
+  if (next.has(accountId)) {
+    next.delete(accountId);
   } else {
-    next.add(ticker);
+    next.add(accountId);
   }
-  return next.size === 0 ? new Set(allTickers) : next;
+  return next.size === 0 ? new Set(accountIds) : next;
 }
 
 type ChartRow = {
   timestamp: number;
 } & Record<string, number>;
 
+type SnapshotHistoryPoint = {
+  date: string;
+  totalValue: number;
+  totalCostBasis: number;
+  accounts: Array<{
+    accountRecordId: string;
+    accountName: string;
+    value: number;
+    costBasis: number;
+  }>;
+};
+
 export function PortfolioHistoryChart({
   points,
-  holdings,
   startDate,
   isLoading,
   error,
 }: {
-  points: PriceHistoryPoint[];
-  holdings: Array<HoldingShares & { currentValue?: number }>;
+  points: SnapshotHistoryPoint[];
   startDate: string | null;
   isLoading: boolean;
   error: string | null;
@@ -116,62 +119,58 @@ export function PortfolioHistoryChart({
   const dark = colorScheme === "dark";
   const axisColor = dark ? "#3a3a3c" : "#e5e7eb";
   const labelColor = dark ? "#8e8e93" : "#6b7280";
-  const cashValue = useMemo(
+  const accounts = useMemo(
     () =>
-      holdings
-        .filter((holding) => !holding.ticker.trim())
-        .reduce((sum, holding) => sum + (holding.currentValue ?? 0), 0),
-    [holdings],
+      [...(points[points.length - 1]?.accounts ?? [])].sort(
+        (a, b) =>
+          b.value - a.value ||
+          a.accountName.localeCompare(b.accountName) ||
+          a.accountRecordId.localeCompare(b.accountRecordId),
+      ),
+    [points],
   );
-  const chartHoldings = useMemo(
-    () => [
-      ...holdings.filter((holding) => holding.ticker.trim()),
-      ...(cashValue > 0
-        ? [{ ticker: CASH_SERIES, shares: 1, currentValue: cashValue }]
-        : []),
-    ],
-    [cashValue, holdings],
+  const accountIds = useMemo(
+    () => accounts.map((account) => account.accountRecordId),
+    [accounts],
   );
-  const chartInputPoints = useMemo(() => {
-    if (cashValue <= 0) return points;
-    const dates = [...new Set(points.map((point) => point.date))];
-    return [
-      ...points,
-      ...dates.map((date) => ({
-        ticker: CASH_SERIES,
-        date,
-        close: cashValue,
-        quantity: 1,
-      })),
-    ];
-  }, [cashValue, points]);
-  const holdingTickers = useMemo(
-    () => chartHoldings.map((holding) => holding.ticker),
-    [chartHoldings],
+  const accountNames = useMemo(
+    () =>
+      new Map(
+        accounts.map((account) => [
+          account.accountRecordId,
+          account.accountName,
+        ]),
+      ),
+    [accounts],
   );
-  const [selectedTickers, setSelectedTickers] = useState<Set<string>>(
-    () => new Set(holdingTickers),
+  const [selectedAccounts, setSelectedAccounts] = useState<Set<string> | null>(
+    null,
   );
-
-  useEffect(() => {
-    setSelectedTickers((prev) => {
-      if (prev.size > 0) return prev;
-      return new Set(holdingTickers);
-    });
-  }, [holdingTickers]);
+  const activeAccounts = useMemo(
+    () => selectedAccounts ?? new Set(accountIds),
+    [accountIds, selectedAccounts],
+  );
 
   const chartPoints = useMemo(
     () =>
-      buildHistoricalChartData(
-        chartInputPoints,
-        chartHoldings,
-        selectedTickers,
-      ),
-    [chartHoldings, chartInputPoints, selectedTickers],
+      points.map((point) => {
+        const selected = point.accounts.filter((account) =>
+          activeAccounts.has(account.accountRecordId),
+        );
+        return {
+          ...point,
+          totalValue: selected.reduce((sum, account) => sum + account.value, 0),
+          totalCostBasis: selected.reduce(
+            (sum, account) => sum + account.costBasis,
+            0,
+          ),
+        };
+      }),
+    [activeAccounts, points],
   );
-  const stackedTickers = useMemo(
-    () => sortTickersByLatestValue(selectedTickers, chartPoints),
-    [selectedTickers, chartPoints],
+  const stackedAccounts = useMemo(
+    () => accountIds.filter((accountId) => activeAccounts.has(accountId)),
+    [accountIds, activeAccounts],
   );
   const chartData = useMemo<ChartRow[]>(
     () =>
@@ -180,12 +179,15 @@ export function PortfolioHistoryChart({
         const row: ChartRow = {
           timestamp: new Date(year ?? 0, (month ?? 1) - 1, day ?? 1).getTime(),
         };
-        for (const ticker of stackedTickers) {
-          row[ticker] = point.tickerValues[ticker] ?? 0;
+        for (const accountId of stackedAccounts) {
+          row[accountId] =
+            point.accounts.find(
+              (account) => account.accountRecordId === accountId,
+            )?.value ?? 0;
         }
         return row;
       }),
-    [chartPoints, stackedTickers],
+    [chartPoints, stackedAccounts],
   );
   const font = useMemo(
     () =>
@@ -196,12 +198,14 @@ export function PortfolioHistoryChart({
     [],
   );
 
-  const startValue = chartPoints[0]?.total ?? 0;
-  const endValue = chartPoints[chartPoints.length - 1]?.total ?? 0;
+  const startValue = chartPoints[0]?.totalValue ?? 0;
+  const endValue = chartPoints[chartPoints.length - 1]?.totalValue ?? 0;
+  const latestCostBasis =
+    chartPoints[chartPoints.length - 1]?.totalCostBasis ?? 0;
   const change = endValue - startValue;
   const changePercent = startValue > 0 ? (change / startValue) * 100 : 0;
   const yMax = chartPoints.reduce(
-    (max, point) => Math.max(max, point.total),
+    (max, point) => Math.max(max, point.totalValue),
     0,
   );
 
@@ -210,11 +214,13 @@ export function PortfolioHistoryChart({
       <View style={styles.header}>
         <Text style={styles.title}>History</Text>
         <Text style={styles.headerHint}>
-          {startDate ? `Since ${formatShortDate(startDate)}` : "Value over time"}
+          {startDate
+            ? `Since ${formatShortDate(startDate)}`
+            : "Value over time"}
         </Text>
       </View>
 
-      {holdingTickers.length > 0 ? (
+      {accountIds.length > 0 ? (
         <ScrollView
           ref={chipsScrollRef}
           horizontal
@@ -224,15 +230,19 @@ export function PortfolioHistoryChart({
             chipsScrollRef.current?.scrollToEnd({ animated: false });
           }}
         >
-          {holdingTickers.map((ticker) => {
-            const selected = selectedTickers.has(ticker);
-            const color = colorForTicker(ticker, holdingTickers);
+          {accountIds.map((accountId) => {
+            const selected = activeAccounts.has(accountId);
+            const color = colorForAccount(accountId, accountIds);
             return (
               <TouchableOpacity
-                key={ticker}
+                key={accountId}
                 onPress={() =>
-                  setSelectedTickers((prev) =>
-                    nextSelectedTickers(prev, ticker, holdingTickers),
+                  setSelectedAccounts((prev) =>
+                    nextSelectedAccounts(
+                      prev ?? new Set(accountIds),
+                      accountId,
+                      accountIds,
+                    ),
                   )
                 }
                 style={[
@@ -254,7 +264,7 @@ export function PortfolioHistoryChart({
                     },
                   ]}
                 >
-                  {ticker === CASH_SERIES ? "Cash" : ticker}
+                  {accountNames.get(accountId) ?? accountId}
                 </Text>
               </TouchableOpacity>
             );
@@ -265,24 +275,24 @@ export function PortfolioHistoryChart({
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={sharedStyles.muted}>Loading price history…</Text>
+          <Text style={sharedStyles.muted}>Loading account history…</Text>
         </View>
       ) : error ? (
         <Text style={sharedStyles.error}>{error}</Text>
       ) : chartData.length === 0 ? (
         <Text style={sharedStyles.muted}>
-          No historical prices yet. Sync prices to fetch the series used by this
-          chart.
+          No account snapshots yet. Sync this portfolio to create today&apos;s
+          snapshot.
         </Text>
       ) : (
         <View style={styles.chart}>
           <CartesianChart
             data={chartData}
             xKey="timestamp"
-            yKeys={stackedTickers}
+            yKeys={stackedAccounts}
             padding={{ left: 8, right: 8, top: 12, bottom: 4 }}
             domainPadding={{ top: 12 }}
-            domain={{ y: [0, yMax] }}
+            domain={{ y: [0, Math.max(yMax, 1)] }}
             xAxis={{
               font,
               tickCount: 3,
@@ -310,10 +320,12 @@ export function PortfolioHistoryChart({
           >
             {({ points: seriesPoints, chartBounds }) => (
               <StackedArea
-                points={stackedTickers.map((ticker) => seriesPoints[ticker])}
+                points={stackedAccounts.map(
+                  (accountId) => seriesPoints[accountId],
+                )}
                 y0={chartBounds.bottom}
-                colors={stackedTickers.map((ticker) =>
-                  colorForTicker(ticker, holdingTickers),
+                colors={stackedAccounts.map((accountId) =>
+                  colorForAccount(accountId, accountIds),
                 )}
                 curveType="linear"
               />
@@ -334,7 +346,10 @@ export function PortfolioHistoryChart({
             value={`${formatSignedCurrency(change)} (${formatPercent(changePercent)})`}
             toneValue={change}
           />
-          <HistoryStat label="Days" value={`${chartPoints.length}`} />
+          <HistoryStat
+            label="Cost basis"
+            value={formatCurrency(latestCostBasis)}
+          />
         </View>
       ) : null}
     </View>

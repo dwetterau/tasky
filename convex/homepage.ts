@@ -19,7 +19,7 @@ import {
 } from "../packages/home-feed/src/index";
 import { projectHomepage } from "./lib/homepageProjection";
 import { collectHomepagePortfolio } from "./lib/homepagePortfolio";
-import { syncPriceHistoryForUser } from "./portfolio";
+import { syncPortfolioForUser } from "./portfolio";
 import {
   homepageHeaders,
   verifyHomepageRequest,
@@ -347,7 +347,7 @@ export const runPriceSync = internalAction({
   handler: async (ctx, { userId, startedAt }) => {
     let succeeded = false;
     try {
-      succeeded = (await syncPriceHistoryForUser(ctx, userId)).success;
+      succeeded = (await syncPortfolioForUser(ctx, userId)).success;
       if (succeeded) {
         const owned = await ctx.runQuery(internal.homepage.priceSyncOwned, {
           userId,

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./portfolio", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./portfolio")>()),
-  syncPriceHistoryForUser: vi.fn(),
+  syncPortfolioForUser: vi.fn(),
   readPortfolioSnapshot: vi.fn(async () => ({
     status: "no_credentials" as const,
     message: "missing",
@@ -25,7 +25,7 @@ vi.mock("./portfolio", async (importOriginal) => ({
 import schema from "./schema";
 import { internal } from "./_generated/api";
 import { modules } from "./test.setup";
-import { syncPriceHistoryForUser } from "./portfolio";
+import { syncPortfolioForUser } from "./portfolio";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -38,16 +38,18 @@ const synced = {
   synced: 2,
   details: {
     tickersProcessed: 1,
-    recordsFound: 2,
-    recordsInserted: 2,
+    accountsProcessed: 2,
+    snapshotsCreated: 2,
+    snapshotsUpdated: 0,
     positionsUpdated: 1,
+    unassignedPositions: 0,
     yahooTickers: [],
   },
 };
 
 describe("homepage price sync completion", () => {
   it("exports a new edition after the sync that owns the lease", async () => {
-    vi.mocked(syncPriceHistoryForUser).mockResolvedValue(synced);
+    vi.mocked(syncPortfolioForUser).mockResolvedValue(synced);
     const t = convexTest(schema, modules);
     const startedAt = Date.now();
     const id = await t.run((ctx) =>
@@ -64,17 +66,14 @@ describe("homepage price sync completion", () => {
     await t.action(internal.homepage.runPriceSync, { userId: "a", startedAt });
     await t.finishAllScheduledFunctions(() => {});
     const row = await t.query(internal.homepage.pending, { id });
-    expect(syncPriceHistoryForUser).toHaveBeenCalledWith(
-      expect.anything(),
-      "a",
-    );
+    expect(syncPortfolioForUser).toHaveBeenCalledWith(expect.anything(), "a");
     expect(row!.priceSyncStartedAt).toBeUndefined();
     expect(row!.revision).toBe(1);
     expect(row!.pendingBody).toContain('"userId":"a"');
   });
 
   it("does not clear a newer lease or export when an older sync finishes", async () => {
-    vi.mocked(syncPriceHistoryForUser).mockResolvedValue(synced);
+    vi.mocked(syncPortfolioForUser).mockResolvedValue(synced);
     const t = convexTest(schema, modules);
     const newer = Date.now();
     const id = await t.run((ctx) =>
@@ -101,7 +100,7 @@ describe("homepage price sync completion", () => {
   it("queues a fresh snapshot behind an in-flight export", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-28T16:00:00Z"));
-    vi.mocked(syncPriceHistoryForUser).mockResolvedValue(synced);
+    vi.mocked(syncPortfolioForUser).mockResolvedValue(synced);
     const t = convexTest(schema, modules);
     const startedAt = Date.now();
     const id = await t.run((ctx) =>

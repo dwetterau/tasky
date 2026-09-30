@@ -29,8 +29,8 @@ import { PortfolioHistoryChart } from "@/components/PortfolioHistoryChart";
 type PortfolioSnapshot = FunctionReturnType<
   typeof taskyApi.portfolio.getSnapshot
 >;
-type PriceHistoryResult = FunctionReturnType<
-  typeof taskyApi.portfolio.getPriceHistory
+type SnapshotHistoryResult = FunctionReturnType<
+  typeof taskyApi.portfolio.getSnapshotHistory
 >;
 type PortfolioConfig = FunctionReturnType<
   typeof taskyApi.portfolios.list
@@ -167,7 +167,9 @@ function SummaryStrip({
             {formatCurrency(summary.totalCurrentValue)}
           </Text>
           <Text style={sharedStyles.muted}>
-            As of {formatMarketDate(summary.latestPriceDate)}
+            {summary.latestPriceDate
+              ? `As of ${formatMarketDate(summary.latestPriceDate)}`
+              : "Current Airtable values"}
           </Text>
         </View>
         <View style={styles.summaryActions}>
@@ -449,7 +451,7 @@ function SyncFeedbackBanner({
         <Text
           style={[styles.feedbackTitle, { color: accent as unknown as string }]}
         >
-          {isSuccess ? "Prices synced" : "Sync failed"}
+          {isSuccess ? "Portfolio synced" : "Sync failed"}
         </Text>
         <TouchableOpacity onPress={onDismiss} hitSlop={8}>
           <Text style={styles.feedbackDismiss}>Dismiss</Text>
@@ -458,9 +460,9 @@ function SyncFeedbackBanner({
       <Text style={styles.feedbackMessage}>{feedback.message}</Text>
       {isSuccess && details ? (
         <Text style={sharedStyles.muted}>
-          {details.recordsInserted} inserted · {details.recordsFound} found ·{" "}
-          {details.tickersProcessed} ticker
-          {details.tickersProcessed === 1 ? "" : "s"}
+          {details.snapshotsCreated} created · {details.snapshotsUpdated}{" "}
+          updated · {details.accountsProcessed} account
+          {details.accountsProcessed === 1 ? "" : "s"}
         </Text>
       ) : null}
     </View>
@@ -502,9 +504,7 @@ type SyncFeedback = {
 type SyncResult = NonNullable<
   Awaited<
     ReturnType<
-      ReturnType<
-        typeof useTaskyAction<typeof taskyApi.portfolio.syncPriceHistory>
-      >
+      ReturnType<typeof useTaskyAction<typeof taskyApi.portfolio.syncPortfolio>>
     >
   >
 >;
@@ -515,17 +515,18 @@ export default function PortfolioPage() {
   const taskyEnabled =
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const getPortfolioSnapshot = useTaskyAction(taskyApi.portfolio.getSnapshot);
-  const getPriceHistory = useTaskyAction(taskyApi.portfolio.getPriceHistory);
-  const syncPriceHistory = useTaskyAction(taskyApi.portfolio.syncPriceHistory);
+  const getSnapshotHistory = useTaskyAction(
+    taskyApi.portfolio.getSnapshotHistory,
+  );
+  const syncPortfolio = useTaskyAction(taskyApi.portfolio.syncPortfolio);
   const { data: portfolios } = useTaskyQuery(
     taskyApi.portfolios.list,
     taskyEnabled ? {} : "skip",
   );
 
   const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
-  const [priceHistory, setPriceHistory] = useState<PriceHistoryResult | null>(
-    null,
-  );
+  const [snapshotHistory, setSnapshotHistory] =
+    useState<SnapshotHistoryResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -575,9 +576,7 @@ export default function PortfolioPage() {
     try {
       const snapshot = await getPortfolioSnapshot({
         includePriceStatus: true,
-        ...(selectedPortfolio
-          ? { portfolioId: selectedPortfolio._id }
-          : {}),
+        ...(selectedPortfolio ? { portfolioId: selectedPortfolio._id } : {}),
       });
       if (selectedPortfolioIdRef.current === requestedPortfolioId) {
         setPortfolio(snapshot);
@@ -601,35 +600,33 @@ export default function PortfolioPage() {
     setIsHistoryLoading(true);
     setHistoryError(null);
     try {
-      const history = await getPriceHistory(
-        selectedPortfolio
-          ? { portfolioId: selectedPortfolio._id }
-          : {},
+      const history = await getSnapshotHistory(
+        selectedPortfolio ? { portfolioId: selectedPortfolio._id } : {},
       );
       if (!history) {
         setHistoryError("Tasky session is unavailable.");
         return;
       }
       if (selectedPortfolioIdRef.current === requestedPortfolioId) {
-        setPriceHistory(history);
+        setSnapshotHistory(history);
         if (history.status !== "ok") {
-          setHistoryError(history.message ?? "Price history unavailable.");
+          setHistoryError(history.message ?? "Account history unavailable.");
         }
       }
     } catch (refreshError) {
       setHistoryError(
         refreshError instanceof Error
           ? refreshError.message
-          : "Failed to load price history",
+          : "Failed to load account history",
       );
     } finally {
       setIsHistoryLoading(false);
     }
-  }, [getPriceHistory, selectedPortfolio, taskyEnabled]);
+  }, [getSnapshotHistory, selectedPortfolio, taskyEnabled]);
 
   useEffect(() => {
     setPortfolio(null);
-    setPriceHistory(null);
+    setSnapshotHistory(null);
     setSyncFeedback(null);
     void refreshPortfolio();
   }, [refreshPortfolio, selectedPortfolioId]);
@@ -640,12 +637,12 @@ export default function PortfolioPage() {
     }
   }, [portfolio?.status, refreshHistory]);
 
-  const handleSyncPrices = useCallback(async () => {
+  const handleSyncPortfolio = useCallback(async () => {
     if (!taskyEnabled || isSyncing || isLoading) return;
     setIsSyncing(true);
     setSyncFeedback(null);
     try {
-      const result = await syncPriceHistory({});
+      const result = await syncPortfolio({});
       if (!result) {
         setSyncFeedback({
           kind: "error",
@@ -669,7 +666,7 @@ export default function PortfolioPage() {
         message:
           syncError instanceof Error
             ? syncError.message
-            : "Failed to sync prices",
+            : "Failed to sync portfolio",
       });
     } finally {
       setIsSyncing(false);
@@ -678,7 +675,7 @@ export default function PortfolioPage() {
     taskyEnabled,
     isSyncing,
     isLoading,
-    syncPriceHistory,
+    syncPortfolio,
     refreshPortfolio,
     refreshHistory,
   ]);
@@ -809,7 +806,7 @@ export default function PortfolioPage() {
           void refreshPortfolio();
           void refreshHistory();
         }}
-        onSync={() => void handleSyncPrices()}
+        onSync={() => void handleSyncPortfolio()}
         isLoading={isLoading}
         isSyncing={isSyncing}
         canSync={taskyEnabled}
@@ -822,10 +819,9 @@ export default function PortfolioPage() {
       ) : null}
       <PortfolioHistoryChart
         key={selectedPortfolioId ?? "default"}
-        points={priceHistory?.status === "ok" ? priceHistory.points : []}
-        holdings={portfolio.holdings}
-        startDate={priceHistory?.startDate ?? null}
-        isLoading={isHistoryLoading && !priceHistory}
+        points={snapshotHistory?.status === "ok" ? snapshotHistory.points : []}
+        startDate={snapshotHistory?.startDate ?? null}
+        isLoading={isHistoryLoading && !snapshotHistory}
         error={historyError}
       />
       <MoversCard holdings={portfolio.holdings} />
