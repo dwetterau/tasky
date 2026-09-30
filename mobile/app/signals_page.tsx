@@ -9,13 +9,14 @@ import {
   View,
 } from "react-native";
 import { PillButton } from "@/components/PillButton";
-import { SignalRow } from "@/components/SignalRow";
+import { SignalRow, signalAttentionColor } from "@/components/SignalRow";
 import { TagFilterRow } from "@/components/TagFilterRow";
 import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
   getSignalQueryTime,
+  groupSignalsByPrimaryTag,
   loggedTodaySignals,
   SIGNAL_SOON_WINDOW_MS,
   type SignalDashboardItem,
@@ -107,12 +108,14 @@ function SignalList({
   savingId,
   onOpen,
   onQuickAction,
+  showsTags = true,
 }: {
   items: SignalDashboardItem[];
   now: number;
   savingId: string | null;
   onOpen: (signalId: string) => void;
   onQuickAction: (signal: SignalDashboardItem) => void;
+  showsTags?: boolean;
 }) {
   return (
     <View style={styles.listCard}>
@@ -128,6 +131,7 @@ function SignalList({
               signal.model.kind === "activity" ? "Done" : "Update"
             }
             isSaving={savingId === signal.id}
+            showsTag={showsTags}
           />
         </View>
       ))}
@@ -174,6 +178,7 @@ export default function SignalsPage() {
     const result: Array<{
       attention: SignalAttention;
       items: SignalDashboardItem[];
+      tagGroups: ReturnType<typeof groupSignalsByPrimaryTag>;
     }> = [];
     for (const attention of ATTENTION_ORDER) {
       const matching = (signals.data ?? []).filter(
@@ -183,6 +188,7 @@ export default function SignalsPage() {
       result.push({
         attention,
         items: matching,
+        tagGroups: groupSignalsByPrimaryTag(matching),
       });
     }
     return result;
@@ -327,10 +333,54 @@ export default function SignalsPage() {
         ) : (
           grouped.map((attentionGroup) => (
             <View key={attentionGroup.attention} style={styles.attentionGroup}>
-              <Text style={sharedStyles.sectionTitle}>
-                {ATTENTION_TITLES[attentionGroup.attention]}
-              </Text>
-              <SignalList {...listProps} items={attentionGroup.items} />
+              <View style={styles.attentionHeader}>
+                <View
+                  style={[
+                    styles.attentionDot,
+                    {
+                      backgroundColor: signalAttentionColor(
+                        attentionGroup.attention,
+                      ),
+                    },
+                  ]}
+                />
+                <Text style={styles.attentionTitle}>
+                  {ATTENTION_TITLES[attentionGroup.attention]}
+                </Text>
+                <View style={styles.attentionCount}>
+                  <Text style={styles.attentionCountText}>
+                    {attentionGroup.items.length}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.tagGroups}>
+                {attentionGroup.tagGroups.map((tagGroup) => (
+                  <View key={tagGroup.key} style={styles.tagGroup}>
+                    <View style={styles.tagHeader}>
+                      <View
+                        style={[
+                          styles.tagDot,
+                          {
+                            backgroundColor:
+                              tagGroup.tag?.color ?? colors.systemGray,
+                          },
+                        ]}
+                      />
+                      <Text style={styles.tagTitle} numberOfLines={1}>
+                        {tagGroup.tag?.name ?? "Untagged"}
+                      </Text>
+                      <Text style={styles.tagCount}>
+                        {tagGroup.signals.length}
+                      </Text>
+                    </View>
+                    <SignalList
+                      {...listProps}
+                      items={tagGroup.signals}
+                      showsTags={false}
+                    />
+                  </View>
+                ))}
+              </View>
             </View>
           ))
         )}
@@ -403,7 +453,69 @@ const styles = StyleSheet.create({
     color: "white",
   },
   attentionGroup: {
+    gap: spacing.md,
+  },
+  attentionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  attentionDot: {
+    width: 9,
+    height: 9,
+    borderRadius: radius.pill,
+  },
+  attentionTitle: {
+    flex: 1,
+    color: colors.label,
+    fontSize: fontSize.bodyLg,
+    fontWeight: "700",
+  },
+  attentionCount: {
+    minWidth: 28,
+    height: 24,
+    paddingHorizontal: spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
+    backgroundColor: colors.tertiarySystemGroupedBackground,
+  },
+  attentionCountText: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.caption,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  tagGroups: {
+    gap: spacing.lg,
+    paddingLeft: spacing.sm,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: colors.separator,
+  },
+  tagGroup: {
+    gap: spacing.sm,
+  },
+  tagHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  tagDot: {
+    width: 8,
+    height: 8,
+    borderRadius: radius.pill,
+  },
+  tagTitle: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.small,
+    fontWeight: "700",
+  },
+  tagCount: {
+    color: colors.tertiaryLabel,
+    fontSize: fontSize.caption,
+    fontVariant: ["tabular-nums"],
   },
   listCard: {
     overflow: "hidden",

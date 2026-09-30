@@ -25,6 +25,37 @@ export type SignalPeriodBounds = {
   month: { startAt: number; endAt: number };
 };
 
+export type SignalTagGroup = {
+  key: string;
+  tag: SignalDashboardItem["tags"][number] | null;
+  signals: SignalDashboardItem[];
+};
+
+export function groupSignalsByPrimaryTag(
+  signals: SignalDashboardItem[],
+): SignalTagGroup[] {
+  const groups = new Map<string, SignalTagGroup>();
+
+  for (const signal of signals) {
+    const tag = signal.tags[0] ?? null;
+    const key = tag ? String(tag.id) : "untagged";
+    const existing = groups.get(key);
+    if (existing) {
+      existing.signals.push(signal);
+    } else {
+      groups.set(key, { key, tag, signals: [signal] });
+    }
+  }
+
+  return [...groups.values()].sort((left, right) => {
+    if (left.tag === null) return 1;
+    if (right.tag === null) return -1;
+    return left.tag.name.localeCompare(right.tag.name, undefined, {
+      sensitivity: "base",
+    });
+  });
+}
+
 export function getSignalPeriodBounds(now: number): SignalPeriodBounds {
   const date = new Date(now);
   const dayStart = new Date(
