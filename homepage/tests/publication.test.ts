@@ -237,8 +237,14 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain('data-portfolio-tab="schwab"');
     expect(edition!.html).toContain('data-portfolio-tab="vanguard"');
     expect(edition!.html).toContain(">Vanguard</button>");
-    expect(edition!.html).toContain("Last synced");
-    expect(edition!.html).toContain("Snapshot Sep 29, 2026");
+    expect(edition!.html).toContain("Prices last synced");
+    expect(edition!.html).toContain("Snapshot date");
+    expect(edition!.html).toContain(
+      "Market date used for daily price changes.",
+    );
+    expect(edition!.html).not.toContain(
+      '<p class="portfolio-market-time meta">',
+    );
     expect(edition!.html).not.toContain("Select a column to sort");
     expect(edition!.html).toContain(
       'aria-sort="descending"><button type="button" data-portfolio-sort="day-dollar" data-direction="desc"',

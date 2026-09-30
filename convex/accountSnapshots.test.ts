@@ -24,7 +24,15 @@ it("creates and parses an account snapshot with totals", () => {
     accountName: "Brokerage",
     date: "2026-09-29",
     capturedAt: 100,
-    positions: [position("vti", 250, 200), position("cash", 50, 50)],
+    positions: [
+      {
+        ...position("vti", 250, 200),
+        marketDate: "2026-09-29",
+        previousMarketDate: "2026-09-28",
+        previousValue: 245,
+      },
+      position("cash", 50, 50),
+    ],
   });
 
   expect(snapshot).toMatchObject({

@@ -34,11 +34,8 @@ const columns = [
 
 type NamedPortfolio = NonNullable<PortfolioPayload["portfolios"]>[number];
 
-function renderPortfolio(data: NamedPortfolio, timezone: string) {
+function renderPortfolio(data: NamedPortfolio) {
   const positive = data.gainLoss >= 0;
-  const hasDailyBaseline = data.holdings.some(
-    (holding) => holding.dayReturn !== null && holding.dayReturn !== undefined,
-  );
   const holdings = [...data.holdings].sort((a, b) => {
     if (a.dayReturn == null && b.dayReturn == null) return 0;
     if (a.dayReturn == null) return 1;
@@ -47,8 +44,7 @@ function renderPortfolio(data: NamedPortfolio, timezone: string) {
   });
   const rows = holdings
     .map((holding) => {
-      const totalPercent =
-        holding.gainLossPercent ?? holding.allocation * 100;
+      const totalPercent = holding.gainLossPercent ?? holding.allocation * 100;
       return `<tr
         data-sort-ticker="${e(holding.ticker.toLowerCase())}"
         data-sort-day-dollar="${holding.dayReturn ?? ""}"
@@ -74,19 +70,11 @@ function renderPortfolio(data: NamedPortfolio, timezone: string) {
       </p>
       <p class="meta">Unrealized return · ${data.holdingsCount} holdings</p>
     </div>
-    <p class="portfolio-market-time meta">Snapshot ${e(marketDate(data.latestPriceDate))}${hasDailyBaseline
-      ? ""
-      : " · Daily change needs a prior snapshot"} · ${
-      data.lastSyncedAt
-        ? `Last synced ${sourceTime(data.lastSyncedAt, timezone)}`
-        : "Last sync unavailable"
-    }</p>
     <div class="holdings-heading">
       <h3 class="section-label">Holdings</h3>
     </div>
-    ${
-      holdings.length
-        ? `<div class="portfolio-table-scroll">
+    ${holdings.length
+      ? `<div class="portfolio-table-scroll">
       <table class="portfolio-table" data-portfolio-table data-expanded="false">
         <thead><tr>
           ${columns
@@ -104,8 +92,7 @@ function renderPortfolio(data: NamedPortfolio, timezone: string) {
         ? `<button class="portfolio-expand" type="button" data-portfolio-expand aria-expanded="false">Show all ${holdings.length}</button>`
         : ""
     }`
-        : '<p class="empty">No holdings yet.</p>'
-    }`;
+      : '<p class="empty">No holdings yet.</p>'}`;
 }
 
 export const portfolioModule: HomeModule<PortfolioPayload> = {
@@ -117,6 +104,10 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
   maxAgeMs: 60 * 60_000,
   parse: (value) => portfolioPayloadSchema.parse(value),
   renderHeader(snapshot, context) {
+    const data =
+      snapshot.payload === null
+        ? null
+        : portfolioPayloadSchema.parse(snapshot.payload);
     const timestamp = snapshot.collectedAt;
     const label =
       snapshot.status === "available"
@@ -142,6 +133,18 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
                 ? "Awaiting first update"
                 : `<strong>${e(label)}</strong> ${sourceTime(timestamp, context.timezone)}`}</span
             >
+            <span
+              ><strong>Prices last synced</strong> ${data?.lastSyncedAt
+                ? sourceTime(data.lastSyncedAt, context.timezone)
+                : "Unavailable"}<br />
+              When prices and positions were last synchronized.</span
+            >
+            <span
+              ><strong>Snapshot date</strong> ${e(
+                marketDate(data?.latestPriceDate),
+              )}<br />
+              Market date used for daily price changes.</span
+            >
           </span>
         </span>
         <form class="module-refresh" action="/api/sync-prices" method="post">
@@ -151,22 +154,20 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
     </div>`;
   },
   render(data, context) {
-    const portfolios =
-      data.portfolios ??
-      [
-        {
-          id: "legacy-schwab",
-          name: "Schwab",
-          currency: data.currency,
-          totalValue: data.totalValue,
-          gainLoss: data.gainLoss,
-          gainLossPercent: data.gainLossPercent,
-          holdingsCount: data.holdingsCount,
-          lastSyncedAt: data.lastSyncedAt,
-          latestPriceDate: data.latestPriceDate,
-          holdings: data.holdings,
-        },
-      ];
+    const portfolios = data.portfolios ?? [
+      {
+        id: "legacy-schwab",
+        name: "Schwab",
+        currency: data.currency,
+        totalValue: data.totalValue,
+        gainLoss: data.gainLoss,
+        gainLossPercent: data.gainLossPercent,
+        holdingsCount: data.holdingsCount,
+        lastSyncedAt: data.lastSyncedAt,
+        latestPriceDate: data.latestPriceDate,
+        holdings: data.holdings,
+      },
+    ];
     const tabs =
       portfolios.length > 1
         ? `<div class="portfolio-tabs" role="tablist" aria-label="Portfolio">
@@ -181,7 +182,7 @@ export const portfolioModule: HomeModule<PortfolioPayload> = {
     const panels = portfolios
       .map(
         (portfolio, index) =>
-          `<div class="portfolio-panel" data-portfolio-panel="${e(portfolio.id)}"${index === 0 ? "" : " hidden"}>${renderPortfolio(portfolio, context.timezone)}</div>`,
+          `<div class="portfolio-panel" data-portfolio-panel="${e(portfolio.id)}"${index === 0 ? "" : " hidden"}>${renderPortfolio(portfolio)}</div>`,
       )
       .join("");
     return `${tabs}${panels}`;
