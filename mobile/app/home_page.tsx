@@ -115,10 +115,11 @@ function SignalsCard() {
     weightSignal.model.measurementFields?.length === 1 &&
     weightSignal.model.measurementFields[0] === "weight" &&
     !weightSignal.evaluation.isComplete;
-  const needsAttention = (signals.data ?? [])
+  const actionableSignals = (signals.data ?? [])
     .filter(
       (signal) =>
-        signal.evaluation.attention !== "ok" &&
+        (signal.actionability.tier === "overdue" ||
+          signal.actionability.tier === "ready") &&
         (!showScaleCard || signal.id !== weightSignal?.id),
     )
     .slice(0, 3);
@@ -187,7 +188,7 @@ function SignalsCard() {
           <View style={sharedStyles.inlineLoading}>
             <ActivityIndicator />
           </View>
-        ) : needsAttention.length === 0 ? (
+        ) : actionableSignals.length === 0 ? (
           <TouchableOpacity
             onPress={() => router.push("/signals_page" as Href)}
           >
@@ -201,7 +202,7 @@ function SignalsCard() {
           </TouchableOpacity>
         ) : (
           <View style={styles.signalList}>
-            {needsAttention.map((signal, index) => (
+            {actionableSignals.map((signal, index) => (
               <View key={signal.id}>
                 {index > 0 ? <View style={styles.signalDivider} /> : null}
                 <SignalRow

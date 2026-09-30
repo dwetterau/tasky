@@ -319,7 +319,7 @@ export const signalToolDescriptors: McpToolDescriptor[] = [
   {
     name: "readSignals",
     description:
-      "Read the authenticated user's activity and inventory signal dashboard, ordered by attention, plus the Tasky tag catalog needed to filter or manage signals. Inventory quantities are projections from the last confirmed state.",
+      "Read the authenticated user's activity and inventory signal dashboard, ordered by actionability, plus the Tasky tag catalog needed to filter or manage signals. Inventory quantities are projections from the last confirmed state.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
