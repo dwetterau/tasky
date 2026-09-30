@@ -34,14 +34,17 @@ export function buildHoldingSeries(
       const existing = byKey.get(key);
       if (existing) {
         existing.name ||= holding.name;
-        existing.maxValue = Math.max(existing.maxValue, holding.value);
+        existing.maxValue = Math.max(
+          existing.maxValue,
+          Math.abs(holding.value),
+        );
       } else {
         byKey.set(key, {
           key,
           ticker: holding.ticker,
           name: holding.name,
           latestValue: 0,
-          maxValue: holding.value,
+          maxValue: Math.abs(holding.value),
         });
       }
     }
@@ -55,10 +58,12 @@ export function buildHoldingSeries(
     }
   }
 
-  return [...byKey.values()].sort(
-    (a, b) =>
-      b.latestValue - a.latestValue ||
-      b.maxValue - a.maxValue ||
-      a.ticker.localeCompare(b.ticker),
-  );
+  return [...byKey.values()]
+    .filter((series) => series.maxValue !== 0)
+    .sort(
+      (a, b) =>
+        b.latestValue - a.latestValue ||
+        b.maxValue - a.maxValue ||
+        a.ticker.localeCompare(b.ticker),
+    );
 }

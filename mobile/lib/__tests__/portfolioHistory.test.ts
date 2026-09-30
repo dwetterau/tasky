@@ -55,3 +55,22 @@ test("uses one stable series for cash across snapshots", () => {
     ]),
   ).toHaveLength(1);
 });
+
+test("hides positions that are zero for the entire history range", () => {
+  expect(
+    buildHoldingSeries([
+      {
+        holdings: [
+          { ticker: "EMPTY", name: "Empty position", value: 0, costBasis: 0 },
+          { ticker: "HELD", name: "Held position", value: 10, costBasis: 8 },
+        ],
+      },
+      {
+        holdings: [
+          { ticker: "EMPTY", name: "Empty position", value: 0, costBasis: 0 },
+          { ticker: "HELD", name: "Held position", value: 12, costBasis: 8 },
+        ],
+      },
+    ]).map(({ ticker }) => ticker),
+  ).toEqual(["HELD"]);
+});
