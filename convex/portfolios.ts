@@ -6,8 +6,7 @@ import {
   type MutationCtx,
 } from "./_generated/server";
 import { getAuthUserId } from "./auth";
-import { decryptApiKey } from "./apiKeys";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc } from "./_generated/dataModel";
 
 const MAX_PORTFOLIOS_PER_USER = 5;
 
@@ -86,73 +85,6 @@ function publicPortfolio(portfolio: Doc<"portfolios">) {
   };
 }
 
-async function latestCredential(
-  ctx: MutationCtx,
-  userId: string,
-  type:
-    | "portfolio_schwab_positions_view_id"
-    | "portfolio_reset_date",
-): Promise<string | null> {
-  const row = await ctx.db
-    .query("apiKeys")
-    .withIndex("by_user_type", (q) =>
-      q.eq("userId", userId).eq("type", type),
-    )
-    .order("desc")
-    .first();
-  if (!row) return null;
-  const value = await decryptApiKey(row.encryptedValue, row.iv);
-  return value.trim() || null;
-}
-
-export async function migrateLegacyPortfolioForUser(
-  ctx: MutationCtx,
-  userId: string,
-): Promise<Id<"portfolios"> | null> {
-  const existing = await listForUser(ctx, userId);
-  if (existing.length > 0) {
-    return (
-      existing.find((portfolio) => portfolio.isDefault)?._id ??
-      sortPortfolios(existing)[0]?._id ??
-      null
-    );
-  }
-
-  const [airtableViewId, startDate] = await Promise.all([
-    latestCredential(ctx, userId, "portfolio_schwab_positions_view_id"),
-    latestCredential(ctx, userId, "portfolio_reset_date"),
-  ]);
-  if (!airtableViewId || !startDate || !isValidIsoDate(startDate)) {
-    return null;
-  }
-
-  const now = Date.now();
-  const portfolioId = await ctx.db.insert("portfolios", {
-    userId,
-    name: "Schwab",
-    airtableViewId,
-    startDate,
-    isDefault: true,
-    displayOrder: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
-  const legacyKeys = await ctx.db
-    .query("apiKeys")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .collect();
-  for (const key of legacyKeys) {
-    if (
-      key.type === "portfolio_schwab_positions_view_id" ||
-      key.type === "portfolio_schwab_brokerage_account_record_id" ||
-      key.type === "portfolio_reset_date"
-    ) {
-      await ctx.db.delete("apiKeys", key._id);
-    }
-  }
-  return portfolioId;
-}
-
 export const list = query({
   args: {},
   returns: v.array(portfolioValidator),
@@ -195,16 +127,6 @@ export const listForUserInternal = internalQuery({
   },
 });
 
-export const migrateLegacy = mutation({
-  args: {},
-  returns: v.union(v.id("portfolios"), v.null()),
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-    return await migrateLegacyPortfolioForUser(ctx, userId);
-  },
-});
-
 export const create = mutation({
   args: {
     name: v.string(),
@@ -215,7 +137,6 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
-    await migrateLegacyPortfolioForUser(ctx, userId);
 
     const input = normalizeConfiguration(args);
     const existingView = await ctx.db
