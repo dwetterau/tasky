@@ -359,6 +359,26 @@ const ATTENTION_RANK: Record<
   ok: 3,
 };
 
+export function compareSignalActionability(
+  left: SignalDashboardItem,
+  right: SignalDashboardItem,
+): number {
+  const rankDelta = left.actionability.rank - right.actionability.rank;
+  if (rankDelta !== 0) {
+    return rankDelta;
+  }
+  const actionAtDelta =
+    (left.actionability.actionAt ?? Number.POSITIVE_INFINITY) -
+    (right.actionability.actionAt ?? Number.POSITIVE_INFINITY);
+  if (actionAtDelta !== 0) {
+    return actionAtDelta;
+  }
+  const attentionDelta =
+    ATTENTION_RANK[left.evaluation.attention] -
+    ATTENTION_RANK[right.evaluation.attention];
+  return attentionDelta || left.name.localeCompare(right.name);
+}
+
 export function lastLoggedAt(signal: SignalDashboardItem): number | undefined {
   return signal.model.kind === "activity"
     ? signal.model.lastOccurredAt
@@ -402,15 +422,7 @@ export function leftoverSignals(
   return signals
     .filter((signal) => !assignedIds.has(signal.id))
     .slice()
-    .sort((left, right) => {
-      const attentionDelta =
-        ATTENTION_RANK[left.evaluation.attention] -
-        ATTENTION_RANK[right.evaluation.attention];
-      if (attentionDelta !== 0) {
-        return attentionDelta;
-      }
-      return left.name.localeCompare(right.name);
-    });
+    .sort(compareSignalActionability);
 }
 
 export function memberContributionCount(

@@ -67,6 +67,22 @@ export type SignalEvaluation = SignalEvaluationBase & {
   isComplete: boolean;
 };
 
+export type SignalActionabilityTier =
+  | "overdue"
+  | "ready"
+  | "later"
+  | "cooldown"
+  | "idle"
+  | "complete";
+
+export type SignalActionability = {
+  tier: SignalActionabilityTier;
+  rank: number;
+  reason: string;
+  actionAt?: number;
+  paceDelta?: number;
+};
+
 export type ActivityPeriodProgress = {
   period: "day" | "week" | "month";
   startAt: number;
@@ -372,5 +388,162 @@ export function evaluateSignal(
     model.kind === "activity"
       ? evaluateActivity(model, now, soonWindowMs, periodProgress)
       : evaluateInventory(model, now, soonWindowMs),
+  );
+}
+
+const ACTIONABILITY_RANK: Record<SignalActionabilityTier, number> = {
+  overdue: 0,
+  ready: 1,
+  later: 2,
+  cooldown: 3,
+  idle: 4,
+  complete: 5,
+};
+
+function actionability(
+  tier: SignalActionabilityTier,
+  reason: string,
+  evaluation: SignalEvaluation,
+  paceDelta?: number,
+): SignalActionability {
+  return {
+    tier,
+    rank: ACTIONABILITY_RANK[tier],
+    reason,
+    actionAt: evaluation.actionAt,
+    paceDelta,
+  };
+}
+
+function periodActionability(
+  model: ActivitySignalModel,
+  evaluation: SignalEvaluation,
+  now: number,
+): SignalActionability {
+  const progress = evaluation.periodProgress;
+  if (!progress || progress.targetCount <= 0) {
+    return actionability(
+      "idle",
+      "No completion is required in the current period",
+      evaluation,
+    );
+  }
+
+  const requiredCountByNow =
+    progress.requiredCountByNow ?? progress.targetCount;
+  const paceDelta = progress.completedCount - requiredCountByNow;
+  if ((progress.overdueCount ?? Math.max(0, -paceDelta)) > 0) {
+    return actionability(
+      "overdue",
+      "Behind the required pace",
+      evaluation,
+      paceDelta,
+    );
+  }
+
+  const intervalMs =
+    (progress.endAt - progress.startAt) / progress.targetCount;
+  const cooldownMs = Math.min(DAY_MS, Math.max(60 * 60 * 1000, intervalMs / 2));
+  const lastOccurredAt = model.lastOccurredAt;
+  if (
+    lastOccurredAt !== undefined &&
+    now - lastOccurredAt >= 0 &&
+    now - lastOccurredAt < cooldownMs
+  ) {
+    return actionability(
+      "cooldown",
+      paceDelta > 0
+        ? `Recently completed and ${paceDelta} ahead of pace`
+        : "Recently completed",
+      evaluation,
+      paceDelta,
+    );
+  }
+
+  if (paceDelta > 0) {
+    return actionability(
+      "later",
+      `${paceDelta} ahead of pace`,
+      evaluation,
+      paceDelta,
+    );
+  }
+
+  const readinessLeadMs = Math.min(DAY_MS, intervalMs / 2);
+  if (
+    evaluation.actionAt !== undefined &&
+    evaluation.actionAt - now > readinessLeadMs
+  ) {
+    return actionability(
+      "later",
+      "The next checkpoint is not yet actionable",
+      evaluation,
+      paceDelta,
+    );
+  }
+
+  return actionability(
+    "ready",
+    "The next completion is actionable",
+    evaluation,
+    paceDelta,
+  );
+}
+
+export function evaluateSignalActionability(
+  model: SignalModel,
+  evaluation: SignalEvaluation,
+  now: number,
+): SignalActionability {
+  if (evaluation.isComplete) {
+    return actionability("complete", "Target complete", evaluation);
+  }
+
+  if (model.kind === "activity") {
+    if (
+      model.target?.type === "period" ||
+      model.target?.type === "schedule"
+    ) {
+      return periodActionability(model, evaluation, now);
+    }
+    if (evaluation.attention === "due") {
+      return actionability("overdue", evaluation.reason, evaluation);
+    }
+    if (model.target?.type === "recency") {
+      return actionability(
+        model.lastOccurredAt === undefined || evaluation.attention === "soon"
+          ? "ready"
+          : "later",
+        model.lastOccurredAt === undefined
+          ? "No activity has been recorded"
+          : evaluation.reason,
+        evaluation,
+      );
+    }
+    return actionability(
+      "idle",
+      "No action threshold is configured",
+      evaluation,
+    );
+  }
+
+  if (evaluation.attention === "due") {
+    return actionability("overdue", evaluation.reason, evaluation);
+  }
+
+  if (evaluation.attention !== "soon") {
+    return actionability("idle", evaluation.reason, evaluation);
+  }
+  const readinessLeadMs = Math.min(
+    DAY_MS,
+    model.flow ? (model.flow.everyDays * DAY_MS) / 2 : DAY_MS,
+  );
+  return actionability(
+    evaluation.actionAt !== undefined &&
+      evaluation.actionAt - now > readinessLeadMs
+      ? "later"
+      : "ready",
+    evaluation.reason,
+    evaluation,
   );
 }

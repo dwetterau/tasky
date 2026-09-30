@@ -12,6 +12,7 @@ import {
 import { SignalRow, statusDotColor } from "@/components/SignalRow";
 import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
+  compareSignalActionability,
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
   getSignalQueryTime,
@@ -60,15 +61,23 @@ function formatPercent(ratio: number): string {
 function sortMembers(
   members: ScorecardItem["members"],
   role: "required" | "optional",
+  signalById: ReadonlyMap<string, SignalDashboardItem>,
 ) {
   return members
     .filter((member) => member.role === role)
     .slice()
     .sort((left, right) => {
-      if (left.evaluation.isComplete === right.evaluation.isComplete) {
-        return 0;
+      if (left.evaluation.isComplete !== right.evaluation.isComplete) {
+        return left.evaluation.isComplete ? 1 : -1;
       }
-      return left.evaluation.isComplete ? 1 : -1;
+      const leftSignal =
+        left.type === "signal" ? signalById.get(left.signalId) : undefined;
+      const rightSignal =
+        right.type === "signal" ? signalById.get(right.signalId) : undefined;
+      if (leftSignal && rightSignal) {
+        return compareSignalActionability(leftSignal, rightSignal);
+      }
+      return 0;
     });
 }
 
@@ -213,12 +222,14 @@ export default function ScorecardPage() {
     [signals.data],
   );
   const required = useMemo(
-    () => sortMembers(scorecard.data?.members ?? [], "required"),
-    [scorecard.data?.members],
+    () =>
+      sortMembers(scorecard.data?.members ?? [], "required", signalById),
+    [scorecard.data?.members, signalById],
   );
   const optional = useMemo(
-    () => sortMembers(scorecard.data?.members ?? [], "optional"),
-    [scorecard.data?.members],
+    () =>
+      sortMembers(scorecard.data?.members ?? [], "optional", signalById),
+    [scorecard.data?.members, signalById],
   );
 
   const openSignal = (signalId: string) => {
@@ -290,7 +301,7 @@ export default function ScorecardPage() {
   }
 
   const counted = card.targetCount !== undefined;
-  const listedMembers = counted ? card.members : [...required, ...optional];
+  const listedMembers = [...required, ...optional];
 
   return (
     <>

@@ -475,6 +475,7 @@ export default defineSchema({
     signalId: v.id("signals"),
     effectiveAt: v.number(),
     recordedAt: v.number(),
+    timezone: v.optional(v.string()),
     updatedAt: v.optional(v.number()),
     source: signalSource,
     provenance: v.optional(signalProvenance),
