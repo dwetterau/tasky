@@ -2,10 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { collectHomepagePortfolio } from "./lib/homepagePortfolio";
-import {
-  getPortfolioConfigurations,
-  readPortfolioSnapshot,
-} from "./portfolio";
+import { getPortfolioConfigurations, readPortfolioSnapshot } from "./portfolio";
 
 vi.mock("./portfolio", () => ({
   readPortfolioSnapshot: vi.fn(),
@@ -216,15 +213,24 @@ it("exports multiple named portfolios in one homepage module", async () => {
   ]);
   vi.mocked(readPortfolioSnapshot).mockImplementation(
     async (_ctx, _userId, _includePriceStatus, portfolio) => {
-      const vanguard = portfolio?.name === "Vanguard";
-      const value = vanguard ? 500 : 1_000;
+      const all = Array.isArray(portfolio);
+      const vanguard = !all && portfolio?.name === "Vanguard";
+      const value = all ? 1_500 : vanguard ? 500 : 1_000;
       return {
         status: "ok",
         holdings: [
           {
-            id: vanguard ? "vanguard-position" : "schwab-position",
-            ticker: vanguard ? "VTI" : "SCHB",
-            companyName: vanguard ? "Vanguard Total Market" : "Schwab Broad Market",
+            id: all
+              ? "all-position"
+              : vanguard
+                ? "vanguard-position"
+                : "schwab-position",
+            ticker: all ? "MIX" : vanguard ? "VTI" : "SCHB",
+            companyName: all
+              ? "Combined holdings"
+              : vanguard
+                ? "Vanguard Total Market"
+                : "Schwab Broad Market",
             costBasis: value - 100,
             shares: 2,
             currentPrice: value / 2,
@@ -264,6 +270,7 @@ it("exports multiple named portfolios in one homepage module", async () => {
   };
   expect(payload.totalValue).toBe(1_000);
   expect(payload.portfolios).toEqual([
+    expect.objectContaining({ name: "All", totalValue: 1_500 }),
     expect.objectContaining({ name: "Schwab", totalValue: 1_000 }),
     expect.objectContaining({ name: "Vanguard", totalValue: 500 }),
   ]);
@@ -272,7 +279,7 @@ it("exports multiple named portfolios in one homepage module", async () => {
     .mocked(readPortfolioSnapshot)
     .getMockImplementation()!;
   vi.mocked(readPortfolioSnapshot).mockImplementation(async (...args) => {
-    if (args[3]?.name === "Vanguard") {
+    if (!Array.isArray(args[3]) && args[3]?.name === "Vanguard") {
       throw new Error("Invalid Airtable view");
     }
     return await successfulRead(...args);
@@ -286,6 +293,7 @@ it("exports multiple named portfolios in one homepage module", async () => {
   expect(
     (partial.payload as { portfolios: Array<{ name: string }> }).portfolios,
   ).toEqual([
+    expect.objectContaining({ name: "All", totalValue: 1_500 }),
     expect.objectContaining({ name: "Schwab" }),
     expect.objectContaining({ name: "Vanguard", totalValue: 500 }),
   ]);

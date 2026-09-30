@@ -30,6 +30,12 @@ export type PortfolioSnapshotHistoryPoint = {
     value: number;
     costBasis: number;
   }>;
+  holdings: Array<{
+    ticker: string;
+    name: string;
+    value: number;
+    costBasis: number;
+  }>;
 };
 
 export type CompleteAccountSnapshotDay = {
@@ -184,6 +190,36 @@ export function buildPortfolioSnapshotHistory(
             a.accountName.localeCompare(b.accountName) ||
             a.accountRecordId.localeCompare(b.accountRecordId),
         );
+      const holdingMap = new Map<
+        string,
+        {
+          ticker: string;
+          name: string;
+          value: number;
+          costBasis: number;
+        }
+      >();
+      for (const snapshot of accountSnapshots) {
+        for (const position of snapshot.positions) {
+          const ticker = position.ticker.trim().toUpperCase();
+          const existing = holdingMap.get(ticker);
+          if (existing) {
+            existing.name ||= position.name;
+            existing.value += position.value;
+            existing.costBasis += position.costBasis;
+          } else {
+            holdingMap.set(ticker, {
+              ticker,
+              name: position.name,
+              value: position.value,
+              costBasis: position.costBasis,
+            });
+          }
+        }
+      }
+      const holdings = [...holdingMap.values()].sort(
+        (a, b) => b.value - a.value || a.ticker.localeCompare(b.ticker),
+      );
       return {
         date,
         totalValue: accounts.reduce((sum, account) => sum + account.value, 0),
@@ -192,6 +228,7 @@ export function buildPortfolioSnapshotHistory(
           0,
         ),
         accounts,
+        holdings,
       };
     },
   );

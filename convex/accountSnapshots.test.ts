@@ -56,7 +56,7 @@ it("builds only complete portfolio days and keeps the newest duplicate", () => {
     accountName: "IRA",
     date: "2026-09-29",
     capturedAt: 100,
-    positions: [position("vti-b", 300, 275)],
+    positions: [position("vti-b", 300, 275), position("cash", 50, 50)],
   });
   const incompleteNextDay = createAccountSnapshotPayload({
     accountRecordId: "account-a",
@@ -74,8 +74,8 @@ it("builds only complete portfolio days and keeps the newest duplicate", () => {
   ).toEqual([
     {
       date: "2026-09-29",
-      totalValue: 550,
-      totalCostBasis: 425,
+      totalValue: 600,
+      totalCostBasis: 475,
       accounts: [
         {
           accountRecordId: "account-a",
@@ -86,8 +86,22 @@ it("builds only complete portfolio days and keeps the newest duplicate", () => {
         {
           accountRecordId: "account-b",
           accountName: "IRA",
-          value: 300,
-          costBasis: 275,
+          value: 350,
+          costBasis: 325,
+        },
+      ],
+      holdings: [
+        {
+          ticker: "VTI",
+          name: "Vanguard Total Market",
+          value: 550,
+          costBasis: 425,
+        },
+        {
+          ticker: "",
+          name: "Cash",
+          value: 50,
+          costBasis: 50,
         },
       ],
     },

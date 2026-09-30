@@ -20,7 +20,7 @@ import {
   tone,
 } from "@/lib/theme";
 
-const ACCOUNT_COLORS = [
+const HOLDING_COLORS = [
   "#6366f1",
   "#059669",
   "#dc2626",
@@ -32,6 +32,7 @@ const ACCOUNT_COLORS = [
   "#f97316",
   "#14b8a6",
 ];
+const CASH_SERIES = "__tasky_cash__";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -59,32 +60,36 @@ function formatShortDate(value: string | null): string {
   );
 }
 
-function colorForAccount(accountId: string, accountIds: string[]): string {
-  const index = Math.max(0, accountIds.indexOf(accountId));
-  return ACCOUNT_COLORS[index % ACCOUNT_COLORS.length] ?? ACCOUNT_COLORS[0];
+function seriesKey(ticker: string): string {
+  return ticker || CASH_SERIES;
 }
 
-function nextSelectedAccounts(
+function colorForHolding(key: string, allKeys: string[]): string {
+  const index = Math.max(0, allKeys.indexOf(key));
+  return HOLDING_COLORS[index % HOLDING_COLORS.length] ?? HOLDING_COLORS[0];
+}
+
+function nextSelectedHoldings(
   current: Set<string>,
-  accountId: string,
-  accountIds: string[],
+  key: string,
+  allKeys: string[],
 ): Set<string> {
   const allSelected =
-    current.size === accountIds.length &&
-    accountIds.every((item) => current.has(item));
+    current.size === allKeys.length &&
+    allKeys.every((item) => current.has(item));
   if (allSelected) {
-    return new Set([accountId]);
+    return new Set([key]);
   }
-  if (current.size === 1 && current.has(accountId)) {
-    return new Set(accountIds);
+  if (current.size === 1 && current.has(key)) {
+    return new Set(allKeys);
   }
   const next = new Set(current);
-  if (next.has(accountId)) {
-    next.delete(accountId);
+  if (next.has(key)) {
+    next.delete(key);
   } else {
-    next.add(accountId);
+    next.add(key);
   }
-  return next.size === 0 ? new Set(accountIds) : next;
+  return next.size === 0 ? new Set(allKeys) : next;
 }
 
 type ChartRow = {
@@ -95,9 +100,9 @@ type SnapshotHistoryPoint = {
   date: string;
   totalValue: number;
   totalCostBasis: number;
-  accounts: Array<{
-    accountRecordId: string;
-    accountName: string;
+  holdings: Array<{
+    ticker: string;
+    name: string;
     value: number;
     costBasis: number;
   }>;
@@ -119,58 +124,55 @@ export function PortfolioHistoryChart({
   const dark = colorScheme === "dark";
   const axisColor = dark ? "#3a3a3c" : "#e5e7eb";
   const labelColor = dark ? "#8e8e93" : "#6b7280";
-  const accounts = useMemo(
+  const holdings = useMemo(
     () =>
-      [...(points[points.length - 1]?.accounts ?? [])].sort(
-        (a, b) =>
-          b.value - a.value ||
-          a.accountName.localeCompare(b.accountName) ||
-          a.accountRecordId.localeCompare(b.accountRecordId),
+      [...(points[points.length - 1]?.holdings ?? [])].sort(
+        (a, b) => b.value - a.value || a.ticker.localeCompare(b.ticker),
       ),
     [points],
   );
-  const accountIds = useMemo(
-    () => accounts.map((account) => account.accountRecordId),
-    [accounts],
+  const holdingKeys = useMemo(
+    () => holdings.map((holding) => seriesKey(holding.ticker)),
+    [holdings],
   );
-  const accountNames = useMemo(
+  const holdingLabels = useMemo(
     () =>
       new Map(
-        accounts.map((account) => [
-          account.accountRecordId,
-          account.accountName,
+        holdings.map((holding) => [
+          seriesKey(holding.ticker),
+          holding.ticker || "Cash",
         ]),
       ),
-    [accounts],
+    [holdings],
   );
-  const [selectedAccounts, setSelectedAccounts] = useState<Set<string> | null>(
+  const [selectedHoldings, setSelectedHoldings] = useState<Set<string> | null>(
     null,
   );
-  const activeAccounts = useMemo(
-    () => selectedAccounts ?? new Set(accountIds),
-    [accountIds, selectedAccounts],
+  const activeHoldings = useMemo(
+    () => selectedHoldings ?? new Set(holdingKeys),
+    [holdingKeys, selectedHoldings],
   );
 
   const chartPoints = useMemo(
     () =>
       points.map((point) => {
-        const selected = point.accounts.filter((account) =>
-          activeAccounts.has(account.accountRecordId),
+        const selected = point.holdings.filter((holding) =>
+          activeHoldings.has(seriesKey(holding.ticker)),
         );
         return {
           ...point,
-          totalValue: selected.reduce((sum, account) => sum + account.value, 0),
+          totalValue: selected.reduce((sum, holding) => sum + holding.value, 0),
           totalCostBasis: selected.reduce(
-            (sum, account) => sum + account.costBasis,
+            (sum, holding) => sum + holding.costBasis,
             0,
           ),
         };
       }),
-    [activeAccounts, points],
+    [activeHoldings, points],
   );
-  const stackedAccounts = useMemo(
-    () => accountIds.filter((accountId) => activeAccounts.has(accountId)),
-    [accountIds, activeAccounts],
+  const stackedHoldings = useMemo(
+    () => holdingKeys.filter((key) => activeHoldings.has(key)),
+    [activeHoldings, holdingKeys],
   );
   const chartData = useMemo<ChartRow[]>(
     () =>
@@ -179,15 +181,14 @@ export function PortfolioHistoryChart({
         const row: ChartRow = {
           timestamp: new Date(year ?? 0, (month ?? 1) - 1, day ?? 1).getTime(),
         };
-        for (const accountId of stackedAccounts) {
-          row[accountId] =
-            point.accounts.find(
-              (account) => account.accountRecordId === accountId,
-            )?.value ?? 0;
+        for (const key of stackedHoldings) {
+          row[key] =
+            point.holdings.find((holding) => seriesKey(holding.ticker) === key)
+              ?.value ?? 0;
         }
         return row;
       }),
-    [chartPoints, stackedAccounts],
+    [chartPoints, stackedHoldings],
   );
   const font = useMemo(
     () =>
@@ -220,7 +221,7 @@ export function PortfolioHistoryChart({
         </Text>
       </View>
 
-      {accountIds.length > 0 ? (
+      {holdingKeys.length > 0 ? (
         <ScrollView
           ref={chipsScrollRef}
           horizontal
@@ -230,18 +231,18 @@ export function PortfolioHistoryChart({
             chipsScrollRef.current?.scrollToEnd({ animated: false });
           }}
         >
-          {accountIds.map((accountId) => {
-            const selected = activeAccounts.has(accountId);
-            const color = colorForAccount(accountId, accountIds);
+          {holdingKeys.map((key) => {
+            const selected = activeHoldings.has(key);
+            const color = colorForHolding(key, holdingKeys);
             return (
               <TouchableOpacity
-                key={accountId}
+                key={key}
                 onPress={() =>
-                  setSelectedAccounts((prev) =>
-                    nextSelectedAccounts(
-                      prev ?? new Set(accountIds),
-                      accountId,
-                      accountIds,
+                  setSelectedHoldings((prev) =>
+                    nextSelectedHoldings(
+                      prev ?? new Set(holdingKeys),
+                      key,
+                      holdingKeys,
                     ),
                   )
                 }
@@ -264,7 +265,7 @@ export function PortfolioHistoryChart({
                     },
                   ]}
                 >
-                  {accountNames.get(accountId) ?? accountId}
+                  {holdingLabels.get(key) ?? key}
                 </Text>
               </TouchableOpacity>
             );
@@ -275,7 +276,7 @@ export function PortfolioHistoryChart({
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={sharedStyles.muted}>Loading account history…</Text>
+          <Text style={sharedStyles.muted}>Loading portfolio history…</Text>
         </View>
       ) : error ? (
         <Text style={sharedStyles.error}>{error}</Text>
@@ -289,7 +290,7 @@ export function PortfolioHistoryChart({
           <CartesianChart
             data={chartData}
             xKey="timestamp"
-            yKeys={stackedAccounts}
+            yKeys={stackedHoldings}
             padding={{ left: 8, right: 8, top: 12, bottom: 4 }}
             domainPadding={{ top: 12 }}
             domain={{ y: [0, Math.max(yMax, 1)] }}
@@ -320,12 +321,10 @@ export function PortfolioHistoryChart({
           >
             {({ points: seriesPoints, chartBounds }) => (
               <StackedArea
-                points={stackedAccounts.map(
-                  (accountId) => seriesPoints[accountId],
-                )}
+                points={stackedHoldings.map((key) => seriesPoints[key])}
                 y0={chartBounds.bottom}
-                colors={stackedAccounts.map((accountId) =>
-                  colorForAccount(accountId, accountIds),
+                colors={stackedHoldings.map((key) =>
+                  colorForHolding(key, holdingKeys),
                 )}
                 curveType="linear"
               />

@@ -37,6 +37,8 @@ function portfolioKey(portfolio: PortfolioConfiguration): string {
   return portfolio.id ? String(portfolio.id) : "legacy-schwab";
 }
 
+const ALL_PORTFOLIOS_ID = "all";
+
 function legacyNamedPortfolio(payload: PortfolioPayload): NamedPortfolio {
   return {
     id: "legacy-schwab",
@@ -53,7 +55,7 @@ function legacyNamedPortfolio(payload: PortfolioPayload): NamedPortfolio {
 }
 
 function projectPortfolio(
-  portfolio: PortfolioConfiguration,
+  portfolio: { id: string; name: string },
   result: Awaited<ReturnType<typeof readPortfolioSnapshot>> & {
     status: "ok";
   },
@@ -65,7 +67,7 @@ function projectPortfolio(
     cached?.holdings.map((holding) => [holding.ticker, holding]) ?? [],
   );
   return {
-    id: portfolioKey(portfolio),
+    id: portfolio.id,
     name: portfolio.name,
     currency: "USD",
     totalValue: result.summary.totalCurrentValue,
@@ -135,8 +137,10 @@ export async function collectHomepagePortfolio(
     const cachedById = new Map(
       cachedPortfolios.map((portfolio) => [portfolio.id, portfolio]),
     );
+    const expectedPortfolioCount =
+      configurations.length + (configurations.length > 1 ? 1 : 0);
     const hasDetailedRows =
-      cachedPortfolios.length === configurations.length &&
+      cachedPortfolios.length === expectedPortfolioCount &&
       configurations.every((configuration) => {
         const portfolio = cachedById.get(portfolioKey(configuration));
         return (
@@ -144,10 +148,10 @@ export async function collectHomepagePortfolio(
           new Set(portfolio.holdings.map((holding) => holding.ticker)).size ===
             portfolio.holdings.length &&
           portfolio.holdings.every(
-          (holding) =>
-            holding.shares !== undefined &&
-            holding.costBasis !== undefined &&
-            holding.gainLossPercent !== undefined,
+            (holding) =>
+              holding.shares !== undefined &&
+              holding.costBasis !== undefined &&
+              holding.gainLossPercent !== undefined,
           )
         );
       });
@@ -170,7 +174,7 @@ export async function collectHomepagePortfolio(
           freshPortfolioCount += 1;
           projected.push(
             projectPortfolio(
-              portfolio,
+              { id: portfolioKey(portfolio), name: portfolio.name },
               result,
               syncState?.lastSyncedAt ?? null,
               refreshPriceStatus,
@@ -183,6 +187,34 @@ export async function collectHomepagePortfolio(
       } catch {
         if (cachedPortfolio) {
           projected.push({ ...cachedPortfolio, name: portfolio.name });
+        }
+      }
+    }
+    if (configurations.length > 1) {
+      const cachedAll = cachedById.get(ALL_PORTFOLIOS_ID);
+      try {
+        const result = await readPortfolioSnapshot(
+          ctx,
+          userId,
+          refreshPriceStatus ? "recent" : false,
+          configurations,
+        );
+        if (result.status === "ok") {
+          projected.push(
+            projectPortfolio(
+              { id: ALL_PORTFOLIOS_ID, name: "All" },
+              result,
+              syncState?.lastSyncedAt ?? null,
+              refreshPriceStatus,
+              cachedAll,
+            ),
+          );
+        } else if (cachedAll) {
+          projected.push(cachedAll);
+        }
+      } catch {
+        if (cachedAll) {
+          projected.push(cachedAll);
         }
       }
     }
@@ -199,10 +231,16 @@ export async function collectHomepagePortfolio(
           portfolio.id === portfolioKey(defaultConfiguration),
       ) ?? projected[0];
     if (!defaultPortfolio) return { ...empty, status: "disabled" };
+    const allPortfolio = projected.find(
+      (portfolio) => portfolio.id === ALL_PORTFOLIOS_ID,
+    );
     const orderedPortfolios = [
+      ...(allPortfolio ? [allPortfolio] : []),
       defaultPortfolio,
       ...projected.filter(
-        (portfolio) => portfolio.id !== defaultPortfolio.id,
+        (portfolio) =>
+          portfolio.id !== ALL_PORTFOLIOS_ID &&
+          portfolio.id !== defaultPortfolio.id,
       ),
     ];
     const now = Date.now();
