@@ -243,6 +243,18 @@ function getTodayDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+export function getQuarterHistoryStart(endDate: string): string {
+  const date = new Date(`${endDate}T12:00:00.000Z`);
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCMonth(date.getUTCMonth() - 3);
+  const lastDayOfMonth = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDayOfMonth));
+  return date.toISOString().slice(0, 10);
+}
+
 function getTradingDays(startDate: string, endDate: string): string[] {
   const days: string[] = [];
   const current = new Date(`${startDate}T12:00:00.000Z`);
@@ -1168,13 +1180,18 @@ export const getPriceHistory = action({
       );
     }
 
+    const historyWindowStart = getQuarterHistoryStart(getTodayDate());
+    const configuredStart =
+      portfolio.startDate < historyWindowStart
+        ? historyWindowStart
+        : portfolio.startDate;
     const requestedStart =
       args.startDate && isValidIsoDate(args.startDate)
         ? args.startDate
-        : portfolio.startDate;
+        : configuredStart;
     const startDate =
-      requestedStart < portfolio.startDate
-        ? portfolio.startDate
+      requestedStart < configuredStart
+        ? configuredStart
         : requestedStart;
 
     try {
@@ -1330,11 +1347,17 @@ async function performPriceHistorySync(ctx: ActionCtx, userId: string) {
         );
       }
     }
+    const endDate = getTodayDate();
+    const historyWindowStart = getQuarterHistoryStart(endDate);
     const holdingsById = new Map<
       string,
       ReturnType<typeof calculateHolding> & { startDate: string }
     >();
     for (const { portfolio, records } of portfolioRecords) {
+      const portfolioStartDate =
+        portfolio.startDate < historyWindowStart
+          ? historyWindowStart
+          : portfolio.startDate;
       for (const record of records) {
         const holding = calculateHolding(record);
         if (!holding.ticker) continue;
@@ -1342,9 +1365,9 @@ async function performPriceHistorySync(ctx: ActionCtx, userId: string) {
         holdingsById.set(holding.id, {
           ...holding,
           startDate:
-            existing && existing.startDate < portfolio.startDate
+            existing && existing.startDate < portfolioStartDate
               ? existing.startDate
-              : portfolio.startDate,
+              : portfolioStartDate,
         });
       }
     }
@@ -1364,7 +1387,6 @@ async function performPriceHistorySync(ctx: ActionCtx, userId: string) {
       };
     }
 
-    const endDate = getTodayDate();
     const holdingsByTicker = new Map<string, typeof holdings>();
     for (const holding of holdings) {
       const tickerHoldings = holdingsByTicker.get(holding.ticker) ?? [];
