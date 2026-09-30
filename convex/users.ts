@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { authComponent, getAuthUserId } from "./auth";
 import { resolveUserTimezone } from "./lib/recurrenceData";
 import { validateTimezone } from "./lib/recurrence";
@@ -18,6 +18,14 @@ export const getTimezone = query({
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     return userId ? await resolveUserTimezone(ctx, userId) : null;
+  },
+});
+
+export const getTimezoneInternal = internalQuery({
+  args: { userId: v.string() },
+  returns: v.string(),
+  handler: async (ctx, { userId }) => {
+    return await resolveUserTimezone(ctx, userId);
   },
 });
 

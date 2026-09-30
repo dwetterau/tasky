@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { makeFunctionReference } from "convex/server";
 import {
   action,
   internalMutation,
@@ -24,11 +25,15 @@ const POSITIONS_TABLE = "Positions";
 const INVESTMENT_ACCOUNTS_TABLE = "Investment Accounts";
 const ACCOUNT_SNAPSHOTS_TABLE = "Account Snapshots";
 const ALPACA_BASE_URL = "https://data.alpaca.markets/v2";
-const PORTFOLIO_TIME_ZONE = "America/New_York";
 const AIRTABLE_BATCH_SIZE = 10;
 const AIRTABLE_THROTTLE_MS = 220;
 const AIRTABLE_MAX_RETRIES = 3;
 const PRICE_SYNC_LEASE_MS = 30 * 60_000;
+const getTimezoneInternal = makeFunctionReference<
+  "query",
+  { userId: string },
+  string
+>("users:getTimezoneInternal");
 let nextAirtableRequestAt = 0;
 
 const portfolioCredentialTypes = {
@@ -223,9 +228,9 @@ function isValidIsoDate(value: string): boolean {
   );
 }
 
-function getTodayDate(): string {
+function getTodayDate(timezone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: PORTFOLIO_TIME_ZONE,
+    timeZone: timezone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -930,12 +935,13 @@ export async function readPortfolioSnapshot(
   _includePriceStatus: boolean | "recent" = false,
   selectedPortfolio?: PortfolioConfiguration | PortfolioConfiguration[] | null,
 ) {
-  const [apiKey, baseId, portfolioSelection] = await Promise.all([
+  const [apiKey, baseId, portfolioSelection, timezone] = await Promise.all([
     getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
     getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
     selectedPortfolio === undefined
       ? resolvePortfolioConfiguration(ctx, userId)
       : selectedPortfolio,
+    ctx.runQuery(getTimezoneInternal, { userId }),
   ]);
   const portfolios = Array.isArray(portfolioSelection)
     ? portfolioSelection
@@ -980,7 +986,7 @@ export async function readPortfolioSnapshot(
       try {
         const { snapshots } = await fetchAccountSnapshotPayloads(
           { apiKey, baseId },
-          subtractDays(getTodayDate(), 14),
+          subtractDays(getTodayDate(timezone), 14),
         );
         const completeDays = buildCompleteAccountSnapshotDays(
           snapshots,
@@ -1288,10 +1294,11 @@ function emptySyncDetails() {
 }
 
 async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
-  const [apiKey, baseId, portfolios] = await Promise.all([
+  const [apiKey, baseId, portfolios, timezone] = await Promise.all([
     getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
     getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
     getPortfolioConfigurations(ctx, userId),
+    ctx.runQuery(getTimezoneInternal, { userId }),
   ]);
   if (!apiKey || !baseId || portfolios.length === 0) {
     return {
@@ -1348,7 +1355,7 @@ async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
       recordsWithAccounts.map(({ holding }) => holding.ticker).filter(Boolean),
     ),
   ];
-  const endDate = getTodayDate();
+  const endDate = getTodayDate(timezone);
   const { prices, yahooTickers } = await fetchLatestPrices(
     tickers,
     endDate,
