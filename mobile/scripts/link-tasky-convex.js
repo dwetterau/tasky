@@ -10,6 +10,10 @@ const sourceLinkPath = path.resolve(
   sourceLinkRoot,
   "lib/githubPullRequestUrls.ts",
 );
+const homeFeedLinkPath = path.resolve(
+  projectRoot,
+  "vendor/packages/home-feed",
+);
 
 const sourceCandidates = [
   path.resolve(projectRoot, "../convex"),
@@ -36,6 +40,20 @@ if (fs.existsSync(linkPath)) {
 
 const relativeTarget = path.relative(path.dirname(linkPath), sourceRoot);
 fs.symlinkSync(relativeTarget, linkPath, "dir");
+
+const homeFeedSourcePath = path.resolve(sourceRoot, "../packages/home-feed");
+if (fs.existsSync(homeFeedLinkPath)) {
+  fs.rmSync(homeFeedLinkPath, { recursive: true, force: true });
+}
+if (fs.existsSync(homeFeedSourcePath)) {
+  fs.mkdirSync(path.dirname(homeFeedLinkPath), { recursive: true });
+  const relativeHomeFeedTarget = path.relative(
+    path.dirname(homeFeedLinkPath),
+    homeFeedSourcePath,
+  );
+  fs.symlinkSync(relativeHomeFeedTarget, homeFeedLinkPath, "dir");
+  console.log(`Linked ${homeFeedLinkPath} -> ${relativeHomeFeedTarget}`);
+}
 
 const taskySourcePath = path.resolve(
   sourceRoot,

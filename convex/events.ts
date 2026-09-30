@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, MutationCtx } from "./_generated/server";
+import { query, MutationCtx } from "./_generated/server";
 import { getAuthUserId } from "./auth";
 import { Id } from "./_generated/dataModel";
 import { EventAction, EventSource } from "./schema";

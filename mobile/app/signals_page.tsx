@@ -178,7 +178,7 @@ export default function SignalsPage() {
     const result: Array<{
       attention: SignalAttention;
       items: SignalDashboardItem[];
-      tagGroups: ReturnType<typeof groupSignalsByPrimaryTag>;
+      tagGroups: ReturnType<typeof groupSignalsByFirstTag>;
     }> = [];
     for (const attention of ATTENTION_ORDER) {
       const matching = (signals.data ?? []).filter(

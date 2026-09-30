@@ -40,5 +40,6 @@ yarn-error.*
 
 vendor/tasky-convex
 vendor/src
+vendor/packages
 
 app-example

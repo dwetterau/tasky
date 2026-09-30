@@ -50,7 +50,7 @@ export default function OnboardingPage() {
     (localStore) => {
       localStore.setQuery(api.onboarding.getState, {}, {
         hasCompletedOnboarding: true,
-        completedAt: Date.now(),
+        completedAt: null,
       });
     }
   );
