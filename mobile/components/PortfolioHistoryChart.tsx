@@ -38,6 +38,7 @@ const TICKER_COLORS = [
   "#f97316",
   "#14b8a6",
 ];
+const CASH_SERIES = "__tasky_cash__";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -105,7 +106,7 @@ export function PortfolioHistoryChart({
   error,
 }: {
   points: PriceHistoryPoint[];
-  holdings: HoldingShares[];
+  holdings: Array<HoldingShares & { currentValue?: number }>;
   startDate: string | null;
   isLoading: boolean;
   error: string | null;
@@ -115,9 +116,38 @@ export function PortfolioHistoryChart({
   const dark = colorScheme === "dark";
   const axisColor = dark ? "#3a3a3c" : "#e5e7eb";
   const labelColor = dark ? "#8e8e93" : "#6b7280";
-  const holdingTickers = useMemo(
-    () => holdings.map((holding) => holding.ticker),
+  const cashValue = useMemo(
+    () =>
+      holdings
+        .filter((holding) => !holding.ticker.trim())
+        .reduce((sum, holding) => sum + (holding.currentValue ?? 0), 0),
     [holdings],
+  );
+  const chartHoldings = useMemo(
+    () => [
+      ...holdings.filter((holding) => holding.ticker.trim()),
+      ...(cashValue > 0
+        ? [{ ticker: CASH_SERIES, shares: 1, currentValue: cashValue }]
+        : []),
+    ],
+    [cashValue, holdings],
+  );
+  const chartInputPoints = useMemo(() => {
+    if (cashValue <= 0) return points;
+    const dates = [...new Set(points.map((point) => point.date))];
+    return [
+      ...points,
+      ...dates.map((date) => ({
+        ticker: CASH_SERIES,
+        date,
+        close: cashValue,
+        quantity: 1,
+      })),
+    ];
+  }, [cashValue, points]);
+  const holdingTickers = useMemo(
+    () => chartHoldings.map((holding) => holding.ticker),
+    [chartHoldings],
   );
   const [selectedTickers, setSelectedTickers] = useState<Set<string>>(
     () => new Set(holdingTickers),
@@ -131,8 +161,13 @@ export function PortfolioHistoryChart({
   }, [holdingTickers]);
 
   const chartPoints = useMemo(
-    () => buildHistoricalChartData(points, holdings, selectedTickers),
-    [points, holdings, selectedTickers],
+    () =>
+      buildHistoricalChartData(
+        chartInputPoints,
+        chartHoldings,
+        selectedTickers,
+      ),
+    [chartHoldings, chartInputPoints, selectedTickers],
   );
   const stackedTickers = useMemo(
     () => sortTickersByLatestValue(selectedTickers, chartPoints),
@@ -219,7 +254,7 @@ export function PortfolioHistoryChart({
                     },
                   ]}
                 >
-                  {ticker}
+                  {ticker === CASH_SERIES ? "Cash" : ticker}
                 </Text>
               </TouchableOpacity>
             );

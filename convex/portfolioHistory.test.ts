@@ -115,6 +115,20 @@ describe("buildHistoricalChartData", () => {
     expect(points[0]?.total).toBe(200);
   });
 
+  it("sums duplicate ticker quantities defensively", () => {
+    const points = buildHistoricalChartData(
+      [{ ticker: "VTI", date: "2026-01-08", close: 100, quantity: 0 }],
+      [
+        { ticker: "VTI", shares: 2 },
+        { ticker: "VTI", shares: 3 },
+      ],
+      ["VTI"],
+    );
+
+    expect(points[0]?.tickerValues).toEqual({ VTI: 500 });
+    expect(points[0]?.total).toBe(500);
+  });
+
   it("sorts selected tickers smallest-first for stacking", () => {
     const points = buildHistoricalChartData(
       [
