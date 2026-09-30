@@ -25,6 +25,74 @@ export type SignalPeriodBounds = {
   month: { startAt: number; endAt: number };
 };
 
+export type SignalTagGroup = {
+  key: string;
+  label: string;
+  tag: SignalDashboardItem["tags"][number] | null;
+  signals: SignalDashboardItem[];
+};
+
+type SignalGroupingTag = {
+  _id: SignalDashboardItem["tagIds"][number];
+  name: string;
+  parentId: SignalDashboardItem["tagIds"][number] | null;
+};
+
+function signalTagPath(
+  tag: SignalDashboardItem["tags"][number],
+  tagsById: ReadonlyMap<string, SignalGroupingTag>,
+): string {
+  const names = [tag.name];
+  const seen = new Set<string>([String(tag.id)]);
+  let parentId = tagsById.get(String(tag.id))?.parentId ?? null;
+
+  while (parentId !== null) {
+    const key = String(parentId);
+    if (seen.has(key)) break;
+    seen.add(key);
+    const parent = tagsById.get(key);
+    if (!parent) break;
+    names.unshift(parent.name);
+    parentId = parent.parentId;
+  }
+
+  return names.join(" › ");
+}
+
+export function groupSignalsByFirstTag(
+  signals: SignalDashboardItem[],
+  availableTags: SignalGroupingTag[],
+): SignalTagGroup[] {
+  const groups = new Map<string, SignalTagGroup>();
+  const tagsById = new Map(
+    availableTags.map((tag) => [String(tag._id), tag] as const),
+  );
+
+  for (const signal of signals) {
+    const tag = signal.tags[0] ?? null;
+    const key = tag ? `tag:${String(tag.id)}` : "untagged";
+    const existing = groups.get(key);
+    if (existing) {
+      existing.signals.push(signal);
+    } else {
+      groups.set(key, {
+        key,
+        label: tag ? signalTagPath(tag, tagsById) : "Untagged",
+        tag,
+        signals: [signal],
+      });
+    }
+  }
+
+  return [...groups.values()].sort((left, right) => {
+    if (left.tag === null) return 1;
+    if (right.tag === null) return -1;
+    return left.label.localeCompare(right.label, undefined, {
+      sensitivity: "base",
+    });
+  });
+}
+
 export function getSignalPeriodBounds(now: number): SignalPeriodBounds {
   const date = new Date(now);
   const dayStart = new Date(

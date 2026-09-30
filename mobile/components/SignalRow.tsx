@@ -51,6 +51,7 @@ export function SignalRow({
   isSaving,
   compact = false,
   showsDisclosure = true,
+  showsTag = true,
   statusDot,
 }: {
   signal: SignalDashboardItem;
@@ -61,6 +62,7 @@ export function SignalRow({
   isSaving?: boolean;
   compact?: boolean;
   showsDisclosure?: boolean;
+  showsTag?: boolean;
   statusDot?: StatusDotKind;
 }) {
   const attentionColor = statusDotColor(
@@ -90,7 +92,7 @@ export function SignalRow({
           />
           <Text style={styles.detail} numberOfLines={1}>
             {detail}
-            {firstTag ? (
+            {showsTag && firstTag ? (
               <Text style={styles.detailTag}>{`  ·  ${firstTag.name}`}</Text>
             ) : null}
           </Text>
