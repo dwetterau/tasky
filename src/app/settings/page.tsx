@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
@@ -15,17 +15,14 @@ type ApiKeyType =
   | "cursor_agent_sdk"
   | "accuweather"
   | "portfolio_airtable_api_key"
-  | "portfolio_airtable_base_id"
-  | "portfolio_schwab_positions_view_id"
-  | "portfolio_schwab_brokerage_account_record_id"
-  | "portfolio_reset_date";
+  | "portfolio_airtable_base_id";
 
 function formatTimestamp(timestamp: number): string {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
 }
 
-function getApiKeyTypeLabel(type: ApiKeyType): string {
+function getApiKeyTypeLabel(type: string): string {
   switch (type) {
     case "github":
       return "GitHub";
@@ -39,12 +36,8 @@ function getApiKeyTypeLabel(type: ApiKeyType): string {
       return "Portfolio Airtable API Key";
     case "portfolio_airtable_base_id":
       return "Portfolio Airtable Base ID";
-    case "portfolio_schwab_positions_view_id":
-      return "Portfolio Schwab Positions View ID";
-    case "portfolio_schwab_brokerage_account_record_id":
-      return "Portfolio Schwab Account Record ID";
-    case "portfolio_reset_date":
-      return "Portfolio Reset Date";
+    default:
+      return "Legacy configuration";
   }
 }
 
@@ -74,7 +67,6 @@ function SettingsContent() {
   const [portfolioViewId, setPortfolioViewId] = useState("");
   const [portfolioStartDate, setPortfolioStartDate] = useState("");
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
-  const legacyMigrationAttempted = useRef(false);
   const namePlaceholder =
     type === "github"
       ? "Production GitHub token"
@@ -112,30 +104,9 @@ function SettingsContent() {
       );
     },
   );
-  const migrateLegacyPortfolio = useTrackedMutation(
-    api.portfolios.migrateLegacy,
-  );
   const createPortfolio = useTrackedMutation(api.portfolios.create);
   const removePortfolio = useTrackedMutation(api.portfolios.remove);
   const setDefaultPortfolio = useTrackedMutation(api.portfolios.setDefault);
-
-  useEffect(() => {
-    if (
-      portfolios === undefined ||
-      portfolios.length > 0 ||
-      legacyMigrationAttempted.current
-    ) {
-      return;
-    }
-    legacyMigrationAttempted.current = true;
-    void migrateLegacyPortfolio({}).catch((migrationError: unknown) => {
-      setPortfolioError(
-        migrationError instanceof Error
-          ? migrationError.message
-          : "Failed to import the existing portfolio",
-      );
-    });
-  }, [migrateLegacyPortfolio, portfolios]);
 
   const canCreate = name.trim() && value.trim();
 

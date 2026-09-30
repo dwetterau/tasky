@@ -24,8 +24,6 @@ let nextAirtableRequestAt = 0;
 const portfolioCredentialTypes = {
   airtableApiKey: "portfolio_airtable_api_key",
   airtableBaseId: "portfolio_airtable_base_id",
-  schwabPositionsViewId: "portfolio_schwab_positions_view_id",
-  resetDate: "portfolio_reset_date",
 } satisfies Record<string, ApiKeyType>;
 
 type AirtableRecord = {
@@ -739,28 +737,7 @@ export async function getPortfolioConfigurations(
       displayOrder: portfolio.displayOrder,
     }));
   }
-
-  const [positionsViewId, startDate] = await Promise.all([
-    getCredential(
-      ctx,
-      userId,
-      portfolioCredentialTypes.schwabPositionsViewId,
-    ),
-    getCredential(ctx, userId, portfolioCredentialTypes.resetDate),
-  ]);
-  if (!positionsViewId || !startDate || !isValidIsoDate(startDate)) {
-    return [];
-  }
-  return [
-    {
-      id: null,
-      name: "Schwab",
-      positionsViewId,
-      startDate,
-      isDefault: true,
-      displayOrder: 0,
-    },
-  ];
+  return [];
 }
 
 async function resolvePortfolioConfiguration(
