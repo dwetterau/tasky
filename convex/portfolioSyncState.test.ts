@@ -6,8 +6,14 @@ import {
   aggregateHoldingsByTicker,
   calculateHolding,
   getMissingPriceDates,
+  getQuarterHistoryStart,
 } from "./portfolio";
 import { modules } from "./test.setup";
+
+it("keeps history within a rolling three-month window", () => {
+  expect(getQuarterHistoryStart("2026-09-29")).toBe("2026-06-29");
+  expect(getQuarterHistoryStart("2026-05-31")).toBe("2026-02-28");
+});
 
 it("keeps an empty-ticker cash position in portfolio value", () => {
   expect(
