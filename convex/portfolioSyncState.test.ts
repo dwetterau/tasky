@@ -2,18 +2,8 @@ import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
 import schema from "./schema";
 import { internal } from "./_generated/api";
-import {
-  aggregateHoldingsByTicker,
-  calculateHolding,
-  getMissingPriceDates,
-  getQuarterHistoryStart,
-} from "./portfolio";
+import { aggregateHoldingsByTicker, calculateHolding } from "./portfolio";
 import { modules } from "./test.setup";
-
-it("keeps history within a rolling three-month window", () => {
-  expect(getQuarterHistoryStart("2026-09-29")).toBe("2026-06-29");
-  expect(getQuarterHistoryStart("2026-05-31")).toBe("2026-02-28");
-});
 
 it("keeps an empty-ticker cash position in portfolio value", () => {
   expect(
@@ -48,9 +38,7 @@ it("combines duplicate tickers and empty cash positions", () => {
   }) => ({
     ...overrides,
     currentPrice:
-      overrides.shares === 0
-        ? null
-        : overrides.currentValue / overrides.shares,
+      overrides.shares === 0 ? null : overrides.currentValue / overrides.shares,
     gainLoss: overrides.currentValue - overrides.costBasis,
     gainLossPercent: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -113,21 +101,6 @@ it("combines duplicate tickers and empty cash positions", () => {
     currentPrice: null,
     gainLoss: 0,
   });
-});
-
-it("backfills an earlier portfolio start while extending shared prices", () => {
-  expect(
-    getMissingPriceDates("2026-01-01", "2026-01-12", {
-      earliestDate: "2026-01-06",
-      latestDate: "2026-01-08",
-    }),
-  ).toEqual([
-    "2026-01-01",
-    "2026-01-02",
-    "2026-01-05",
-    "2026-01-09",
-    "2026-01-12",
-  ]);
 });
 
 it("records one canonical portfolio sync time per user", async () => {

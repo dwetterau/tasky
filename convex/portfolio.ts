@@ -9,11 +9,20 @@ import { internal } from "./_generated/api";
 import { getAuthUserId } from "./auth";
 import { decryptApiKey } from "./apiKeys";
 import { ApiKeyType } from "./schema";
-import { collectPriceHistoryPoints } from "./lib/portfolioHistory";
+import {
+  ACCOUNT_SNAPSHOT_SCHEMA_VERSION,
+  buildCompleteAccountSnapshotDays,
+  buildPortfolioSnapshotHistory,
+  createAccountSnapshotPayload,
+  parseAccountSnapshotPayload,
+  type AccountSnapshotPayload,
+  type AccountSnapshotPosition,
+} from "./lib/accountSnapshots";
 import type { Id } from "./_generated/dataModel";
 
 const POSITIONS_TABLE = "Positions";
-const PRICE_HISTORY_TABLE = "Price History";
+const INVESTMENT_ACCOUNTS_TABLE = "Investment Accounts";
+const ACCOUNT_SNAPSHOTS_TABLE = "Account Snapshots";
 const ALPACA_BASE_URL = "https://data.alpaca.markets/v2";
 const AIRTABLE_BATCH_SIZE = 10;
 const AIRTABLE_THROTTLE_MS = 220;
@@ -94,13 +103,6 @@ type YahooChartResponse = {
   };
 };
 
-type RecentPriceStatus = {
-  latestPriceDate: string | null;
-  previousPriceDate: string | null;
-  latestClose: number | null;
-  previousClose: number | null;
-};
-
 function asNumber(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -110,24 +112,14 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : String(value ?? "");
 }
 
+function linkedRecordIds(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
 function datePart(value: string): string {
   return value.split("T")[0] ?? value;
-}
-
-function formatAirtableDate(value: unknown): string | null {
-  if (!value) return null;
-  return datePart(asString(value));
-}
-
-function maxIsoDate(dates: string[]): string | null {
-  if (dates.length === 0) return null;
-  return dates.reduce((max, current) => (current > max ? current : max));
-}
-
-function recentHistoryCutoff(days = 14): string {
-  const cutoff = new Date();
-  cutoff.setUTCDate(cutoff.getUTCDate() - days);
-  return cutoff.toISOString().slice(0, 10);
 }
 
 function targetPercentFromAirtable(value: unknown): number | null {
@@ -161,9 +153,7 @@ export function calculateHolding(record: AirtableRecord) {
   const rawCostBasis = record.fields["Cost Basis"];
   const costBasis =
     !ticker &&
-    (rawCostBasis === undefined ||
-      rawCostBasis === null ||
-      rawCostBasis === "")
+    (rawCostBasis === undefined || rawCostBasis === null || rawCostBasis === "")
       ? currentValue
       : asNumber(rawCostBasis);
   const currentPrice = currentPriceFromValueAndQuantity(
@@ -213,9 +203,7 @@ export function aggregateHoldingsByTicker(
         (existing.targetAllocation ?? 0) + holding.targetAllocation;
     }
     existing.currentPrice =
-      existing.shares === 0
-        ? null
-        : existing.currentValue / existing.shares;
+      existing.shares === 0 ? null : existing.currentValue / existing.shares;
     existing.gainLoss = existing.currentValue - existing.costBasis;
     existing.gainLossPercent =
       existing.costBasis > 0
@@ -225,78 +213,17 @@ export function aggregateHoldingsByTicker(
   return [...aggregated.values()];
 }
 
-function tickerHistoryNamePrefixFormula(ticker: string): string {
-  const escaped = ticker
-    .toUpperCase()
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'");
-  return `FIND('${escaped}-', {Name}) = 1`;
-}
-
 function isValidIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T12:00:00.000Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
 }
 
 function getTodayDate(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-export function getQuarterHistoryStart(endDate: string): string {
-  const date = new Date(`${endDate}T12:00:00.000Z`);
-  const day = date.getUTCDate();
-  date.setUTCDate(1);
-  date.setUTCMonth(date.getUTCMonth() - 3);
-  const lastDayOfMonth = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0),
-  ).getUTCDate();
-  date.setUTCDate(Math.min(day, lastDayOfMonth));
-  return date.toISOString().slice(0, 10);
-}
-
-function getTradingDays(startDate: string, endDate: string): string[] {
-  const days: string[] = [];
-  const current = new Date(`${startDate}T12:00:00.000Z`);
-  const end = new Date(`${endDate}T12:00:00.000Z`);
-
-  while (current <= end) {
-    const dayOfWeek = current.getUTCDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      days.push(current.toISOString().slice(0, 10));
-    }
-    current.setUTCDate(current.getUTCDate() + 1);
-  }
-
-  return days;
-}
-
-function addOneDay(dateStr: string): string {
-  const date = new Date(`${dateStr}T12:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + 1);
-  return date.toISOString().slice(0, 10);
-}
-
-function subtractOneDay(dateStr: string): string {
-  const date = new Date(`${dateStr}T12:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() - 1);
-  return date.toISOString().slice(0, 10);
-}
-
-export function getMissingPriceDates(
-  startDate: string,
-  endDate: string,
-  coverage?: { earliestDate: string; latestDate: string },
-): string[] {
-  if (!coverage) return getTradingDays(startDate, endDate);
-  return [
-    ...(startDate < coverage.earliestDate
-      ? getTradingDays(startDate, subtractOneDay(coverage.earliestDate))
-      : []),
-    ...(coverage.latestDate < endDate
-      ? getTradingDays(addOneDay(coverage.latestDate), endDate)
-      : []),
-  ];
 }
 
 function getAlpacaCredentials(): AlpacaCredentials | null {
@@ -411,7 +338,6 @@ async function createAirtableRecords({
       throw new Error(message);
     }
     created += chunk.length;
-
   }
 
   return created;
@@ -449,7 +375,6 @@ async function updateAirtableRecords({
       throw new Error(message);
     }
     updated += chunk.length;
-
   }
 
   return updated;
@@ -565,41 +490,6 @@ async function fetchBarsFromYahoo(
   }
 }
 
-type TickerSyncPlan = {
-  ticker: string;
-  representativePositionRecordId: string;
-  representativeShares: number;
-  missingDates: string[];
-};
-
-async function insertPriceHistoryBatch(
-  credentials: PortfolioCredentials,
-  rows: Array<{
-    ticker: string;
-    positionRecordId: string;
-    date: string;
-    closePrice: number;
-    quantity: number;
-  }>,
-): Promise<number> {
-  if (rows.length === 0) return 0;
-
-  return await createAirtableRecords({
-    apiKey: credentials.apiKey,
-    baseId: credentials.baseId,
-    table: PRICE_HISTORY_TABLE,
-    records: rows.map((row) => ({
-      fields: {
-        Name: `${row.ticker}-${row.date}`,
-        Position: [row.positionRecordId],
-        Date: row.date,
-        "Close Price": row.closePrice,
-        Quantity: row.quantity,
-      },
-    })),
-  });
-}
-
 async function updatePositionValues(
   credentials: PortfolioCredentials,
   positions: Array<{
@@ -623,144 +513,164 @@ async function updatePositionValues(
   });
 }
 
-function mapPriceHistoryPoint(record: AirtableRecord): {
-  date: string | null;
-  close: number;
-  quantity: number;
-  value: number;
-} {
-  const date = formatAirtableDate(record.fields.Date);
-  const close = asNumber(record.fields["Close Price"]);
-  const quantity = asNumber(record.fields.Quantity);
-  return {
-    date,
-    close,
-    quantity,
-    value: close * quantity,
-  };
+function subtractDays(dateStr: string, days: number): string {
+  const date = new Date(`${dateStr}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
 }
 
-function recentPriceStatus(
-  latest: ReturnType<typeof mapPriceHistoryPoint> | null,
-  previous: ReturnType<typeof mapPriceHistoryPoint> | null,
-): RecentPriceStatus {
-  return {
-    latestPriceDate: latest?.date ?? null,
-    previousPriceDate: previous?.date ?? null,
-    latestClose: latest?.close ?? null,
-    previousClose: previous?.close ?? null,
-  };
-}
-
-async function getRecentPriceStatuses(
-  credentials: PortfolioCredentials,
+async function fetchLatestPrices(
   tickers: string[],
-): Promise<Array<{ ticker: string } & RecentPriceStatus>> {
-  if (tickers.length === 0) return [];
-  const params = new URLSearchParams();
-  params.set(
-    "filterByFormula",
-    `AND({Date} >= '${recentHistoryCutoff()}', OR(${tickers
-      .map(tickerHistoryNamePrefixFormula)
-      .join(",")}))`,
+  endDate: string,
+  credentials: AlpacaCredentials,
+): Promise<{
+  prices: Map<string, { date: string; close: number }>;
+  yahooTickers: string[];
+}> {
+  if (tickers.length === 0) {
+    return { prices: new Map(), yahooTickers: [] };
+  }
+  const startDate = subtractDays(endDate, 10);
+  const bars = await fetchBarsFromAlpaca(
+    tickers,
+    startDate,
+    endDate,
+    credentials,
   );
-  params.set("sort[0][field]", "Date");
-  params.set("sort[0][direction]", "desc");
+  const yahooTickers: string[] = [];
+  for (const ticker of tickers) {
+    if ((bars[ticker] ?? []).length > 0) continue;
+    const yahooBars = await fetchBarsFromYahoo(ticker, startDate, endDate);
+    if (yahooBars.length > 0) {
+      bars[ticker] = yahooBars;
+      yahooTickers.push(ticker);
+    }
+  }
+  const prices = new Map<string, { date: string; close: number }>();
+  for (const ticker of tickers) {
+    const latest = (bars[ticker] ?? []).reduce<AlpacaBar | null>(
+      (current, bar) =>
+        !current || datePart(bar.t) > datePart(current.t) ? bar : current,
+      null,
+    );
+    if (latest) {
+      prices.set(ticker, {
+        date: datePart(latest.t),
+        close: latest.c,
+      });
+    }
+  }
+  return { prices, yahooTickers };
+}
+
+async function getInvestmentAccountNames(
+  credentials: PortfolioCredentials,
+  accountRecordIds: Set<string>,
+): Promise<Map<string, string>> {
+  if (accountRecordIds.size === 0) return new Map();
   const records = await fetchAirtableRecords({
     apiKey: credentials.apiKey,
     baseId: credentials.baseId,
-    table: PRICE_HISTORY_TABLE,
-    params,
+    table: INVESTMENT_ACCOUNTS_TABLE,
+    params: new URLSearchParams(),
   });
-  const tickerSet = new Set(tickers);
-  const points = new Map<
-    string,
-    Array<ReturnType<typeof mapPriceHistoryPoint>>
-  >();
-  for (const record of records) {
-    const point = mapPriceHistoryPoint(record);
-    if (!point.date) continue;
-    const name = asString(record.fields.Name);
-    const ticker = name.slice(0, -(point.date.length + 1)).toUpperCase();
-    if (
-      !tickerSet.has(ticker) ||
-      name.toUpperCase() !== `${ticker}-${point.date}`
-    )
-      continue;
-    const tickerPoints = points.get(ticker) ?? [];
-    if (
-      tickerPoints.length < 2 &&
-      !tickerPoints.some((existing) => existing.date === point.date)
-    ) {
-      tickerPoints.push(point);
-      points.set(ticker, tickerPoints);
-    }
-  }
-  return tickers.map((ticker) => {
-    const tickerPoints = points.get(ticker) ?? [];
-    return {
-      ticker,
-      ...recentPriceStatus(tickerPoints[0] ?? null, tickerPoints[1] ?? null),
-    };
-  });
+  return new Map(
+    records
+      .filter((record) => accountRecordIds.has(record.id))
+      .map((record) => [
+        record.id,
+        asString(record.fields.Name).trim() || record.id,
+      ]),
+  );
 }
 
-type PriceCoverage = {
-  earliestDate: string;
-  latestDate: string;
-  latestClose: number;
-};
+function snapshotFields(
+  payload: ReturnType<typeof createAccountSnapshotPayload>,
+): Record<string, unknown> {
+  return {
+    Name: `${payload.accountRecordId}:${payload.date}`,
+    Account: [payload.accountRecordId],
+    Date: payload.date,
+    "Snapshot JSON": JSON.stringify(payload),
+    "Total Value": payload.totalValue,
+    "Total Cost Basis": payload.totalCostBasis,
+    "Position Count": payload.positions.length,
+    "Schema Version": ACCOUNT_SNAPSHOT_SCHEMA_VERSION,
+  };
+}
 
-async function getPriceCoverages(
+async function upsertAccountSnapshots(
   credentials: PortfolioCredentials,
-  tickers: string[],
-  startDate: string,
-): Promise<Map<string, PriceCoverage>> {
-  if (tickers.length === 0) return new Map();
+  payloads: ReturnType<typeof createAccountSnapshotPayload>[],
+): Promise<{ created: number; updated: number }> {
+  if (payloads.length === 0) return { created: 0, updated: 0 };
+  const date = payloads[0]!.date;
   const params = new URLSearchParams();
-  params.set(
-    "filterByFormula",
-    `AND({Date} >= '${startDate}', OR(${tickers
-      .map(tickerHistoryNamePrefixFormula)
-      .join(",")}))`,
+  params.set("filterByFormula", `{Date} = '${date}'`);
+  const existing = await fetchAirtableRecords({
+    apiKey: credentials.apiKey,
+    baseId: credentials.baseId,
+    table: ACCOUNT_SNAPSHOTS_TABLE,
+    params,
+  });
+  const existingByName = new Map(
+    existing.map((record) => [asString(record.fields.Name), record.id]),
   );
+  const creates: Array<{ fields: Record<string, unknown> }> = [];
+  const updates: Array<{
+    id: string;
+    fields: Record<string, unknown>;
+  }> = [];
+  for (const payload of payloads) {
+    const name = `${payload.accountRecordId}:${payload.date}`;
+    const fields = snapshotFields(payload);
+    const recordId = existingByName.get(name);
+    if (recordId) {
+      updates.push({ id: recordId, fields });
+    } else {
+      creates.push({ fields });
+    }
+  }
+  const created = await createAirtableRecords({
+    apiKey: credentials.apiKey,
+    baseId: credentials.baseId,
+    table: ACCOUNT_SNAPSHOTS_TABLE,
+    records: creates,
+  });
+  const updated = await updateAirtableRecords({
+    apiKey: credentials.apiKey,
+    baseId: credentials.baseId,
+    table: ACCOUNT_SNAPSHOTS_TABLE,
+    records: updates,
+  });
+  return { created, updated };
+}
+
+async function fetchAccountSnapshotPayloads(
+  credentials: PortfolioCredentials,
+  startDate: string,
+): Promise<{ recordCount: number; snapshots: AccountSnapshotPayload[] }> {
+  const params = new URLSearchParams();
+  params.set("filterByFormula", `{Date} >= '${startDate}'`);
   params.set("sort[0][field]", "Date");
   params.set("sort[0][direction]", "asc");
   const records = await fetchAirtableRecords({
     apiKey: credentials.apiKey,
     baseId: credentials.baseId,
-    table: PRICE_HISTORY_TABLE,
+    table: ACCOUNT_SNAPSHOTS_TABLE,
     params,
   });
-  const tickerSet = new Set(tickers);
-  const coverages = new Map<string, PriceCoverage>();
-  const points = collectPriceHistoryPoints(
-    records.map((record) => ({
-      name: asString(record.fields.Name),
-      ...mapPriceHistoryPoint(record),
-    })),
-    startDate,
-  );
-  for (const point of points) {
-    if (!tickerSet.has(point.ticker)) continue;
-    const existing = coverages.get(point.ticker);
-    if (!existing) {
-      coverages.set(point.ticker, {
-        earliestDate: point.date,
-        latestDate: point.date,
-        latestClose: point.close,
-      });
-      continue;
+  const snapshots = records.flatMap((record) => {
+    const serialized = record.fields["Snapshot JSON"];
+    if (typeof serialized !== "string") return [];
+    try {
+      const parsed = parseAccountSnapshotPayload(JSON.parse(serialized));
+      return parsed ? [parsed] : [];
+    } catch {
+      return [];
     }
-    if (point.date < existing.earliestDate) {
-      existing.earliestDate = point.date;
-    }
-    if (point.date >= existing.latestDate) {
-      existing.latestDate = point.date;
-      existing.latestClose = point.close;
-    }
-  }
-  return coverages;
+  });
+  return { recordCount: records.length, snapshots };
 }
 
 async function getCredential(
@@ -812,9 +722,7 @@ async function resolvePortfolioConfiguration(
     return selected;
   }
   return (
-    portfolios.find((portfolio) => portfolio.isDefault) ??
-    portfolios[0] ??
-    null
+    portfolios.find((portfolio) => portfolio.isDefault) ?? portfolios[0] ?? null
   );
 }
 
@@ -866,7 +774,10 @@ export const acquireSyncLeaseInternal = internalMutation({
       return false;
     }
     if (row) {
-      await ctx.db.patch(row._id, { syncLeaseId: leaseId, syncStartedAt: startedAt });
+      await ctx.db.patch(row._id, {
+        syncLeaseId: leaseId,
+        syncStartedAt: startedAt,
+      });
     } else {
       await ctx.db.insert("portfolioSyncStates", {
         userId,
@@ -964,7 +875,7 @@ export const getSnapshot = action({
 export async function readPortfolioSnapshot(
   ctx: ActionCtx,
   userId: string,
-  includePriceStatus: boolean | "recent" = false,
+  _includePriceStatus: boolean | "recent" = false,
   selectedPortfolio?: PortfolioConfiguration | null,
 ) {
   const [apiKey, baseId, portfolio] = await Promise.all([
@@ -995,7 +906,6 @@ export async function readPortfolioSnapshot(
     };
   }
 
-  const credentials = { apiKey, baseId };
   try {
     const params = new URLSearchParams();
     params.set("view", portfolio.positionsViewId);
@@ -1008,36 +918,58 @@ export async function readPortfolioSnapshot(
       params,
     });
 
-    const holdings = aggregateHoldingsByTicker(records.map(calculateHolding));
-
-    const recentPriceStatuses = includePriceStatus
-      ? await getRecentPriceStatuses(
-          credentials,
-          holdings.map((holding) => holding.ticker).filter(Boolean),
-        )
-      : [];
-    const recentPriceStatusByTicker = new Map(
-      recentPriceStatuses.map((entry) => [entry.ticker, entry]),
+    const accountRecordIds = new Set(
+      records.flatMap((record) => linkedRecordIds(record.fields.Account)),
     );
+    let latestSnapshotDate: string | null = null;
+    let previousSnapshotDate: string | null = null;
+    let previousPortfolioValue: number | null = null;
+    const previousValuesByTicker = new Map<string, number>();
+    if (_includePriceStatus && accountRecordIds.size > 0) {
+      try {
+        const { snapshots } = await fetchAccountSnapshotPayloads(
+          { apiKey, baseId },
+          subtractDays(getTodayDate(), 14),
+        );
+        const completeDays = buildCompleteAccountSnapshotDays(
+          snapshots,
+          accountRecordIds,
+        );
+        const latestDay = completeDays[completeDays.length - 1];
+        const previousDay = completeDays[completeDays.length - 2];
+        latestSnapshotDate = latestDay?.date ?? null;
+        previousSnapshotDate = previousDay?.date ?? null;
+        if (previousDay) {
+          previousPortfolioValue = previousDay.snapshots.reduce(
+            (sum, snapshot) => sum + snapshot.totalValue,
+            0,
+          );
+          for (const snapshot of previousDay.snapshots) {
+            for (const position of snapshot.positions) {
+              const ticker = position.ticker.trim().toUpperCase();
+              previousValuesByTicker.set(
+                ticker,
+                (previousValuesByTicker.get(ticker) ?? 0) + position.value,
+              );
+            }
+          }
+        }
+      } catch (error) {
+        console.warn("Unable to load recent account snapshots:", error);
+      }
+    }
+
+    const holdings = aggregateHoldingsByTicker(records.map(calculateHolding));
     const holdingsWithPriceStatus = holdings.map((holding) => {
-      const priceStatus = recentPriceStatusByTicker.get(holding.ticker);
-      const currentPrice =
-        includePriceStatus && priceStatus?.latestClose != null
-          ? priceStatus.latestClose
-          : holding.currentPrice;
-      const currentValue =
-        currentPrice === null
-          ? holding.currentValue
-          : currentPrice * holding.shares;
+      const currentPrice = holding.currentPrice;
+      const currentValue = holding.currentValue;
       const gainLoss = currentValue - holding.costBasis;
       const previousValue =
-        priceStatus?.previousClose == null
+        previousPortfolioValue === null
           ? null
-          : priceStatus.previousClose * holding.shares;
+          : (previousValuesByTicker.get(holding.ticker) ?? 0);
       const dayReturn =
-        includePriceStatus && previousValue !== null
-          ? currentValue - previousValue
-          : null;
+        previousValue === null ? null : currentValue - previousValue;
       return {
         ...holding,
         currentPrice,
@@ -1045,12 +977,8 @@ export async function readPortfolioSnapshot(
         gainLoss,
         gainLossPercent:
           holding.costBasis > 0 ? (gainLoss / holding.costBasis) * 100 : 0,
-        latestPriceDate: includePriceStatus
-          ? (priceStatus?.latestPriceDate ?? null)
-          : null,
-        previousPriceDate: includePriceStatus
-          ? (priceStatus?.previousPriceDate ?? null)
-          : null,
+        latestPriceDate: latestSnapshotDate,
+        previousPriceDate: previousSnapshotDate,
         dayReturn,
         dayReturnPercent:
           dayReturn !== null && previousValue !== null && previousValue > 0
@@ -1067,26 +995,10 @@ export async function readPortfolioSnapshot(
       0,
     );
     const gainLoss = totalCurrentValue - totalCost;
-    const allLatestDates = recentPriceStatuses
-      .map((entry) => entry.latestPriceDate)
-      .filter((date): date is string => Boolean(date));
-    const holdingsWithDayReturn = holdingsWithPriceStatus.filter(
-      (
-        holding,
-      ): holding is typeof holding & {
-        dayReturn: number;
-      } => holding.dayReturn !== null,
-    );
-    const latestDayReturnDates = holdingsWithDayReturn
-      .map((holding) => holding.latestPriceDate)
-      .filter((date): date is string => Boolean(date));
-    const dayReturn = holdingsWithDayReturn.reduce(
-      (sum, holding) => sum + holding.dayReturn,
-      0,
-    );
-    const totalPreviousHistoryValue = totalCurrentValue - dayReturn;
-    const hasDayReturn =
-      holdingsWithDayReturn.length > 0 && totalPreviousHistoryValue > 0;
+    const dayReturn =
+      previousPortfolioValue === null
+        ? null
+        : totalCurrentValue - previousPortfolioValue;
 
     return {
       status: "ok" as const,
@@ -1097,12 +1009,15 @@ export async function readPortfolioSnapshot(
         gainLoss,
         gainLossPercent: totalCost > 0 ? (gainLoss / totalCost) * 100 : 0,
         holdingsCount: holdings.length,
-        latestPriceDate: maxIsoDate(allLatestDates),
-        dayReturnDate: maxIsoDate(latestDayReturnDates),
-        dayReturn: hasDayReturn ? dayReturn : null,
-        dayReturnPercent: hasDayReturn
-          ? (dayReturn / totalPreviousHistoryValue) * 100
-          : null,
+        latestPriceDate: latestSnapshotDate,
+        dayReturnDate: latestSnapshotDate,
+        dayReturn,
+        dayReturnPercent:
+          dayReturn !== null &&
+          previousPortfolioValue !== null &&
+          previousPortfolioValue > 0
+            ? (dayReturn / previousPortfolioValue) * 100
+            : null,
       },
     };
   } catch (error) {
@@ -1128,14 +1043,21 @@ export async function readPortfolioSnapshot(
   }
 }
 
-const priceHistoryPointValidator = v.object({
-  ticker: v.string(),
+const snapshotHistoryPointValidator = v.object({
   date: v.string(),
-  close: v.number(),
-  quantity: v.number(),
+  totalValue: v.number(),
+  totalCostBasis: v.number(),
+  accounts: v.array(
+    v.object({
+      accountRecordId: v.string(),
+      accountName: v.string(),
+      value: v.number(),
+      costBasis: v.number(),
+    }),
+  ),
 });
 
-const emptyPriceHistory = (
+const emptySnapshotHistory = (
   status: "no_credentials" | "airtable_error",
   message: string,
   startDate: string | null = null,
@@ -1146,7 +1068,7 @@ const emptyPriceHistory = (
   points: [],
 });
 
-export const getPriceHistory = action({
+export const getSnapshotHistory = action({
   args: {
     startDate: v.optional(v.string()),
     portfolioId: v.optional(v.id("portfolios")),
@@ -1159,7 +1081,7 @@ export const getPriceHistory = action({
     ),
     message: v.optional(v.string()),
     startDate: v.union(v.string(), v.null()),
-    points: v.array(priceHistoryPointValidator),
+    points: v.array(snapshotHistoryPointValidator),
   }),
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -1174,24 +1096,19 @@ export const getPriceHistory = action({
     ]);
 
     if (!apiKey || !baseId || !portfolio) {
-      return emptyPriceHistory(
+      return emptySnapshotHistory(
         "no_credentials",
         "Add the Portfolio Airtable API Key and Base ID, then configure a portfolio in Tasky settings.",
       );
     }
 
-    const historyWindowStart = getQuarterHistoryStart(getTodayDate());
-    const configuredStart =
-      portfolio.startDate < historyWindowStart
-        ? historyWindowStart
-        : portfolio.startDate;
     const requestedStart =
       args.startDate && isValidIsoDate(args.startDate)
         ? args.startDate
-        : configuredStart;
+        : portfolio.startDate;
     const startDate =
-      requestedStart < configuredStart
-        ? configuredStart
+      requestedStart < portfolio.startDate
+        ? portfolio.startDate
         : requestedStart;
 
     try {
@@ -1203,381 +1120,238 @@ export const getPriceHistory = action({
         table: POSITIONS_TABLE,
         params: positionParams,
       });
-      const tickers = new Set(
-        positionRecords
-          .map((record) => asString(record.fields.Ticker).toUpperCase())
-          .filter(Boolean),
+      const accountRecordIds = new Set(
+        positionRecords.flatMap((record) =>
+          linkedRecordIds(record.fields.Account),
+        ),
       );
-      if (tickers.size === 0) {
+      if (accountRecordIds.size === 0) {
         return {
           status: "ok" as const,
           startDate,
           points: [],
         };
       }
-      const params = new URLSearchParams();
-      const tickerFormula = `OR(${[...tickers]
-        .map(tickerHistoryNamePrefixFormula)
-        .join(",")})`;
-      params.set(
-        "filterByFormula",
-        `AND({Date} >= '${startDate}', ${tickerFormula})`,
-      );
-      params.set("sort[0][field]", "Date");
-      params.set("sort[0][direction]", "asc");
-
-      const records = await fetchAirtableRecords({
-        apiKey,
-        baseId,
-        table: PRICE_HISTORY_TABLE,
-        params,
-      });
-      const collected = collectPriceHistoryPoints(
-        records.map((record) => ({
-          name: asString(record.fields.Name),
-          ...mapPriceHistoryPoint(record),
-        })),
+      const { recordCount, snapshots } = await fetchAccountSnapshotPayloads(
+        { apiKey, baseId },
         startDate,
       );
-      const pointsByTickerDate = new Map<
-        string,
-        (typeof collected)[number]
-      >();
-      for (const point of collected) {
-        if (!tickers.has(point.ticker)) continue;
-        pointsByTickerDate.set(`${point.ticker}:${point.date}`, {
-          ...point,
-          // Prices are shared across accounts. The chart applies the shares
-          // from the selected portfolio instead of another account's quantity.
-          quantity: 0,
-        });
+      const points = buildPortfolioSnapshotHistory(snapshots, accountRecordIds);
+
+      if (recordCount > 0 && snapshots.length === 0) {
+        return emptySnapshotHistory(
+          "airtable_error",
+          "Account snapshot rows contain invalid JSON.",
+          startDate,
+        );
       }
 
       return {
         status: "ok" as const,
         startDate,
-        points: [...pointsByTickerDate.values()],
+        points,
       };
     } catch (error) {
-      return emptyPriceHistory(
+      return emptySnapshotHistory(
         "airtable_error",
         error instanceof Error
           ? error.message
-          : "Failed to fetch price history.",
+          : "Failed to fetch account snapshot history.",
         startDate,
       );
     }
   },
 });
 
-const priceSyncResult = v.object({
+const portfolioSyncResult = v.object({
   success: v.boolean(),
   message: v.string(),
   synced: v.number(),
   details: v.object({
     tickersProcessed: v.number(),
-    recordsFound: v.number(),
-    recordsInserted: v.number(),
+    accountsProcessed: v.number(),
+    snapshotsCreated: v.number(),
+    snapshotsUpdated: v.number(),
     positionsUpdated: v.number(),
+    unassignedPositions: v.number(),
     yahooTickers: v.array(v.string()),
   }),
 });
 
-async function performPriceHistorySync(ctx: ActionCtx, userId: string) {
-    const [apiKey, baseId, portfolios] = await Promise.all([
-      getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
-      getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
-      getPortfolioConfigurations(ctx, userId),
-    ]);
-    if (!apiKey || !baseId || portfolios.length === 0) {
-      return {
-        success: false,
-        message:
-          "Add the Portfolio Airtable API Key and Base ID, then configure at least one portfolio in Tasky settings.",
-        synced: 0,
-        details: {
-          tickersProcessed: 0,
-          recordsFound: 0,
-          recordsInserted: 0,
-          positionsUpdated: 0,
-          yahooTickers: [],
-        },
-      };
-    }
+function emptySyncDetails() {
+  return {
+    tickersProcessed: 0,
+    accountsProcessed: 0,
+    snapshotsCreated: 0,
+    snapshotsUpdated: 0,
+    positionsUpdated: 0,
+    unassignedPositions: 0,
+    yahooTickers: [] as string[],
+  };
+}
 
-    const alpacaCredentials = getAlpacaCredentials();
-    if (!alpacaCredentials) {
-      return {
-        success: false,
-        message:
-          "Set ALPACA_API_KEY and ALPACA_SECRET_KEY in the Tasky Convex environment.",
-        synced: 0,
-        details: {
-          tickersProcessed: 0,
-          recordsFound: 0,
-          recordsInserted: 0,
-          positionsUpdated: 0,
-          yahooTickers: [],
-        },
-      };
-    }
+async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
+  const [apiKey, baseId, portfolios] = await Promise.all([
+    getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
+    getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
+    getPortfolioConfigurations(ctx, userId),
+  ]);
+  if (!apiKey || !baseId || portfolios.length === 0) {
+    return {
+      success: false,
+      message:
+        "Add the Portfolio Airtable API Key and Base ID, then configure at least one portfolio in Tasky settings.",
+      synced: 0,
+      details: emptySyncDetails(),
+    };
+  }
 
-    const credentials = { apiKey, baseId };
-    const portfolioRecords: Array<{
-      portfolio: PortfolioConfiguration;
-      records: AirtableRecord[];
-    }> = [];
-    for (const [index, portfolio] of portfolios.entries()) {
-      const params = new URLSearchParams();
-      params.set("view", portfolio.positionsViewId);
-      params.set("sort[0][field]", "Ticker");
-      params.set("sort[0][direction]", "asc");
-      portfolioRecords.push({
-        portfolio,
-        records: await fetchAirtableRecords({
-          apiKey,
-          baseId,
-          table: POSITIONS_TABLE,
-          params,
-        }),
-      });
-      if (index < portfolios.length - 1) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, AIRTABLE_THROTTLE_MS),
-        );
-      }
-    }
-    const endDate = getTodayDate();
-    const historyWindowStart = getQuarterHistoryStart(endDate);
-    const holdingsById = new Map<
-      string,
-      ReturnType<typeof calculateHolding> & { startDate: string }
-    >();
-    for (const { portfolio, records } of portfolioRecords) {
-      const portfolioStartDate =
-        portfolio.startDate < historyWindowStart
-          ? historyWindowStart
-          : portfolio.startDate;
-      for (const record of records) {
-        const holding = calculateHolding(record);
-        if (!holding.ticker) continue;
-        const existing = holdingsById.get(holding.id);
-        holdingsById.set(holding.id, {
-          ...holding,
-          startDate:
-            existing && existing.startDate < portfolioStartDate
-              ? existing.startDate
-              : portfolioStartDate,
-        });
-      }
-    }
-    const holdings = [...holdingsById.values()];
-    if (holdings.length === 0) {
-      return {
-        success: true,
-        message: `No holdings found across ${portfolios.length} portfolios.`,
-        synced: 0,
-        details: {
-          tickersProcessed: 0,
-          recordsFound: 0,
-          recordsInserted: 0,
-          positionsUpdated: 0,
-          yahooTickers: [],
-        },
-      };
-    }
+  const alpacaCredentials = getAlpacaCredentials();
+  if (!alpacaCredentials) {
+    return {
+      success: false,
+      message:
+        "Set ALPACA_API_KEY and ALPACA_SECRET_KEY in the Tasky Convex environment.",
+      synced: 0,
+      details: emptySyncDetails(),
+    };
+  }
 
-    const holdingsByTicker = new Map<string, typeof holdings>();
-    for (const holding of holdings) {
-      const tickerHoldings = holdingsByTicker.get(holding.ticker) ?? [];
-      tickerHoldings.push(holding);
-      holdingsByTicker.set(holding.ticker, tickerHoldings);
-    }
-    const allTickers = [...holdingsByTicker.keys()];
-    const earliestConfiguredStart = holdings.reduce(
-      (earliest, holding) =>
-        holding.startDate < earliest ? holding.startDate : earliest,
-      holdings[0]!.startDate,
-    );
-    const priceCoverages = await getPriceCoverages(
-      credentials,
-      allTickers,
-      earliestConfiguredStart,
-    );
-    const latestPriceByTicker = new Map<
-      string,
-      { date: string; close: number }
-    >(
-      [...priceCoverages].map(([ticker, coverage]) => [
-        ticker,
-        { date: coverage.latestDate, close: coverage.latestClose },
-      ]),
-    );
-    const tickersToSync: TickerSyncPlan[] = [];
-
-    for (const [ticker, tickerHoldings] of holdingsByTicker) {
-      const startDate = tickerHoldings.reduce(
-        (earliest, holding) =>
-          holding.startDate < earliest ? holding.startDate : earliest,
-        tickerHoldings[0]!.startDate,
-      );
-      const coverage = priceCoverages.get(ticker);
-      const missingDates = getMissingPriceDates(
-        startDate,
-        endDate,
-        coverage,
-      );
-      if (missingDates.length > 0) {
-        const representative = tickerHoldings[0]!;
-        tickersToSync.push({
-          ticker,
-          representativePositionRecordId: representative.id,
-          representativeShares: representative.shares,
-          missingDates,
-        });
-      }
-    }
-
-    if (tickersToSync.length === 0) {
-      const positionsUpdated = await updatePositionValues(
-        credentials,
-        holdings.flatMap((holding) => {
-          const latest = latestPriceByTicker.get(holding.ticker);
-          return latest
-            ? [
-                {
-                  positionRecordId: holding.id,
-                  shares: holding.shares,
-                  closePrice: latest.close,
-                },
-              ]
-            : [];
-        }),
-      );
-      return {
-        success: true,
-        message: `Price history is up to date across ${portfolios.length} portfolios. Refreshed ${positionsUpdated} position values.`,
-        synced: 0,
-        details: {
-          tickersProcessed: 0,
-          recordsFound: 0,
-          recordsInserted: 0,
-          positionsUpdated,
-          yahooTickers: [],
-        },
-      };
-    }
-
-    const tickersNeedingData = tickersToSync.map((plan) => plan.ticker);
-    const earliestMissing = tickersToSync
-      .flatMap((plan) => plan.missingDates)
-      .sort()[0]!;
-    const bars = await fetchBarsFromAlpaca(
-      tickersNeedingData,
-      earliestMissing,
-      endDate,
-      alpacaCredentials,
-    );
-    const tickersWithNoData = tickersNeedingData.filter(
-      (ticker) => !bars[ticker] || bars[ticker].length === 0,
-    );
-
-    const alpacaDates = new Set<string>();
-    for (const [ticker, tickerBars] of Object.entries(bars)) {
-      if (tickersWithNoData.includes(ticker)) continue;
-      for (const bar of tickerBars) {
-        alpacaDates.add(datePart(bar.t));
-      }
-    }
-
-    const yahooTickers: string[] = [];
-    for (const ticker of tickersWithNoData) {
-      const yahooBars = await fetchBarsFromYahoo(
-        ticker,
-        earliestMissing,
-        endDate,
-      );
-      const filteredBars =
-        alpacaDates.size > 0
-          ? yahooBars.filter((bar) => alpacaDates.has(datePart(bar.t)))
-          : yahooBars;
-      if (filteredBars.length > 0) {
-        bars[ticker] = filteredBars;
-        yahooTickers.push(ticker);
-      }
-    }
-
-    const priceRows: Array<{
-      ticker: string;
-      positionRecordId: string;
-      date: string;
-      closePrice: number;
-      quantity: number;
-    }> = [];
-    for (const plan of tickersToSync) {
-      const tickerBars = bars[plan.ticker] ?? [];
-      const missingDates = new Set(plan.missingDates);
-      for (const bar of tickerBars) {
-        const date = datePart(bar.t);
-        if (missingDates.has(date)) {
-          priceRows.push({
-            ticker: plan.ticker,
-            positionRecordId: plan.representativePositionRecordId,
-            date,
-            closePrice: bar.c,
-            quantity: plan.representativeShares,
-          });
-        }
-      }
-      const latestFetchedBar = tickerBars.reduce<AlpacaBar | null>(
-        (latest, bar) =>
-          !latest || datePart(bar.t) > datePart(latest.t) ? bar : latest,
-        null,
-      );
-      const latestStored = latestPriceByTicker.get(plan.ticker);
-      if (
-        latestFetchedBar &&
-        (!latestStored || datePart(latestFetchedBar.t) >= latestStored.date)
-      ) {
-        latestPriceByTicker.set(plan.ticker, {
-          date: datePart(latestFetchedBar.t),
-          close: latestFetchedBar.c,
-        });
-      }
-    }
-
-    const insertedCount = await insertPriceHistoryBatch(credentials, priceRows);
-    const positionsUpdated = await updatePositionValues(
-      credentials,
-      holdings.flatMap((holding) => {
-        const latest = latestPriceByTicker.get(holding.ticker);
-        return latest
-          ? [
-              {
-                positionRecordId: holding.id,
-                shares: holding.shares,
-                closePrice: latest.close,
-              },
-            ]
-          : [];
+  const credentials = { apiKey, baseId };
+  const portfolioRecords: Array<{
+    portfolio: PortfolioConfiguration;
+    records: AirtableRecord[];
+  }> = [];
+  for (const [index, portfolio] of portfolios.entries()) {
+    const params = new URLSearchParams();
+    params.set("view", portfolio.positionsViewId);
+    params.set("sort[0][field]", "Ticker");
+    params.set("sort[0][direction]", "asc");
+    portfolioRecords.push({
+      portfolio,
+      records: await fetchAirtableRecords({
+        apiKey,
+        baseId,
+        table: POSITIONS_TABLE,
+        params,
       }),
-    );
+    });
+    if (index < portfolios.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, AIRTABLE_THROTTLE_MS));
+    }
+  }
+  const recordsById = new Map<string, AirtableRecord>();
+  for (const { records } of portfolioRecords) {
+    for (const record of records) {
+      recordsById.set(record.id, record);
+    }
+  }
+  const records = [...recordsById.values()];
+  if (records.length === 0) {
     return {
       success: true,
-      message: `Synced ${insertedCount} shared price records across ${portfolios.length} portfolios and refreshed ${positionsUpdated} position values.`,
-      synced: insertedCount,
-      details: {
-        tickersProcessed: tickersNeedingData.length,
-        recordsFound: priceRows.length,
-        recordsInserted: insertedCount,
-        positionsUpdated,
-        yahooTickers,
-      },
+      message: `No positions found across ${portfolios.length} portfolios.`,
+      synced: 0,
+      details: emptySyncDetails(),
     };
+  }
+
+  const recordsWithAccounts = records.map((record) => ({
+    accountRecordIds: linkedRecordIds(record.fields.Account),
+    holding: calculateHolding(record),
+  }));
+  const invalidAccounts = recordsWithAccounts.filter(
+    ({ accountRecordIds }) => accountRecordIds.length !== 1,
+  );
+  if (invalidAccounts.length > 0) {
+    const details = emptySyncDetails();
+    details.unassignedPositions = invalidAccounts.length;
+    return {
+      success: false,
+      message: `${invalidAccounts.length} Position record${invalidAccounts.length === 1 ? "" : "s"} must link to exactly one Account before snapshots can be stored.`,
+      synced: 0,
+      details,
+    };
+  }
+
+  const tickers = [
+    ...new Set(
+      recordsWithAccounts.map(({ holding }) => holding.ticker).filter(Boolean),
+    ),
+  ];
+  const endDate = getTodayDate();
+  const { prices, yahooTickers } = await fetchLatestPrices(
+    tickers,
+    endDate,
+    alpacaCredentials,
+  );
+  const positionsUpdated = await updatePositionValues(
+    credentials,
+    recordsWithAccounts.flatMap(({ holding }) => {
+      const latest = prices.get(holding.ticker);
+      return latest
+        ? [
+            {
+              positionRecordId: holding.id,
+              shares: holding.shares,
+              closePrice: latest.close,
+            },
+          ]
+        : [];
+    }),
+  );
+
+  const positionsByAccount = new Map<string, AccountSnapshotPosition[]>();
+  for (const { accountRecordIds, holding } of recordsWithAccounts) {
+    const accountRecordId = accountRecordIds[0]!;
+    const latest = prices.get(holding.ticker);
+    const value = latest ? latest.close * holding.shares : holding.currentValue;
+    const positions = positionsByAccount.get(accountRecordId) ?? [];
+    positions.push({
+      positionRecordId: holding.id,
+      ticker: holding.ticker,
+      name: holding.companyName,
+      quantity: holding.shares,
+      costBasis: holding.costBasis,
+      value,
+    });
+    positionsByAccount.set(accountRecordId, positions);
+  }
+  const accountRecordIds = new Set(positionsByAccount.keys());
+  const accountNames = await getInvestmentAccountNames(
+    credentials,
+    accountRecordIds,
+  );
+  const capturedAt = Date.now();
+  const payloads = [...positionsByAccount].map(([accountRecordId, positions]) =>
+    createAccountSnapshotPayload({
+      accountRecordId,
+      accountName: accountNames.get(accountRecordId) ?? accountRecordId,
+      date: endDate,
+      capturedAt,
+      positions,
+    }),
+  );
+  const snapshots = await upsertAccountSnapshots(credentials, payloads);
+  const synced = snapshots.created + snapshots.updated;
+  return {
+    success: true,
+    message: `Stored ${synced} account snapshot${synced === 1 ? "" : "s"} for ${endDate} and refreshed ${positionsUpdated} Position values.`,
+    synced,
+    details: {
+      tickersProcessed: tickers.length,
+      accountsProcessed: payloads.length,
+      snapshotsCreated: snapshots.created,
+      snapshotsUpdated: snapshots.updated,
+      positionsUpdated,
+      unassignedPositions: 0,
+      yahooTickers,
+    },
+  };
 }
 
 /** Same Airtable/Alpaca sync the app runs. Caller supplies an already-authorized user id. */
-export async function syncPriceHistoryForUser(ctx: ActionCtx, userId: string) {
+export async function syncPortfolioForUser(ctx: ActionCtx, userId: string) {
   const leaseId = crypto.randomUUID();
   const startedAt = Date.now();
   const acquired = await ctx.runMutation(
@@ -1587,19 +1361,13 @@ export async function syncPriceHistoryForUser(ctx: ActionCtx, userId: string) {
   if (!acquired) {
     return {
       success: false,
-      message: "A portfolio price sync is already running.",
+      message: "A portfolio sync is already running.",
       synced: 0,
-      details: {
-        tickersProcessed: 0,
-        recordsFound: 0,
-        recordsInserted: 0,
-        positionsUpdated: 0,
-        yahooTickers: [],
-      },
+      details: emptySyncDetails(),
     };
   }
   try {
-    const result = await performPriceHistorySync(ctx, userId);
+    const result = await performPortfolioSnapshotSync(ctx, userId);
     if (result.success) {
       await ctx.runMutation(internal.portfolio.recordSyncInternal, {
         userId,
@@ -1615,14 +1383,14 @@ export async function syncPriceHistoryForUser(ctx: ActionCtx, userId: string) {
   }
 }
 
-export const syncPriceHistory = action({
+export const syncPortfolio = action({
   args: {},
-  returns: priceSyncResult,
+  returns: portfolioSyncResult,
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Not authenticated");
     }
-    return await syncPriceHistoryForUser(ctx, userId);
+    return await syncPortfolioForUser(ctx, userId);
   },
 });
