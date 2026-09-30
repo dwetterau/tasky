@@ -16,7 +16,7 @@ import {
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
   getSignalQueryTime,
-  groupSignalsByPrimaryTag,
+  groupSignalsByFirstTag,
   loggedTodaySignals,
   SIGNAL_SOON_WINDOW_MS,
   type SignalDashboardItem,
@@ -188,11 +188,11 @@ export default function SignalsPage() {
       result.push({
         attention,
         items: matching,
-        tagGroups: groupSignalsByPrimaryTag(matching),
+        tagGroups: groupSignalsByFirstTag(matching, tags.data ?? []),
       });
     }
     return result;
-  }, [signals.data]);
+  }, [signals.data, tags.data]);
   const todayItems = useMemo(
     () => loggedTodaySignals(signals.data ?? [], periodBounds.day),
     [periodBounds.day, signals.data],
@@ -367,7 +367,7 @@ export default function SignalsPage() {
                         ]}
                       />
                       <Text style={styles.tagTitle} numberOfLines={1}>
-                        {tagGroup.tag?.name ?? "Untagged"}
+                        {tagGroup.label}
                       </Text>
                       <Text style={styles.tagCount}>
                         {tagGroup.signals.length}
