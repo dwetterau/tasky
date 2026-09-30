@@ -363,7 +363,9 @@ export function compareSignalActionability(
   left: SignalDashboardItem,
   right: SignalDashboardItem,
 ): number {
-  const rankDelta = left.actionability.rank - right.actionability.rank;
+  const rankDelta =
+    signalActionabilityUiRank(left.actionability.tier) -
+    signalActionabilityUiRank(right.actionability.tier);
   if (rankDelta !== 0) {
     return rankDelta;
   }
@@ -377,6 +379,33 @@ export function compareSignalActionability(
     ATTENTION_RANK[left.evaluation.attention] -
     ATTENTION_RANK[right.evaluation.attention];
   return attentionDelta || left.name.localeCompare(right.name);
+}
+
+type SignalActionabilityTier =
+  SignalDashboardItem["actionability"]["tier"];
+type SignalActionabilityUiTier = Exclude<
+  SignalActionabilityTier,
+  "cooldown"
+>;
+
+const ACTIONABILITY_UI_RANK: Record<SignalActionabilityUiTier, number> = {
+  overdue: 0,
+  ready: 1,
+  later: 2,
+  idle: 3,
+  complete: 4,
+};
+
+export function signalActionabilityUiTier(
+  tier: SignalActionabilityTier,
+): SignalActionabilityUiTier {
+  return tier === "cooldown" ? "later" : tier;
+}
+
+export function signalActionabilityUiRank(
+  tier: SignalActionabilityTier,
+): number {
+  return ACTIONABILITY_UI_RANK[signalActionabilityUiTier(tier)];
 }
 
 export function lastLoggedAt(signal: SignalDashboardItem): number | undefined {
