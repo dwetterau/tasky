@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   oauthApplicationName,
   oauthAuthorizeUrl,
+  oauthPermissionDescriptions,
   signInCallbackUrl,
 } from "./oauth";
 
@@ -47,4 +48,47 @@ it("keeps other clients on MCP and rejects incomplete continuation URLs", () => 
   expect(
     oauthAuthorizeUrl("https://issuer.example.test", "flow=homepage"),
   ).toBeNull();
+});
+
+it("uses a friendly generic name when MCP consent omits client metadata", () => {
+  expect(
+    oauthApplicationName(
+      new URLSearchParams({
+        client_id: "iGVaDdnxkguHFzHYRnLVTlbxCqrHIiHd",
+      }),
+    ),
+  ).toBe("MCP client");
+  expect(
+    oauthApplicationName(
+      new URLSearchParams({
+        client_id: "generated-id",
+        client_name: "Cursor",
+      }),
+    ),
+  ).toBe("Cursor");
+});
+
+it("groups related OAuth permissions without hiding unknown scopes", () => {
+  expect(
+    oauthPermissionDescriptions([
+      "openid",
+      "profile",
+      "email",
+      "offline_access",
+      "tasks:read",
+      "tasks:write",
+      "signals:read",
+      "signals:write",
+      "widgets:read",
+      "widgets:write",
+      "custom:scope",
+    ]),
+  ).toEqual([
+    "Identify your Tasky account and profile, including your email address",
+    "Stay signed in between visits",
+    "Read, create, and update your tasks",
+    "Read, create, and update your signals",
+    "Read and publish content for your home widgets",
+    "custom:scope",
+  ]);
 });

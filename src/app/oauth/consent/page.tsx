@@ -7,20 +7,10 @@ import { TaskyWordmark } from "@/components/TaskyWordmark";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { authClient } from "@/lib/auth-client";
 import { UserIdentity } from "@/components/UserIdentity";
-import { oauthApplicationName } from "@/lib/oauth";
-
-const permissionLabels: Record<string, string> = {
-  openid: "Recognize your Tasky account",
-  profile: "Read your name and profile",
-  email: "Read your email address",
-  offline_access: "Keep you signed in between visits",
-  "tasks:read": "Read your tasks",
-  "tasks:write": "Create and update your tasks",
-  "signals:read": "Read your signals",
-  "signals:write": "Create and update your signals",
-  "widgets:read": "Read content published to your home widgets",
-  "widgets:write": "Publish content to your home widgets",
-};
+import {
+  oauthApplicationName,
+  oauthPermissionDescriptions,
+} from "@/lib/oauth";
 
 function OAuthConsentPageContent() {
   const { session, isPending } = useAuthSession();
@@ -31,6 +21,8 @@ function OAuthConsentPageContent() {
 
   const clientName = oauthApplicationName(searchParams);
   const isHomepage = searchParams.get("flow") === "homepage";
+  const hasFriendlyClientName =
+    isHomepage || Boolean(searchParams.get("client_name")?.trim());
   const requestedScope = useMemo(
     () => searchParams.get("scope") ?? "",
     [searchParams],
@@ -52,6 +44,10 @@ function OAuthConsentPageContent() {
         .map((s) => s.trim())
         .filter((s) => s.length > 0),
     [requestedScope],
+  );
+  const permissionDescriptions = useMemo(
+    () => oauthPermissionDescriptions(scopeList),
+    [scopeList],
   );
 
   const submitConsent = async (accept: boolean) => {
@@ -133,9 +129,11 @@ function OAuthConsentPageContent() {
         <p className="text-(--muted) mb-6">
           {isHomepage
             ? "Tasky Homepage uses your account to show your private daily brief at home.davidw.tech."
-            : `${clientName} is asking to use your Tasky account.`}
+            : hasFriendlyClientName
+              ? `${clientName} is asking to use your Tasky account.`
+              : "An MCP client is asking to use your Tasky account."}
         </p>
-        {clientName ? (
+        {hasFriendlyClientName ? (
           <p className="text-sm text-(--muted) mb-5">
             App requesting access:{" "}
             <span className="text-foreground font-medium">{clientName}</span>
@@ -144,20 +142,21 @@ function OAuthConsentPageContent() {
 
         <div className="mb-6 border border-(--card-border) rounded-xl p-4">
           <p className="text-sm font-medium mb-3">
-            This will allow {clientName} to:
+            This will allow {hasFriendlyClientName ? clientName : "this client"}{" "}
+            to:
           </p>
-          {scopeList.length === 0 ? (
+          {permissionDescriptions.length === 0 ? (
             <p className="text-sm text-(--muted)">
               No additional permissions were requested.
             </p>
           ) : (
             <ul className="flex flex-wrap gap-2">
-              {scopeList.map((scope) => (
+              {permissionDescriptions.map((description) => (
                 <li
-                  key={scope}
+                  key={description}
                   className="text-xs px-2 py-1 rounded-full bg-(--accent-subtle) border border-(--card-border)"
                 >
-                  {permissionLabels[scope] ?? scope}
+                  {description}
                 </li>
               ))}
             </ul>
