@@ -13,6 +13,7 @@ import { SignalRow, signalAttentionColor } from "@/components/SignalRow";
 import { TagFilterRow } from "@/components/TagFilterRow";
 import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
+  compareSignalActionability,
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
   getSignalQueryTime,
@@ -183,7 +184,7 @@ export default function SignalsPage() {
     for (const attention of ATTENTION_ORDER) {
       const matching = (signals.data ?? []).filter(
         (signal) => signal.evaluation.attention === attention,
-      );
+      ).sort(compareSignalActionability);
       if (matching.length === 0) continue;
       result.push({
         attention,
