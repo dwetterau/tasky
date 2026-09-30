@@ -188,7 +188,9 @@ function SignalsCard() {
             <ActivityIndicator />
           </View>
         ) : needsAttention.length === 0 ? (
-          <TouchableOpacity onPress={() => router.push("/signals_page" as Href)}>
+          <TouchableOpacity
+            onPress={() => router.push("/signals_page" as Href)}
+          >
             <Text style={styles.allOnTrack}>
               {signals.data?.length
                 ? showScaleCard
@@ -511,7 +513,9 @@ function PortfolioCard() {
               </>
             ) : (
               <View style={styles.portfolioEmptyDay}>
-                <Text style={sharedStyles.muted}>No price data today</Text>
+                <Text style={sharedStyles.muted}>
+                  Daily change needs a prior snapshot
+                </Text>
               </View>
             )}
             <Stat

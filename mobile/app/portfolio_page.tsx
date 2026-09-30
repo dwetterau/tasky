@@ -39,6 +39,7 @@ type Holding = PortfolioSnapshot["holdings"][number];
 
 type SortKey = "ticker" | "value" | "dayDollar" | "dayPercent" | "totalPercent";
 type SortDirection = "asc" | "desc";
+const ALL_PORTFOLIOS_ID = "__all_portfolios__";
 
 function formatCurrency(value: number, digits = 0): string {
   return new Intl.NumberFormat("en-US", {
@@ -539,19 +540,22 @@ export default function PortfolioPage() {
     null,
   );
   const selectedPortfolioIdRef = useRef<string | null>(null);
-  const selectedPortfolio = useMemo<PortfolioConfig | null>(
-    () =>
+  const allPortfoliosSelected = selectedPortfolioId === ALL_PORTFOLIOS_ID;
+  const selectedPortfolio = useMemo<PortfolioConfig | null>(() => {
+    if (allPortfoliosSelected) return null;
+    return (
       portfolios?.find(
         (candidate) => String(candidate._id) === selectedPortfolioId,
       ) ??
       portfolios?.find((candidate) => candidate.isDefault) ??
       portfolios?.[0] ??
-      null,
-    [portfolios, selectedPortfolioId],
-  );
+      null
+    );
+  }, [allPortfoliosSelected, portfolios, selectedPortfolioId]);
 
   useEffect(() => {
     if (
+      allPortfoliosSelected ||
       !selectedPortfolio ||
       selectedPortfolioId === String(selectedPortfolio._id)
     ) {
@@ -560,7 +564,7 @@ export default function PortfolioPage() {
     const id = String(selectedPortfolio._id);
     selectedPortfolioIdRef.current = id;
     setSelectedPortfolioId(id);
-  }, [selectedPortfolio, selectedPortfolioId]);
+  }, [allPortfoliosSelected, selectedPortfolio, selectedPortfolioId]);
 
   useEffect(() => {
     selectedPortfolioIdRef.current = selectedPortfolioId;
@@ -568,15 +572,21 @@ export default function PortfolioPage() {
 
   const refreshPortfolio = useCallback(async () => {
     if (!taskyEnabled) return;
-    const requestedPortfolioId = selectedPortfolio
-      ? String(selectedPortfolio._id)
-      : null;
+    const requestedPortfolioId = allPortfoliosSelected
+      ? ALL_PORTFOLIOS_ID
+      : selectedPortfolio
+        ? String(selectedPortfolio._id)
+        : null;
     setIsLoading(true);
     setError(null);
     try {
       const snapshot = await getPortfolioSnapshot({
         includePriceStatus: true,
-        ...(selectedPortfolio ? { portfolioId: selectedPortfolio._id } : {}),
+        ...(allPortfoliosSelected
+          ? { allPortfolios: true }
+          : selectedPortfolio
+            ? { portfolioId: selectedPortfolio._id }
+            : {}),
       });
       if (selectedPortfolioIdRef.current === requestedPortfolioId) {
         setPortfolio(snapshot);
@@ -590,18 +600,29 @@ export default function PortfolioPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [getPortfolioSnapshot, selectedPortfolio, taskyEnabled]);
+  }, [
+    allPortfoliosSelected,
+    getPortfolioSnapshot,
+    selectedPortfolio,
+    taskyEnabled,
+  ]);
 
   const refreshHistory = useCallback(async () => {
     if (!taskyEnabled) return;
-    const requestedPortfolioId = selectedPortfolio
-      ? String(selectedPortfolio._id)
-      : null;
+    const requestedPortfolioId = allPortfoliosSelected
+      ? ALL_PORTFOLIOS_ID
+      : selectedPortfolio
+        ? String(selectedPortfolio._id)
+        : null;
     setIsHistoryLoading(true);
     setHistoryError(null);
     try {
       const history = await getSnapshotHistory(
-        selectedPortfolio ? { portfolioId: selectedPortfolio._id } : {},
+        allPortfoliosSelected
+          ? { allPortfolios: true }
+          : selectedPortfolio
+            ? { portfolioId: selectedPortfolio._id }
+            : {},
       );
       if (!history) {
         setHistoryError("Tasky session is unavailable.");
@@ -622,7 +643,12 @@ export default function PortfolioPage() {
     } finally {
       setIsHistoryLoading(false);
     }
-  }, [getSnapshotHistory, selectedPortfolio, taskyEnabled]);
+  }, [
+    allPortfoliosSelected,
+    getSnapshotHistory,
+    selectedPortfolio,
+    taskyEnabled,
+  ]);
 
   useEffect(() => {
     setPortfolio(null);
@@ -770,6 +796,27 @@ export default function PortfolioPage() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.portfolioTabs}
         >
+          <TouchableOpacity
+            style={[
+              styles.portfolioTab,
+              allPortfoliosSelected && styles.portfolioTabSelected,
+            ]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: allPortfoliosSelected }}
+            onPress={() => {
+              selectedPortfolioIdRef.current = ALL_PORTFOLIOS_ID;
+              setSelectedPortfolioId(ALL_PORTFOLIOS_ID);
+            }}
+          >
+            <Text
+              style={[
+                styles.portfolioTabText,
+                allPortfoliosSelected && styles.portfolioTabTextSelected,
+              ]}
+            >
+              All
+            </Text>
+          </TouchableOpacity>
           {portfolios.map((candidate) => {
             const selected = candidate._id === selectedPortfolio?._id;
             return (

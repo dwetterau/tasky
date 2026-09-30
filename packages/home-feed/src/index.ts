@@ -128,7 +128,7 @@ export const namedPortfolioSchema = z
 export const portfolioPayloadSchema = z
   .object({
     ...portfolioDataFields,
-    portfolios: z.array(namedPortfolioSchema).max(5).optional(),
+    portfolios: z.array(namedPortfolioSchema).max(6).optional(),
   })
   .strict();
 export type PortfolioPayload = z.infer<typeof portfolioPayloadSchema>;

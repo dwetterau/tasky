@@ -673,6 +673,32 @@ async function fetchAccountSnapshotPayloads(
   return { recordCount: records.length, snapshots };
 }
 
+async function fetchPortfolioPositionRecords(
+  credentials: PortfolioCredentials,
+  portfolios: PortfolioConfiguration[],
+): Promise<AirtableRecord[]> {
+  const recordsById = new Map<string, AirtableRecord>();
+  for (const [index, portfolio] of portfolios.entries()) {
+    const params = new URLSearchParams();
+    params.set("view", portfolio.positionsViewId);
+    params.set("sort[0][field]", "Ticker");
+    params.set("sort[0][direction]", "asc");
+    const records = await fetchAirtableRecords({
+      apiKey: credentials.apiKey,
+      baseId: credentials.baseId,
+      table: POSITIONS_TABLE,
+      params,
+    });
+    for (const record of records) {
+      recordsById.set(record.id, record);
+    }
+    if (index < portfolios.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, AIRTABLE_THROTTLE_MS));
+    }
+  }
+  return [...recordsById.values()];
+}
+
 async function getCredential(
   ctx: ActionCtx,
   userId: string,
@@ -812,6 +838,7 @@ export const getSnapshot = action({
   args: {
     includePriceStatus: v.optional(v.boolean()),
     portfolioId: v.optional(v.id("portfolios")),
+    allPortfolios: v.optional(v.boolean()),
   },
   returns: v.object({
     status: v.union(
@@ -857,11 +884,9 @@ export const getSnapshot = action({
       throw new Error("Not authenticated");
     }
 
-    const portfolio = await resolvePortfolioConfiguration(
-      ctx,
-      userId,
-      args.portfolioId,
-    );
+    const portfolio = args.allPortfolios
+      ? await getPortfolioConfigurations(ctx, userId)
+      : await resolvePortfolioConfiguration(ctx, userId, args.portfolioId);
     return await readPortfolioSnapshot(
       ctx,
       userId,
@@ -876,17 +901,22 @@ export async function readPortfolioSnapshot(
   ctx: ActionCtx,
   userId: string,
   _includePriceStatus: boolean | "recent" = false,
-  selectedPortfolio?: PortfolioConfiguration | null,
+  selectedPortfolio?: PortfolioConfiguration | PortfolioConfiguration[] | null,
 ) {
-  const [apiKey, baseId, portfolio] = await Promise.all([
+  const [apiKey, baseId, portfolioSelection] = await Promise.all([
     getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
     getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
     selectedPortfolio === undefined
       ? resolvePortfolioConfiguration(ctx, userId)
       : selectedPortfolio,
   ]);
+  const portfolios = Array.isArray(portfolioSelection)
+    ? portfolioSelection
+    : portfolioSelection
+      ? [portfolioSelection]
+      : [];
 
-  if (!apiKey || !baseId || !portfolio) {
+  if (!apiKey || !baseId || portfolios.length === 0) {
     return {
       status: "no_credentials" as const,
       message:
@@ -907,16 +937,10 @@ export async function readPortfolioSnapshot(
   }
 
   try {
-    const params = new URLSearchParams();
-    params.set("view", portfolio.positionsViewId);
-    params.set("sort[0][field]", "Ticker");
-    params.set("sort[0][direction]", "asc");
-    const records = await fetchAirtableRecords({
-      apiKey,
-      baseId,
-      table: POSITIONS_TABLE,
-      params,
-    });
+    const records = await fetchPortfolioPositionRecords(
+      { apiKey, baseId },
+      portfolios,
+    );
 
     const accountRecordIds = new Set(
       records.flatMap((record) => linkedRecordIds(record.fields.Account)),
@@ -1055,6 +1079,14 @@ const snapshotHistoryPointValidator = v.object({
       costBasis: v.number(),
     }),
   ),
+  holdings: v.array(
+    v.object({
+      ticker: v.string(),
+      name: v.string(),
+      value: v.number(),
+      costBasis: v.number(),
+    }),
+  ),
 });
 
 const emptySnapshotHistory = (
@@ -1072,6 +1104,7 @@ export const getSnapshotHistory = action({
   args: {
     startDate: v.optional(v.string()),
     portfolioId: v.optional(v.id("portfolios")),
+    allPortfolios: v.optional(v.boolean()),
   },
   returns: v.object({
     status: v.union(
@@ -1089,37 +1122,45 @@ export const getSnapshotHistory = action({
       throw new Error("Not authenticated");
     }
 
-    const [apiKey, baseId, portfolio] = await Promise.all([
+    const [apiKey, baseId, portfolioSelection] = await Promise.all([
       getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
       getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
-      resolvePortfolioConfiguration(ctx, userId, args.portfolioId),
+      args.allPortfolios
+        ? getPortfolioConfigurations(ctx, userId)
+        : resolvePortfolioConfiguration(ctx, userId, args.portfolioId),
     ]);
+    const portfolios = Array.isArray(portfolioSelection)
+      ? portfolioSelection
+      : portfolioSelection
+        ? [portfolioSelection]
+        : [];
 
-    if (!apiKey || !baseId || !portfolio) {
+    if (!apiKey || !baseId || portfolios.length === 0) {
       return emptySnapshotHistory(
         "no_credentials",
         "Add the Portfolio Airtable API Key and Base ID, then configure a portfolio in Tasky settings.",
       );
     }
 
+    const configuredStartDate = portfolios.reduce(
+      (earliest, portfolio) =>
+        portfolio.startDate < earliest ? portfolio.startDate : earliest,
+      portfolios[0]!.startDate,
+    );
     const requestedStart =
       args.startDate && isValidIsoDate(args.startDate)
         ? args.startDate
-        : portfolio.startDate;
+        : configuredStartDate;
     const startDate =
-      requestedStart < portfolio.startDate
-        ? portfolio.startDate
+      requestedStart < configuredStartDate
+        ? configuredStartDate
         : requestedStart;
 
     try {
-      const positionParams = new URLSearchParams();
-      positionParams.set("view", portfolio.positionsViewId);
-      const positionRecords = await fetchAirtableRecords({
-        apiKey,
-        baseId,
-        table: POSITIONS_TABLE,
-        params: positionParams,
-      });
+      const positionRecords = await fetchPortfolioPositionRecords(
+        { apiKey, baseId },
+        portfolios,
+      );
       const accountRecordIds = new Set(
         positionRecords.flatMap((record) =>
           linkedRecordIds(record.fields.Account),
@@ -1218,35 +1259,7 @@ async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
   }
 
   const credentials = { apiKey, baseId };
-  const portfolioRecords: Array<{
-    portfolio: PortfolioConfiguration;
-    records: AirtableRecord[];
-  }> = [];
-  for (const [index, portfolio] of portfolios.entries()) {
-    const params = new URLSearchParams();
-    params.set("view", portfolio.positionsViewId);
-    params.set("sort[0][field]", "Ticker");
-    params.set("sort[0][direction]", "asc");
-    portfolioRecords.push({
-      portfolio,
-      records: await fetchAirtableRecords({
-        apiKey,
-        baseId,
-        table: POSITIONS_TABLE,
-        params,
-      }),
-    });
-    if (index < portfolios.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, AIRTABLE_THROTTLE_MS));
-    }
-  }
-  const recordsById = new Map<string, AirtableRecord>();
-  for (const { records } of portfolioRecords) {
-    for (const record of records) {
-      recordsById.set(record.id, record);
-    }
-  }
-  const records = [...recordsById.values()];
+  const records = await fetchPortfolioPositionRecords(credentials, portfolios);
   if (records.length === 0) {
     return {
       success: true,
