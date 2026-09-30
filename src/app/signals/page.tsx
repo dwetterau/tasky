@@ -12,7 +12,7 @@ import { usePageTagFilter } from "@/lib/usePageTagFilter";
 import {
   getSignalPeriodBounds,
   getSignalQueryTime,
-  groupSignalsByPrimaryTag,
+  groupSignalsByFirstTag,
   loggedTodaySignals,
   SIGNAL_SOON_WINDOW_MS,
   type SignalDashboardItem,
@@ -76,7 +76,7 @@ function SignalsContent({ cacheScope }: { cacheScope: string }) {
   const [searchText, setSearchText] = useState("");
   const [selectedSignal, setSelectedSignal] =
     useState<SignalDashboardItem | null>(null);
-  const { allTags, selectedTag, selectedTagId, handleTagChange } =
+  const { allTagsRaw, allTags, selectedTag, selectedTagId, handleTagChange } =
     usePageTagFilter();
 
   const signals = useCachedConvexQuery(
@@ -117,9 +117,9 @@ function SignalsContent({ cacheScope }: { cacheScope: string }) {
         .filter((group) => group.signals.length > 0)
         .map((group) => ({
           ...group,
-          tagGroups: groupSignalsByPrimaryTag(group.signals),
+          tagGroups: groupSignalsByFirstTag(group.signals, allTagsRaw),
         })),
-    [matchingSignals],
+    [allTagsRaw, matchingSignals],
   );
 
   const visibleCount =
@@ -296,7 +296,7 @@ function SignalsContent({ cacheScope }: { cacheScope: string }) {
                             aria-hidden="true"
                           />
                           <h3 className="text-sm font-medium text-(--muted)">
-                            {tagGroup.tag?.name ?? "Untagged"}
+                            {tagGroup.label}
                           </h3>
                           <span className="text-xs text-(--muted) tabular-nums">
                             {tagGroup.signals.length}
