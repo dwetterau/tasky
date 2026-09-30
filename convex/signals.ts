@@ -27,7 +27,9 @@ import {
 import {
   DAY_MS,
   evaluateSignal,
+  evaluateSignalActionability,
   materializeInventory,
+  type SignalActionability,
   type ActivityTarget,
   type InventorySignalModel,
   type SignalAttention,
@@ -111,6 +113,21 @@ const signalEvaluationValidator = v.object({
   isComplete: v.boolean(),
 });
 
+const signalActionabilityValidator = v.object({
+  tier: v.union(
+    v.literal("overdue"),
+    v.literal("ready"),
+    v.literal("later"),
+    v.literal("cooldown"),
+    v.literal("idle"),
+    v.literal("complete"),
+  ),
+  rank: v.number(),
+  reason: v.string(),
+  actionAt: v.optional(v.number()),
+  paceDelta: v.optional(v.number()),
+});
+
 const scorecardMembershipValidator = v.object({
   id: v.id("scorecards"),
   name: v.string(),
@@ -141,6 +158,7 @@ const signalDashboardItemValidator = v.object({
   updatedAt: v.number(),
   archivedAt: v.optional(v.number()),
   evaluation: signalEvaluationValidator,
+  actionability: signalActionabilityValidator,
   scorecards: v.array(scorecardMembershipValidator),
 });
 
@@ -155,6 +173,7 @@ const signalEntryOutputValidator = v.object({
   signalId: v.id("signals"),
   effectiveAt: v.number(),
   recordedAt: v.number(),
+  timezone: v.optional(v.string()),
   updatedAt: v.optional(v.number()),
   source: signalSource,
   provenance: v.optional(signalProvenance),
@@ -319,6 +338,7 @@ type SignalDashboardItem = {
   updatedAt: number;
   archivedAt?: number;
   evaluation: ReturnType<typeof evaluateSignal>;
+  actionability: SignalActionability;
   scorecards: Array<{
     id: Id<"scorecards">;
     name: string;
@@ -348,6 +368,7 @@ function toSignalEntryOutput(entry: Doc<"signalEntries">) {
     signalId: entry.signalId,
     effectiveAt: entry.effectiveAt,
     recordedAt: entry.recordedAt,
+    timezone: entry.timezone,
     updatedAt: entry.updatedAt,
     source: entry.source,
     provenance: entry.provenance,
@@ -668,6 +689,12 @@ async function toDashboardItem(
   );
   const scorecards =
     memberships ?? (await loadScorecardMemberships(ctx, userId));
+  const evaluation = evaluateSignal(
+    signal.model,
+    now,
+    soonWindowMs,
+    periodProgress,
+  );
   return {
     id: signal._id,
     creationTime: signal._creationTime,
@@ -678,7 +705,8 @@ async function toDashboardItem(
     createdAt: signal.createdAt,
     updatedAt: signal.updatedAt,
     archivedAt: signal.archivedAt,
-    evaluation: evaluateSignal(signal.model, now, soonWindowMs, periodProgress),
+    evaluation,
+    actionability: evaluateSignalActionability(signal.model, evaluation, now),
     scorecards: scorecards.get(signal._id) ?? [],
   };
 }
@@ -687,16 +715,23 @@ function sortDashboardItems(
   items: SignalDashboardItem[],
 ): SignalDashboardItem[] {
   return items.sort((left, right) => {
+    const actionabilityDifference =
+      left.actionability.rank - right.actionability.rank;
+    if (actionabilityDifference !== 0) {
+      return actionabilityDifference;
+    }
+    const leftActionAt =
+      left.actionability.actionAt ?? Number.POSITIVE_INFINITY;
+    const rightActionAt =
+      right.actionability.actionAt ?? Number.POSITIVE_INFINITY;
+    if (leftActionAt !== rightActionAt) {
+      return leftActionAt - rightActionAt;
+    }
     const attentionDifference =
       attentionRank[left.evaluation.attention] -
       attentionRank[right.evaluation.attention];
     if (attentionDifference !== 0) {
       return attentionDifference;
-    }
-    const leftActionAt = left.evaluation.actionAt ?? Number.POSITIVE_INFINITY;
-    const rightActionAt = right.evaluation.actionAt ?? Number.POSITIVE_INFINITY;
-    if (leftActionAt !== rightActionAt) {
-      return leftActionAt - rightActionAt;
     }
     return left.name.localeCompare(right.name);
   });
@@ -1283,6 +1318,7 @@ async function recordSignalForUser(
     signalId: signal._id,
     effectiveAt,
     recordedAt: args.now,
+    timezone,
     source: args.source,
     provenance: args.provenance,
     idempotencyKey,
