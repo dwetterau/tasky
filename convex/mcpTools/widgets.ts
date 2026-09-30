@@ -52,6 +52,10 @@ export type WidgetExecutors = {
 
 const generatedInputSchema = z.toJSONSchema(widgetDataInputSchema);
 delete generatedInputSchema.$schema;
+// MCP Tool.inputSchema must itself be an object schema. Zod emits a root
+// `oneOf` for discriminated unions, which some clients reject unless the
+// common object type is stated explicitly.
+generatedInputSchema.type = "object";
 const generatedReadInputSchema = z.toJSONSchema(widgetDataReadInputSchema);
 delete generatedReadInputSchema.$schema;
 

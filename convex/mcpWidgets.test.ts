@@ -51,6 +51,11 @@ describe("widget MCP tool", () => {
       "readWidgetData",
       "publishWidgetData",
     ]);
+    expect(
+      widgetToolDescriptors.every(
+        (tool) => tool.inputSchema.type === "object",
+      ),
+    ).toBe(true);
     expect(widgetToolDescriptors[1]!.inputSchema).toMatchObject({
       oneOf: [
         {
