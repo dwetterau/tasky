@@ -158,7 +158,12 @@ function SummaryStrip({
     <View style={styles.summaryCard}>
       <View style={styles.summaryHeader}>
         <View style={styles.summaryHeaderText}>
-          <Text style={styles.summaryValue}>
+          <Text
+            style={styles.summaryValue}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
+          >
             {formatCurrency(summary.totalCurrentValue)}
           </Text>
           <Text style={sharedStyles.muted}>
@@ -178,7 +183,7 @@ function SummaryStrip({
                 color={colors.systemBlue as unknown as string}
               />
             ) : (
-              <Text style={styles.syncButtonText}>Sync prices</Text>
+              <Text style={styles.syncButtonText}>Sync</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity
@@ -250,6 +255,9 @@ function SummaryStat({
           styles.summaryStatPrimary,
           { color: valueTone as unknown as string },
         ]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.75}
       >
         {primary}
       </Text>
@@ -806,6 +814,12 @@ export default function PortfolioPage() {
         isSyncing={isSyncing}
         canSync={taskyEnabled}
       />
+      {syncFeedback ? (
+        <SyncFeedbackBanner
+          feedback={syncFeedback}
+          onDismiss={() => setSyncFeedback(null)}
+        />
+      ) : null}
       <PortfolioHistoryChart
         key={selectedPortfolioId ?? "default"}
         points={priceHistory?.status === "ok" ? priceHistory.points : []}
@@ -814,12 +828,6 @@ export default function PortfolioPage() {
         isLoading={isHistoryLoading && !priceHistory}
         error={historyError}
       />
-      {syncFeedback ? (
-        <SyncFeedbackBanner
-          feedback={syncFeedback}
-          onDismiss={() => setSyncFeedback(null)}
-        />
-      ) : null}
       <MoversCard holdings={portfolio.holdings} />
       <View style={styles.holdingsHeader}>
         <Text style={sharedStyles.sectionTitle}>Holdings</Text>
@@ -872,6 +880,7 @@ const styles = StyleSheet.create({
   },
   summaryHeaderText: {
     flex: 1,
+    minWidth: 0,
     gap: spacing.xs,
   },
   summaryValue: {
@@ -887,7 +896,7 @@ const styles = StyleSheet.create({
   },
   syncButton: {
     minHeight: 36,
-    minWidth: 96,
+    minWidth: 64,
     paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
     backgroundColor: colors.tertiarySystemGroupedBackground,
@@ -955,6 +964,7 @@ const styles = StyleSheet.create({
   },
   summaryStat: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   summaryStatLabel: {
