@@ -35,7 +35,6 @@ const columns = [
 type NamedPortfolio = NonNullable<PortfolioPayload["portfolios"]>[number];
 
 function renderPortfolio(data: NamedPortfolio) {
-  const positive = data.gainLoss >= 0;
   const holdings = [...data.holdings].sort((a, b) => {
     if (a.dayReturn == null && b.dayReturn == null) return 0;
     if (a.dayReturn == null) return 1;
@@ -62,13 +61,6 @@ function renderPortfolio(data: NamedPortfolio) {
     .join("");
   return /* HTML */ `<div class="portfolio-value">
       ${e(money(data.totalValue))}
-    </div>
-    <div class="portfolio-performance">
-      <p class="portfolio-return ${positive ? "positive" : "warning"}">
-        ${positive ? "+" : "−"}${e(money(Math.abs(data.gainLoss)))}
-        <span>(${positive ? "+" : ""}${data.gainLossPercent.toFixed(1)}%)</span>
-      </p>
-      <p class="meta">Unrealized return · ${data.holdingsCount} holdings</p>
     </div>
     <div class="holdings-heading">
       <h3 class="section-label">Holdings</h3>

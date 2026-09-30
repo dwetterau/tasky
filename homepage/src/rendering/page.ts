@@ -555,23 +555,6 @@ summary {
   margin: 0 0 4px;
   overflow-wrap: anywhere;
 }
-.portfolio-return {
-  font-size: 16px;
-  white-space: nowrap;
-}
-.portfolio-performance {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-}
-.portfolio-performance .meta {
-  white-space: nowrap;
-  font-size: 10px;
-}
-.portfolio-return span {
-  font-size: 14px;
-}
 .portfolio-market-time {
   margin-top: 8px;
 }

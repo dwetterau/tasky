@@ -61,11 +61,11 @@ increments per publication so automatic updates work throughout the day.
 ## Portfolio
 
 The export reuses Tasky's configured Airtable Positions views and shared
-portfolio credentials. Each named portfolio includes total value, unrealized
-return and the five largest positions initially, with up to 20 holdings embedded
-for expansion and client-side sorting. The page switches between portfolios
-locally and remembers the selection; page loads make no provider requests.
-Every export refreshes current values and cost basis from each Positions view.
+portfolio credentials. Each named portfolio includes total value and the five
+largest positions initially, with up to 20 holdings embedded for expansion and
+client-side sorting. The page switches between portfolios locally and remembers
+the selection; page loads make no provider requests. Every export refreshes
+current values and cost basis from each Positions view.
 Recent day-return data is derived from the two latest complete account snapshot
 days after a successful combined portfolio sync, then retained in the saved
 homepage snapshot between exports.
