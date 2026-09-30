@@ -44,6 +44,7 @@ type SnapshotHistoryArgs = FunctionArgs<
 >;
 
 type PortfolioSelection = {
+  id: string;
   key: string;
   snapshotArgs: PortfolioSnapshotArgs;
   historyArgs: SnapshotHistoryArgs;
@@ -600,14 +601,16 @@ export default function PortfolioPage() {
     if (portfolios.length === 0) {
       return [
         {
-          key: DEFAULT_PORTFOLIO_ID,
+          id: DEFAULT_PORTFOLIO_ID,
+          key: `${taskyAuth.cacheScope}:${DEFAULT_PORTFOLIO_ID}`,
           snapshotArgs: { includePriceStatus: true },
           historyArgs: {},
         },
       ];
     }
     const individualSelections = portfolios.map((candidate) => ({
-      key: String(candidate._id),
+      id: String(candidate._id),
+      key: `${taskyAuth.cacheScope}:${String(candidate._id)}:${candidate.updatedAt}`,
       snapshotArgs: {
         includePriceStatus: true,
         portfolioId: candidate._id,
@@ -617,7 +620,10 @@ export default function PortfolioPage() {
     return portfolios.length > 1
       ? [
           {
-            key: ALL_PORTFOLIOS_ID,
+            id: ALL_PORTFOLIOS_ID,
+            key: `${taskyAuth.cacheScope}:${ALL_PORTFOLIOS_ID}:${portfolios
+              .map((candidate) => candidate.updatedAt)
+              .join(",")}`,
             snapshotArgs: {
               includePriceStatus: true,
               allPortfolios: true,
@@ -627,9 +633,9 @@ export default function PortfolioPage() {
           ...individualSelections,
         ]
       : individualSelections;
-  }, [portfolios]);
+  }, [portfolios, taskyAuth.cacheScope]);
 
-  const selectedKey = allPortfoliosSelected
+  const selectedId = allPortfoliosSelected
     ? ALL_PORTFOLIOS_ID
     : selectedPortfolio
       ? String(selectedPortfolio._id)
@@ -637,8 +643,9 @@ export default function PortfolioPage() {
         ? DEFAULT_PORTFOLIO_ID
         : null;
   const selectedSelection =
-    portfolioSelections.find((selection) => selection.key === selectedKey) ??
+    portfolioSelections.find((selection) => selection.id === selectedId) ??
     null;
+  const selectedKey = selectedSelection?.key ?? null;
   const portfolio =
     selectedKey === null ? null : (portfolioCache.get(selectedKey) ?? null);
   const snapshotHistory =
