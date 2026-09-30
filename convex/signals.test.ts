@@ -69,6 +69,7 @@ describe("signals backend", () => {
         .collect();
     });
     expect(entries).toHaveLength(2);
+    expect(entries.every((entry) => entry.timezone === "UTC")).toBe(true);
 
     const { signals: dashboardSignals } = await t.query(
       internal.signals.listForMcp,
@@ -201,6 +202,78 @@ describe("signals backend", () => {
     expect(result.signals[0].evaluation.periodProgress).toMatchObject({
       startAt: Date.UTC(2026, 7, 24),
       endAt: Date.UTC(2026, 7, 31),
+    });
+  });
+
+  it("orders the dashboard by actionability instead of the broad soon window", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.UTC(2026, 8, 30, 18);
+    const { signalId: repeatedSignalId } = await t.mutation(
+      internal.signals.manageFromMcp,
+      {
+        userId: "user-1",
+        now,
+        operation: {
+          type: "activity.create",
+          name: "Japanese lessons",
+          tagIds: [],
+          target: {
+            type: "period",
+            period: "week",
+            targetCount: 5,
+          },
+        },
+      },
+    );
+    for (const [index, occurredAt] of [
+      Date.UTC(2026, 8, 28, 17),
+      Date.UTC(2026, 8, 29, 22),
+      now - 10 * 60 * 1000,
+    ].entries()) {
+      await t.mutation(internal.signals.recordFromMcp, {
+        userId: "user-1",
+        signalId: repeatedSignalId,
+        idempotencyKey: `lesson-${index}`,
+        operation: { type: "activity.occurred", occurredAt },
+        now,
+        soonWindowMs: 7 * DAY_MS,
+      });
+    }
+    await t.mutation(internal.signals.manageFromMcp, {
+      userId: "user-1",
+      now,
+      operation: {
+        type: "activity.create",
+        name: "Daily check",
+        tagIds: [],
+        target: {
+          type: "period",
+          period: "day",
+          targetCount: 1,
+        },
+      },
+    });
+
+    const result = await t.query(internal.signals.listForMcp, {
+      userId: "user-1",
+      now,
+      soonWindowMs: 7 * DAY_MS,
+    });
+
+    expect(result.signals.map((signal) => signal.name)).toEqual([
+      "Daily check",
+      "Japanese lessons",
+    ]);
+    expect(result.signals[0].actionability.tier).toBe("overdue");
+    expect(result.signals[1]).toMatchObject({
+      evaluation: {
+        attention: "soon",
+        isComplete: false,
+      },
+      actionability: {
+        tier: "cooldown",
+        paceDelta: 1,
+      },
     });
   });
 

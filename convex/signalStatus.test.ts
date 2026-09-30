@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DAY_MS,
   evaluateSignal,
+  evaluateSignalActionability,
   materializeInventory,
   projectInventory,
   type InventorySignalModel,
@@ -93,6 +94,95 @@ describe("signal status evaluation", () => {
       ratio: 1,
       isComplete: true,
     });
+  });
+
+  it("deprioritizes an incomplete target after a recent completion", () => {
+    const now = 10 * DAY_MS;
+    const model = {
+      kind: "activity" as const,
+      target: {
+        type: "schedule" as const,
+        schedule: {
+          rrule: "FREQ=WEEKLY;WKST=MO",
+          startDate: "1970-01-05",
+          due: { type: "evenly_spaced" as const },
+        },
+        targetCount: 5,
+      },
+      lastOccurredAt: now - 10 * 60 * 1000,
+    };
+    const evaluation = evaluateSignal(model, now, 7 * DAY_MS, {
+      period: "week",
+      startAt: 7 * DAY_MS,
+      endAt: 14 * DAY_MS,
+      completedCount: 3,
+      targetCount: 5,
+      remainingCount: 2,
+      requiredCountByNow: 2,
+      overdueCount: 0,
+      nextDueAt: 13 * DAY_MS,
+    });
+
+    expect(evaluation).toMatchObject({
+      attention: "soon",
+      isComplete: false,
+    });
+    expect(
+      evaluateSignalActionability(model, evaluation, now),
+    ).toMatchObject({
+      tier: "cooldown",
+      rank: 3,
+      paceDelta: 1,
+      actionAt: 13 * DAY_MS,
+    });
+  });
+
+  it("distinguishes overdue, ready, and later scheduled targets", () => {
+    const now = 10 * DAY_MS;
+    const model = {
+      kind: "activity" as const,
+      target: {
+        type: "period" as const,
+        period: "week" as const,
+        targetCount: 2,
+      },
+      lastOccurredAt: 8 * DAY_MS,
+    };
+    const baseProgress = {
+      period: "week" as const,
+      startAt: 7 * DAY_MS,
+      endAt: 14 * DAY_MS,
+      completedCount: 1,
+      targetCount: 2,
+      remainingCount: 1,
+      requiredCountByNow: 1,
+      overdueCount: 0,
+    };
+    const laterEvaluation = evaluateSignal(model, now, 7 * DAY_MS, {
+      ...baseProgress,
+      nextDueAt: 13 * DAY_MS,
+    });
+    const readyEvaluation = evaluateSignal(model, now, 7 * DAY_MS, {
+      ...baseProgress,
+      nextDueAt: 10.5 * DAY_MS,
+    });
+    const overdueEvaluation = evaluateSignal(model, now, 7 * DAY_MS, {
+      ...baseProgress,
+      completedCount: 0,
+      remainingCount: 2,
+      overdueCount: 1,
+      nextDueAt: 9 * DAY_MS,
+    });
+
+    expect(
+      evaluateSignalActionability(model, laterEvaluation, now).tier,
+    ).toBe("later");
+    expect(
+      evaluateSignalActionability(model, readyEvaluation, now).tier,
+    ).toBe("ready");
+    expect(
+      evaluateSignalActionability(model, overdueEvaluation, now).tier,
+    ).toBe("overdue");
   });
 
   it("treats a zero weekly target as optional in-window completion", () => {
