@@ -19,6 +19,10 @@ import {
   spacing,
   tone,
 } from "@/lib/theme";
+import {
+  buildHoldingSeries,
+  holdingSeriesKey,
+} from "@/lib/portfolioHistory";
 
 const HOLDING_COLORS = [
   "#6366f1",
@@ -32,8 +36,6 @@ const HOLDING_COLORS = [
   "#f97316",
   "#14b8a6",
 ];
-const CASH_SERIES = "__tasky_cash__";
-
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -58,10 +60,6 @@ function formatShortDate(value: string | null): string {
     "en-US",
     { month: "short", day: "numeric" },
   );
-}
-
-function seriesKey(ticker: string): string {
-  return ticker || CASH_SERIES;
 }
 
 function colorForHolding(key: string, allKeys: string[]): string {
@@ -124,22 +122,16 @@ export function PortfolioHistoryChart({
   const dark = colorScheme === "dark";
   const axisColor = dark ? "#3a3a3c" : "#e5e7eb";
   const labelColor = dark ? "#8e8e93" : "#6b7280";
-  const holdings = useMemo(
-    () =>
-      [...(points[points.length - 1]?.holdings ?? [])].sort(
-        (a, b) => b.value - a.value || a.ticker.localeCompare(b.ticker),
-      ),
-    [points],
-  );
+  const holdings = useMemo(() => buildHoldingSeries(points), [points]);
   const holdingKeys = useMemo(
-    () => holdings.map((holding) => seriesKey(holding.ticker)),
+    () => holdings.map((holding) => holdingSeriesKey(holding.ticker)),
     [holdings],
   );
   const holdingLabels = useMemo(
     () =>
       new Map(
         holdings.map((holding) => [
-          seriesKey(holding.ticker),
+          holdingSeriesKey(holding.ticker),
           holding.ticker || "Cash",
         ]),
       ),
@@ -157,7 +149,7 @@ export function PortfolioHistoryChart({
     () =>
       points.map((point) => {
         const selected = point.holdings.filter((holding) =>
-          activeHoldings.has(seriesKey(holding.ticker)),
+          activeHoldings.has(holdingSeriesKey(holding.ticker)),
         );
         return {
           ...point,
@@ -183,7 +175,9 @@ export function PortfolioHistoryChart({
         };
         for (const key of stackedHoldings) {
           row[key] =
-            point.holdings.find((holding) => seriesKey(holding.ticker) === key)
+            point.holdings.find(
+              (holding) => holdingSeriesKey(holding.ticker) === key,
+            )
               ?.value ?? 0;
         }
         return row;
