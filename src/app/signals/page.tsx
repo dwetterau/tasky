@@ -12,6 +12,7 @@ import { usePageTagFilter } from "@/lib/usePageTagFilter";
 import {
   getSignalPeriodBounds,
   getSignalQueryTime,
+  groupSignalsByFirstTag,
   loggedTodaySignals,
   SIGNAL_SOON_WINDOW_MS,
   type SignalDashboardItem,
@@ -29,6 +30,27 @@ const ATTENTION_LABELS: Record<SignalAttention, string> = {
   soon: "Coming up",
   unknown: "Idle",
   ok: "On track",
+};
+const ATTENTION_STYLES: Record<
+  SignalAttention,
+  { dot: string; count: string }
+> = {
+  due: {
+    dot: "bg-amber-500",
+    count: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  },
+  soon: {
+    dot: "bg-blue-500",
+    count: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  },
+  unknown: {
+    dot: "bg-slate-400",
+    count: "bg-slate-500/10 text-(--muted)",
+  },
+  ok: {
+    dot: "bg-emerald-500",
+    count: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  },
 };
 
 function LoadingState() {
@@ -54,7 +76,7 @@ function SignalsContent({ cacheScope }: { cacheScope: string }) {
   const [searchText, setSearchText] = useState("");
   const [selectedSignal, setSelectedSignal] =
     useState<SignalDashboardItem | null>(null);
-  const { allTags, selectedTag, selectedTagId, handleTagChange } =
+  const { allTagsRaw, allTags, selectedTag, selectedTagId, handleTagChange } =
     usePageTagFilter();
 
   const signals = useCachedConvexQuery(
@@ -91,8 +113,13 @@ function SignalsContent({ cacheScope }: { cacheScope: string }) {
           matchingSignals?.filter(
             (signal) => signal.evaluation.attention === attention,
           ) ?? [],
-      })).filter((group) => group.signals.length > 0),
-    [matchingSignals],
+      }))
+        .filter((group) => group.signals.length > 0)
+        .map((group) => ({
+          ...group,
+          tagGroups: groupSignalsByFirstTag(group.signals, allTagsRaw),
+        })),
+    [allTagsRaw, matchingSignals],
   );
 
   const visibleCount =
@@ -230,29 +257,67 @@ function SignalsContent({ cacheScope }: { cacheScope: string }) {
             ))}
           </div>
         ) : (
-          <div className="space-y-8">
-            {groups.map((group) => (
-              <section key={group.attention}>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-(--muted)">
-                    {ATTENTION_LABELS[group.attention]}
-                  </h2>
-                  <span className="text-xs text-(--muted)">
-                    {group.signals.length}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {group.signals.map((signal) => (
-                    <SignalCard
-                      key={signal.id}
-                      signal={signal}
-                      now={now}
-                      onInspect={() => setSelectedSignal(signal)}
+          <div className="space-y-10">
+            {groups.map((group) => {
+              const attentionStyle = ATTENTION_STYLES[group.attention];
+              return (
+                <section
+                  key={group.attention}
+                  aria-labelledby={`signals-${group.attention}`}
+                >
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${attentionStyle.dot}`}
+                      aria-hidden="true"
                     />
-                  ))}
-                </div>
-              </section>
-            ))}
+                    <h2
+                      id={`signals-${group.attention}`}
+                      className="text-base font-semibold text-foreground"
+                    >
+                      {ATTENTION_LABELS[group.attention]}
+                    </h2>
+                    <span
+                      className={`ml-auto min-w-7 px-2 py-0.5 rounded-full text-center text-xs font-semibold tabular-nums ${attentionStyle.count}`}
+                    >
+                      {group.signals.length}
+                    </span>
+                  </div>
+
+                  <div className="space-y-6 border-l border-(--card-border) pl-3 sm:pl-5">
+                    {group.tagGroups.map((tagGroup) => (
+                      <div key={tagGroup.key}>
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{
+                              backgroundColor:
+                                tagGroup.tag?.color ?? "var(--muted)",
+                            }}
+                            aria-hidden="true"
+                          />
+                          <h3 className="text-sm font-medium text-(--muted)">
+                            {tagGroup.label}
+                          </h3>
+                          <span className="text-xs text-(--muted) tabular-nums">
+                            {tagGroup.signals.length}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                          {tagGroup.signals.map((signal) => (
+                            <SignalCard
+                              key={signal.id}
+                              signal={signal}
+                              now={now}
+                              onInspect={() => setSelectedSignal(signal)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         )}
       </main>

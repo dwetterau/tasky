@@ -61,26 +61,26 @@ export function SignalCard({
           onInspect();
         }
       }}
-      className={`bg-(--card-bg) border border-(--card-border) rounded-xl transition-colors hover:border-(--accent)/30 ${
+      className={`bg-(--card-bg) border border-(--card-border) rounded-xl shadow-sm transition-[border-color,box-shadow,transform] hover:border-(--accent)/30 hover:shadow-md ${
         onInspect
-          ? "cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40"
+          ? "cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 active:scale-[0.995]"
           : ""
       } ${
-        compact ? "p-4" : "p-5"
+        compact ? "p-4" : "p-4 sm:p-5"
       }`}
     >
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3 sm:gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span
               className={`w-2 h-2 rounded-full shrink-0 ${attention.dot}`}
               aria-hidden="true"
             />
-            <h3 className="font-semibold text-foreground truncate">
+            <h3 className="font-semibold text-foreground leading-snug">
               {signal.name}
             </h3>
           </div>
-          <p className="mt-1.5 text-sm text-(--muted) tabular-nums">
+          <p className="mt-1.5 text-sm leading-relaxed text-(--muted) tabular-nums">
             {signalPrimaryText(signal, now)}
             <span className="mx-1.5 text-(--card-border)">·</span>
             {signalSecondaryText(signal, now)}
