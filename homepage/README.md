@@ -66,9 +66,9 @@ return and the five largest positions initially, with up to 20 holdings embedded
 for expansion and client-side sorting. The page switches between portfolios
 locally and remembers the selection; page loads make no provider requests.
 Every export refreshes current values and cost basis from each Positions view.
-Recent day-return data is fetched in bounded batches only for the first detailed
-snapshot and after a successful combined price sync, then retained in the saved
-snapshot between exports.
+Recent day-return data is derived from the two latest complete account snapshot
+days after a successful combined portfolio sync, then retained in the saved
+homepage snapshot between exports.
 “Checked” is the snapshot retrieval time, not a market quote timestamp. Failed
 reads preserve the last successful snapshot and its age; missing credentials
 hide the module.
@@ -76,7 +76,8 @@ hide the module.
 **Sync prices** posts to `/api/sync-prices`. The Worker checks the homepage
 session and calls Convex `POST /api/homepage/sync-prices` with the same
 provisioning signature as the weather-key route. Convex runs the app's price
-sync for that enrolled user only, then exports a new edition. A click while a
+and account snapshot sync for that enrolled user only, then exports a new
+edition. A click while a
 sync is already running does nothing. One run reads all configured portfolio
 views, fetches each ticker once, updates every unique Airtable Position record,
 and publishes one new edition.
