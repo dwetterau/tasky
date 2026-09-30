@@ -118,9 +118,6 @@ export function TagSelector({
   const renderDropdown = () => {
     if (!isOpen) return null;
 
-    // Reset refs array
-    itemRefs.current = [];
-
     const dropdownContent = availableTags.length > 0 ? (
       <div
         ref={refs.setFloating}
@@ -328,9 +325,6 @@ export function SearchTagSelector({
 
   const renderDropdown = () => {
     if (!isOpen) return null;
-
-    // Reset refs array
-    itemRefs.current = [];
 
     const dropdownContent = (
       <div

@@ -36,9 +36,12 @@ export function MarkdownEditor({
   autoFocus = false,
 }: MarkdownEditorProps) {
   const onSubmitRef = useRef(onSubmit);
-  onSubmitRef.current = onSubmit;
 
   const setLinkCallbackRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    onSubmitRef.current = onSubmit;
+  }, [onSubmit]);
 
   // Force re-render on selection/cursor changes so toolbar active states stay in sync
   const [, forceUpdate] = useState(0);
@@ -122,7 +125,9 @@ export function MarkdownEditor({
       .run();
   }, [editor]);
 
-  setLinkCallbackRef.current = setLink;
+  useEffect(() => {
+    setLinkCallbackRef.current = setLink;
+  }, [setLink]);
 
   if (!editor) {
     // Render a placeholder skeleton that matches the editor layout to avoid shift

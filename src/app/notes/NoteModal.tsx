@@ -9,14 +9,7 @@ import { MarkdownEditor } from "../../components/MarkdownEditor";
 
 const LAST_SELECTED_TAG_KEY = "tasky-last-selected-tag";
 
-export function NoteModal({
-  isOpen,
-  onClose,
-  allTags,
-  initialTagId,
-  initialContent,
-  createdFromCaptureId,
-}: {
+type NoteModalProps = {
   isOpen: boolean;
   onClose: () => void;
   allTags: Tag[];
@@ -25,8 +18,28 @@ export function NoteModal({
   initialContent?: string;
   /** When set, the source capture will be deleted after note creation */
   createdFromCaptureId?: Id<"captures">;
-}) {
-  const [content, setContent] = useState("");
+};
+
+export function NoteModal(props: NoteModalProps) {
+  if (!props.isOpen) return null;
+
+  const resetKey = [
+    props.initialTagId ?? "",
+    props.initialContent ?? "",
+    props.createdFromCaptureId ?? "",
+  ].join(":");
+  return <OpenNoteModal key={resetKey} {...props} />;
+}
+
+function OpenNoteModal({
+  isOpen,
+  onClose,
+  allTags,
+  initialTagId,
+  initialContent,
+  createdFromCaptureId,
+}: NoteModalProps) {
+  const [content, setContent] = useState(initialContent ?? "");
   const [tagIds, setTagIds] = useState<Id<"tags">[]>(initialTagId ? [initialTagId] : []);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
@@ -66,14 +79,6 @@ export function NoteModal({
     }
   );
 
-  // Reset form when modal opens with new initialTagId
-  useEffect(() => {
-    if (isOpen) {
-      setContent(initialContent ?? "");
-      setTagIds(initialTagId ? [initialTagId] : []);
-    }
-  }, [isOpen, initialTagId, initialContent]);
-
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) {
@@ -105,8 +110,6 @@ export function NoteModal({
     });
     onClose();
   };
-
-  if (!isOpen) return null;
 
   return (
     <div 

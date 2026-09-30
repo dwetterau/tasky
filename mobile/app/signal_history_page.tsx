@@ -242,14 +242,15 @@ export default function SignalHistoryPage() {
   const handleActivityRecord = async () => {
     let occurredAt: number | undefined;
     if (showCustomTime && timeModified) {
-      occurredAt =
+      const parsedOccurredAt =
         Platform.OS === "ios"
           ? backdatedDate.getTime()
           : parseLocalDateTime(backdatedAt);
-      if (occurredAt === null) {
+      if (parsedOccurredAt === null) {
         setError("Use a local date and time such as 2026-08-23 09:30");
         return;
       }
+      occurredAt = parsedOccurredAt;
       if (occurredAt > Date.now()) {
         setError("Activity time cannot be in the future");
         return;

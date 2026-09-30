@@ -111,8 +111,6 @@ export function StyledSelect({
   const renderDropdown = () => {
     if (!isOpen) return null;
 
-    itemRefs.current = [];
-
     const dropdownContent = (
       <div
         ref={refs.setFloating}

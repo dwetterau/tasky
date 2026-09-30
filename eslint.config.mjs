@@ -12,9 +12,21 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "convex/_generated/**",
     "mobile/**",
     "homepage/**",
   ]),
+  {
+    // Floating UI exposes callback refs through a `refs` object. The React
+    // hooks rule mistakes those setters for render-time `.current` access.
+    files: [
+      "src/components/StyledSelect.tsx",
+      "src/components/TagSelector.tsx",
+    ],
+    rules: {
+      "react-hooks/refs": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
