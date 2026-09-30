@@ -118,7 +118,18 @@ export async function handleRequest(
     if (!(await verifyRequest(request, body, env.INGESTION_SECRET)))
       return json({ error: "Unauthorized ingestion" }, 401);
     const parsed = exportSchema.safeParse(JSON.parse(body));
-    if (!parsed.success) return json({ error: "Invalid export" }, 400);
+    if (!parsed.success) {
+      console.warn(
+        JSON.stringify({
+          event: "homepage_invalid_export",
+          issues: parsed.error.issues.map((issue) => ({
+            code: issue.code,
+            path: issue.path,
+          })),
+        }),
+      );
+      return json({ error: "Invalid export" }, 400);
+    }
     const result = await objectCall(
       env.PUBLISHERS,
       parsed.data.userId,
