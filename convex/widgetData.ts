@@ -55,7 +55,7 @@ export async function projectLatestBriefing(
     schemaVersion: 1,
     scope: "user",
     sourceRevision: Math.max(1, Math.floor(row._creationTime)),
-    sourceDataAt: row._creationTime,
+    sourceDataAt: Math.floor(row._creationTime),
     collectedAt: now,
     freshForMs: 18 * 60 * 60_000,
     maxAgeMs: 7 * 24 * 60 * 60_000,
