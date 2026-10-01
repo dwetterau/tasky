@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import schema from "./schema";
 import { modules } from "./test.setup";
 import { getLatestWidgetData, projectLatestBriefing } from "./widgetData";
+import { moduleSchema } from "../packages/home-feed/src/index";
 
 describe("widget data", () => {
   it("finds the newest row by user and kind", async () => {
@@ -74,10 +75,15 @@ describe("widget data", () => {
     const projected = await t.run((ctx) =>
       projectLatestBriefing(ctx, "user-a", Date.now()),
     );
+    const latest = await t.run((ctx) =>
+      getLatestWidgetData(ctx, "user-a", "briefing"),
+    );
     expect(projected).toMatchObject({
       id: "briefing",
       schemaVersion: 1,
+      sourceDataAt: Math.floor(latest!._creationTime),
       payload: { markdown: "# Briefing" },
     });
+    expect(() => moduleSchema.parse(projected)).not.toThrow();
   });
 });
