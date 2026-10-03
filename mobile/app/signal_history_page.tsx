@@ -17,6 +17,7 @@ import { ActivityMeasurementsForm } from "@/components/ActivityMeasurementsForm"
 import { KeyboardDismissBar } from "@/components/KeyboardDoneAccessory";
 import { PillButton } from "@/components/PillButton";
 import { SignalRow } from "@/components/SignalRow";
+import { SignalTrendCharts } from "@/components/SignalTrendCharts";
 import { automaticKeyboardInsets, iosHeaderTextItems } from "@/lib/headerItems";
 import {
   activityMeasurementDraftFromEntry,
@@ -599,6 +600,13 @@ export default function SignalHistoryPage() {
             <Text style={sharedStyles.error}>
               {error ?? signal.error ?? history.error}
             </Text>
+          ) : null}
+
+          {(history.data?.page.length ?? 0) > 0 ? (
+            <SignalTrendCharts
+              signal={signal.data}
+              entries={history.data?.page ?? []}
+            />
           ) : null}
 
           <View style={styles.section}>

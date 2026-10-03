@@ -21,6 +21,7 @@ import {
   useTaskyMutation,
   useTaskyQuery,
 } from "@/lib/tasky";
+import { splitBriefingMarkdown } from "@/lib/briefing";
 import { SignalRow } from "@/components/SignalRow";
 import {
   createSignalIdempotencyKey,
@@ -112,6 +113,7 @@ function BriefingCard() {
 
   if (!taskyEnabled || latest.isLoading || !briefing?.success) return null;
 
+  const content = splitBriefingMarkdown(briefing.data.markdown);
   const published = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -120,16 +122,18 @@ function BriefingCard() {
   return (
     <View style={[sharedStyles.card, styles.briefingCard]}>
       <CardHeader
-        title="Briefing"
+        title={content.title}
         trailing={<Text style={styles.briefingTime}>{published}</Text>}
       />
-      <Markdown
-        style={markdownStyles}
-        rules={briefingMarkdownRules}
-        onLinkPress={(url) => /^https?:\/\//i.test(url)}
-      >
-        {briefing.data.markdown}
-      </Markdown>
+      {content.body ? (
+        <Markdown
+          style={markdownStyles}
+          rules={briefingMarkdownRules}
+          onLinkPress={(url) => /^https?:\/\//i.test(url)}
+        >
+          {content.body}
+        </Markdown>
+      ) : null}
     </View>
   );
 }
@@ -217,7 +221,7 @@ function SignalsCard() {
   if (!taskyAuth.isAuthenticated) {
     return (
       <TouchableOpacity
-        style={[sharedStyles.card, styles.signalsCard]}
+        style={sharedStyles.card}
         activeOpacity={0.85}
         onPress={() => router.push("/settings_page")}
       >
@@ -231,7 +235,12 @@ function SignalsCard() {
 
   return (
     <>
-      <View style={[sharedStyles.card, styles.signalsCard]}>
+      <View
+        style={[
+          sharedStyles.card,
+          actionableSignals.length > 0 && styles.signalsCard,
+        ]}
+      >
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => router.push("/signals_page" as Href)}
@@ -239,7 +248,7 @@ function SignalsCard() {
           <CardHeader
             title="Signals"
             subtitle={
-              taskyEnabled && !signals.isLoading
+              taskyEnabled && !signals.isLoading && completedToday > 0
                 ? `${completedToday} done today`
                 : undefined
             }
@@ -397,10 +406,7 @@ function ScaleCard() {
       activeOpacity={0.85}
       onPress={() => router.push("/scale_page" as Href)}
     >
-      <CardHeader
-        title="Weight"
-        subtitle="Connect your scale and log a weigh-in"
-      />
+      <CardHeader title="Weight" />
     </TouchableOpacity>
   );
 }
