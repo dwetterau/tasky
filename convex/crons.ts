@@ -7,4 +7,10 @@ crons.interval(
   internal.homepage.dispatch,
   {},
 );
+crons.daily(
+  "sync portfolio prices",
+  { hourUTC: 22, minuteUTC: 15 },
+  internal.portfolioSync.dispatchDaily,
+  {},
+);
 export default crons;
