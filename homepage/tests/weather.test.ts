@@ -23,6 +23,11 @@ const current = () => [
     EpochTime: Math.floor(Date.now() / 1000),
     WeatherText: "Sunny",
     Temperature: { Imperial: { Value: 75 }, Metric: { Value: 24 } },
+    RealFeelTemperature: {
+      Imperial: { Value: 78 },
+      Metric: { Value: 26 },
+    },
+    RelativeHumidity: 61,
     Link: "http://www.accuweather.com/",
   },
 ];
@@ -73,6 +78,9 @@ it("works without a weather key, and never writes credentials to snapshots or du
     if (String(input).includes("/daily/")) {
       expect(new URL(String(input)).searchParams.get("details")).toBe("true");
     }
+    if (String(input).includes("currentconditions")) {
+      expect(new URL(String(input)).searchParams.get("details")).toBe("true");
+    }
     if (String(input).includes("/hourly/")) {
       expect(String(input)).toContain("/hourly/12hour/");
       expect(new URL(String(input)).searchParams.get("details")).toBe("false");
@@ -81,6 +89,8 @@ it("works without a weather key, and never writes credentials to snapshots or du
   });
   const result = await collectWeather(env, "user-a", config, undefined, save);
   expect(result.snapshot?.status).toBe("available");
+  expect(result.state?.payload?.current?.realFeelTemperature).toBe(78);
+  expect(result.state?.payload?.current?.relativeHumidity).toBe(61);
   expect(result.state?.payload?.forecast[0].rainProbability).toBe(0);
   expect(result.state?.payload?.hourly).toHaveLength(12);
   expect(result.state?.nextHourly).toBeGreaterThanOrEqual(
@@ -204,6 +214,22 @@ it("does not treat a last-good snapshot as a page error", () => {
   expect(html).not.toContain("Earlier weather snapshot");
   expect(html).not.toContain("Updates will appear when the source recovers");
   expect(html).toContain('action="/api/refresh"');
+});
+it("shows real feel and humidity in one compact line when available", () => {
+  const edition = fixtureEdition();
+  const weather = edition.feed.modules.find((module) => module.id === "weather")!;
+  const data = weatherPayloadSchema.parse(weather.payload);
+  data.current = {
+    ...data.current!,
+    realFeelTemperature: 74.6,
+    relativeHumidity: 61,
+  };
+  weather.payload = data;
+
+  const html = renderEdition(edition.feed, env.TASKY_ORIGIN);
+  expect(html).toContain(
+    '<p class="current-details">Feels 75°F · Humidity 61%</p>',
+  );
 });
 it("counts attempts in a rolling 24-hour window across restarts and location changes", async () => {
   const now = Date.now();

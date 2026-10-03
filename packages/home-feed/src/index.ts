@@ -142,6 +142,8 @@ export const weatherPayloadSchema = z
     current: z
       .object({
         temperature: z.number(),
+        realFeelTemperature: z.number().nullable().optional(),
+        relativeHumidity: z.number().min(0).max(100).nullable().optional(),
         description: text,
         observedAt: timestamp,
         isDay: z.boolean().optional(),

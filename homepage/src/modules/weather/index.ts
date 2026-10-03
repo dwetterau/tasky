@@ -60,6 +60,25 @@ export function renderHourlyRain(data: WeatherPayload, context: RenderContext) {
     </div>
   </figure>`;
 }
+
+function renderCurrentDetails(
+  current: NonNullable<WeatherPayload["current"]>,
+  units: WeatherPayload["units"],
+) {
+  const details = [
+    current.realFeelTemperature == null
+      ? null
+      : `Feels ${Math.round(current.realFeelTemperature)}°${units}`,
+    current.relativeHumidity == null
+      ? null
+      : `Humidity ${Math.round(current.relativeHumidity)}%`,
+  ].filter((detail): detail is string => detail !== null);
+
+  return details.length
+    ? `<p class="current-details">${details.map(e).join(" · ")}</p>`
+    : "";
+}
+
 export const weatherModule: HomeModule<WeatherPayload> = {
   id: "weather",
   title: "Weather",
@@ -125,7 +144,7 @@ export const weatherModule: HomeModule<WeatherPayload> = {
   render(data, context) {
     return /* HTML */ `<p class="weather-location">${e(data.location)}</p>
       ${data.current
-        ? `<div class="current-weather"><span class="weather-emoji" aria-hidden="true">${weatherEmoji(data.current.description, data.current.isDay)}</span><div><div class="temperature">${Math.round(data.current.temperature)}<span>°${e(data.units)}</span></div><p class="conditions">${e(data.current.description)}</p></div>${renderHourlyRain(data, context)}</div>`
+        ? `<div class="current-weather"><span class="weather-emoji" aria-hidden="true">${weatherEmoji(data.current.description, data.current.isDay)}</span><div><div class="temperature">${Math.round(data.current.temperature)}<span>°${e(data.units)}</span></div><p class="conditions">${e(data.current.description)}</p>${renderCurrentDetails(data.current, data.units)}</div>${renderHourlyRain(data, context)}</div>`
         : `<div class="current-weather-missing"><p class="empty">Current conditions are unavailable.</p>${renderHourlyRain(data, context)}</div>`}
       <div class="forecast">
         ${data.forecast
