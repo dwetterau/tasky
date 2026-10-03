@@ -394,6 +394,11 @@ progress::-moz-progress-bar {
   margin-top: 6px;
   overflow-wrap: anywhere;
 }
+.current-details {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
 .rain-chart {
   margin: 0;
   min-width: 0;

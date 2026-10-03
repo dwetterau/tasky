@@ -54,6 +54,13 @@ const currentResponse = z
         Imperial: z.object({ Value: z.number() }),
         Metric: z.object({ Value: z.number() }),
       }),
+      RealFeelTemperature: z
+        .object({
+          Imperial: z.object({ Value: z.number() }),
+          Metric: z.object({ Value: z.number() }),
+        })
+        .nullish(),
+      RelativeHumidity: z.number().min(0).max(100).nullish(),
       Link: z.string(),
     }),
   )
@@ -129,6 +136,13 @@ export function normalizeCurrent(raw: unknown, units: "F" | "C") {
         units === "F"
           ? first.Temperature.Imperial.Value
           : first.Temperature.Metric.Value,
+      realFeelTemperature:
+        first.RealFeelTemperature == null
+          ? null
+          : units === "F"
+            ? first.RealFeelTemperature.Imperial.Value
+            : first.RealFeelTemperature.Metric.Value,
+      relativeHumidity: first.RelativeHumidity ?? null,
       description: first.WeatherText.slice(0, 240),
       observedAt,
       ...(first.IsDayTime !== undefined ? { isDay: first.IsDayTime } : {}),
@@ -375,7 +389,7 @@ export async function collectWeather(
       const url = new URL(`https://dataservice.accuweather.com/${path}`);
       url.search = new URLSearchParams({
         language: config.language,
-        details: String(part === "forecast"),
+        details: String(part !== "hourly"),
         ...(part !== "current" ? { metric: String(config.units === "C") } : {}),
       }).toString();
       const response = await fetch(url, {
