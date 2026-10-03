@@ -40,6 +40,7 @@ import type * as migrations from "../migrations.js";
 import type * as notes from "../notes.js";
 import type * as onboarding from "../onboarding.js";
 import type * as portfolio from "../portfolio.js";
+import type * as portfolioSync from "../portfolioSync.js";
 import type * as portfolios from "../portfolios.js";
 import type * as pullRequests from "../pullRequests.js";
 import type * as scorecards from "../scorecards.js";
@@ -88,6 +89,7 @@ declare const fullApi: ApiFromModules<{
   notes: typeof notes;
   onboarding: typeof onboarding;
   portfolio: typeof portfolio;
+  portfolioSync: typeof portfolioSync;
   portfolios: typeof portfolios;
   pullRequests: typeof pullRequests;
   scorecards: typeof scorecards;
