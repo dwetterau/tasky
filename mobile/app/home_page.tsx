@@ -249,13 +249,7 @@ function SignalsCard() {
           <View style={sharedStyles.inlineLoading}>
             <ActivityIndicator />
           </View>
-        ) : actionableSignals.length === 0 ? (
-          <TouchableOpacity
-            onPress={() => router.push("/signals_page" as Href)}
-          >
-            <Text style={styles.openSignals}>Open Signals</Text>
-          </TouchableOpacity>
-        ) : (
+        ) : actionableSignals.length > 0 ? (
           <View style={styles.signalList}>
             {actionableSignals.map((signal, index) => (
               <View key={signal.id}>
@@ -274,7 +268,7 @@ function SignalsCard() {
               </View>
             ))}
           </View>
-        )}
+        ) : null}
         {error || signals.error ? (
           <Text style={sharedStyles.error}>{error ?? signals.error}</Text>
         ) : null}
@@ -779,13 +773,6 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     marginLeft: spacing.xl,
     backgroundColor: colors.separator,
-  },
-  openSignals: {
-    paddingVertical: spacing.md,
-    color: colors.systemBlue,
-    fontSize: fontSize.small,
-    fontWeight: "700",
-    textAlign: "center",
   },
   heroCard: {
     paddingBottom: spacing.lg,
