@@ -26,6 +26,7 @@ import {
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
   getSignalQueryTime,
+  loggedTodaySignals,
   SIGNAL_SOON_WINDOW_MS,
   type SignalDashboardItem,
   useSignalClock,
@@ -172,6 +173,10 @@ function SignalsCard() {
         (!showScaleCard || signal.id !== weightSignal?.id),
     )
     .slice(0, 3);
+  const completedToday = loggedTodaySignals(
+    signals.data ?? [],
+    periodBounds.day,
+  ).length;
 
   const openSignal = (signalId: string) => {
     router.push({
@@ -231,7 +236,14 @@ function SignalsCard() {
           activeOpacity={0.7}
           onPress={() => router.push("/signals_page" as Href)}
         >
-          <CardHeader title="Signals" />
+          <CardHeader
+            title="Signals"
+            subtitle={
+              taskyEnabled && !signals.isLoading
+                ? `${completedToday} done today`
+                : undefined
+            }
+          />
         </TouchableOpacity>
         {!taskyEnabled || signals.isLoading ? (
           <View style={sharedStyles.inlineLoading}>
@@ -241,13 +253,7 @@ function SignalsCard() {
           <TouchableOpacity
             onPress={() => router.push("/signals_page" as Href)}
           >
-            <Text style={styles.allOnTrack}>
-              {signals.data?.length
-                ? showScaleCard
-                  ? "No other signals need attention."
-                  : "No signals need attention."
-                : "Add your first activity or inventory signal."}
-            </Text>
+            <Text style={styles.openSignals}>Open Signals</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.signalList}>
@@ -774,10 +780,11 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xl,
     backgroundColor: colors.separator,
   },
-  allOnTrack: {
+  openSignals: {
     paddingVertical: spacing.md,
-    color: colors.secondaryLabel,
+    color: colors.systemBlue,
     fontSize: fontSize.small,
+    fontWeight: "700",
     textAlign: "center",
   },
   heroCard: {

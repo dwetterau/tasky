@@ -25,7 +25,7 @@ export type CapturedReading = ScaleReading & { receivedAt: number; key: string }
 export function useYunmaiScale() {
   const [state, setState] = useState("idle");
   const [message, setMessage] = useState("Keep your scale nearby.");
-  const [devices, setDevices] = useState<Array<{ id: string; name: string }>>([]);
+  const [devices, setDevices] = useState<{ id: string; name: string }[]>([]);
   const [reading, setReading] = useState<CapturedReading | null>(null);
   const [lastDeviceId, setLastDeviceId] = useState<string | null>(
     () => storage?.getString(LAST_DEVICE_KEY) ?? null,
@@ -36,7 +36,6 @@ export function useYunmaiScale() {
   const lastDeviceIdRef = useRef(lastDeviceId);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ignoringIdleStatus = useRef(false);
-  lastDeviceIdRef.current = lastDeviceId;
 
   const clearIdleTimer = useCallback(() => {
     if (idleTimer.current) {
@@ -81,6 +80,16 @@ export function useYunmaiScale() {
     setState("connecting");
     try { await native?.connect(id); } catch (error) { accepting.current = false; reportError(error); }
   }, [clearIdleTimer, rememberDevice, reportError]);
+  const scan = useCallback(async () => {
+    clearIdleTimer();
+    ignoringIdleStatus.current = false;
+    setDevices([]);
+    setReading(null);
+    lastLive.current = null;
+    accepting.current = false;
+    selectedId.current = null;
+    try { await native?.scan(); } catch (error) { reportError(error); }
+  }, [clearIdleTimer, reportError]);
 
   useFocusEffect(useCallback(() => {
     const listener = native?.addListener("onScaleEvent", event => {
@@ -123,6 +132,9 @@ export function useYunmaiScale() {
     const appListener = AppState.addEventListener("change", next => {
       if (next !== "active") void stop().catch(reportError);
     });
+    if (native) {
+      void scan();
+    }
     return () => {
       clearIdleTimer();
       accepting.current = false;
@@ -130,20 +142,11 @@ export function useYunmaiScale() {
       appListener.remove();
       void native?.stop().catch(() => undefined);
     };
-  }, [armIdleTimer, clearIdleTimer, connect, reportError, stop]));
+  }, [armIdleTimer, clearIdleTimer, connect, reportError, scan, stop]));
 
   return {
     available: native !== null, state, message, devices, reading, lastDeviceId,
-    scan: async () => {
-      clearIdleTimer();
-      ignoringIdleStatus.current = false;
-      setDevices([]);
-      setReading(null);
-      lastLive.current = null;
-      accepting.current = false;
-      selectedId.current = null;
-      try { await native?.scan(); } catch (error) { reportError(error); }
-    },
+    scan,
     connect,
     stop: () => stop().catch(reportError),
   };
