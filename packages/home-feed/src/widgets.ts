@@ -8,7 +8,9 @@ import {
 export {
   formatStravaDistance,
   formatStravaDuration,
+  formatStravaElevationGain,
   formatStravaPace,
+  getStravaActivityStats,
   STRAVA_SCHEMA_VERSION,
   stravaActivitySchema,
   stravaPayloadSchema,

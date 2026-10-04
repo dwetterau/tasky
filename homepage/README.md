@@ -64,8 +64,9 @@ MCP agents publish strongly validated, immutable widget rows to Convex. The
 registered kinds are `briefing@1` (bounded Markdown) and `strava@1` (normalized
 latest-run and latest-ride summaries). Strava stores source units and links;
 web and mobile format distance, moving time, run pace or ride speed, optional
-power, and optional average heart rate. Activity titles and raw provider
-responses are intentionally excluded.
+elevation gain, ride power, and average heart rate. Optional stats are hidden
+when absent. Activity titles and raw provider responses are intentionally
+excluded.
 
 Convex generates each row ID. An optional retry idempotency key prevents
 duplicate publication. The `widgetData.by_user_kind` index implicitly orders

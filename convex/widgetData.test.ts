@@ -103,6 +103,7 @@ describe("widget data", () => {
           activityUrl: "https://www.strava.com/activities/20421937807",
           startedAt: "2026-10-02T15:46:42Z",
           distanceMeters: 4866.9,
+          totalElevationGainMeters: 13,
           movingTimeSeconds: 1563,
           averageSpeedMetersPerSecond: 3.114,
           averageHeartRateBpm: 165.8,
@@ -112,6 +113,7 @@ describe("widget data", () => {
           activityUrl: "https://www.strava.com/activities/20380252374",
           startedAt: "2026-09-29T14:15:57Z",
           distanceMeters: 35857.6,
+          totalElevationGainMeters: 214.3,
           movingTimeSeconds: 6544,
           averageSpeedMetersPerSecond: 5.479,
           averagePowerWatts: 75.2,
@@ -130,7 +132,11 @@ describe("widget data", () => {
       freshForMs: 30 * 60 * 60_000,
       maxAgeMs: 7 * 24 * 60 * 60_000,
       payload: {
-        latestRun: { sport: "run", distanceMeters: 4866.9 },
+        latestRun: {
+          sport: "run",
+          distanceMeters: 4866.9,
+          totalElevationGainMeters: 13,
+        },
         latestRide: {
           sport: "ride",
           averagePowerWatts: 75.2,

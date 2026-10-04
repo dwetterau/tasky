@@ -1,7 +1,5 @@
 import {
-  formatStravaDistance,
-  formatStravaDuration,
-  formatStravaPace,
+  getStravaActivityStats,
   stravaPayloadSchema,
   widgetDefinitions,
   type StravaActivity,
@@ -24,15 +22,7 @@ function renderActivity(
   context: RenderContext,
 ): string {
   const label = activity.sport === "run" ? "Latest run" : "Latest ride";
-  const paceLabel = activity.sport === "run" ? "Avg pace" : "Avg speed";
-  const power =
-    activity.averagePowerWatts === undefined
-      ? "—"
-      : `${Math.round(activity.averagePowerWatts)} W`;
-  const heartRate =
-    activity.averageHeartRateBpm === undefined
-      ? "—"
-      : `${Math.round(activity.averageHeartRateBpm)} bpm`;
+  const stats = getStravaActivityStats(activity);
   const activityLink = safeLink(
     activity.activityUrl,
     "https://www.strava.com",
@@ -47,11 +37,7 @@ function renderActivity(
         <a href="${activityLink}" target="_blank" rel="noreferrer">View on Strava ↗</a>
       </div>
       <dl class="strava-stats">
-        <div><dt>Distance</dt><dd>${e(formatStravaDistance(activity.distanceMeters))}</dd></div>
-        <div><dt>Moving time</dt><dd>${e(formatStravaDuration(activity.movingTimeSeconds))}</dd></div>
-        <div><dt>Avg power</dt><dd>${e(power)}</dd></div>
-        <div><dt>${paceLabel}</dt><dd>${e(formatStravaPace(activity))}</dd></div>
-        <div><dt>Avg heart rate</dt><dd>${e(heartRate)}</dd></div>
+        ${stats.map(([statLabel, value]) => `<div><dt>${e(statLabel)}</dt><dd>${e(value)}</dd></div>`).join("")}
       </dl>
     </div>
   </article>`;

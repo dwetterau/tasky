@@ -2,9 +2,7 @@ import type { FunctionReturnType } from "convex/server";
 import { type Href, useRouter } from "expo-router";
 import {
   briefingPayloadSchema,
-  formatStravaDistance,
-  formatStravaDuration,
-  formatStravaPace,
+  getStravaActivityStats,
   stravaPayloadSchema,
   type StravaActivity,
 } from "@tasky/home-feed/widgets";
@@ -148,29 +146,12 @@ function BriefingCard() {
 
 function StravaActivityRow({ activity }: { activity: StravaActivity }) {
   const label = activity.sport === "run" ? "Latest run" : "Latest ride";
-  const paceLabel = activity.sport === "run" ? "Avg pace" : "Avg speed";
   const date = new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
   }).format(new Date(activity.startedAt));
-  const stats = [
-    ["Distance", formatStravaDistance(activity.distanceMeters)],
-    ["Moving time", formatStravaDuration(activity.movingTimeSeconds)],
-    [
-      "Avg power",
-      activity.averagePowerWatts === undefined
-        ? "—"
-        : `${Math.round(activity.averagePowerWatts)} W`,
-    ],
-    [paceLabel, formatStravaPace(activity)],
-    [
-      "Avg heart rate",
-      activity.averageHeartRateBpm === undefined
-        ? "—"
-        : `${Math.round(activity.averageHeartRateBpm)} bpm`,
-    ],
-  ] as const;
+  const stats = getStravaActivityStats(activity);
 
   return (
     <TouchableOpacity
