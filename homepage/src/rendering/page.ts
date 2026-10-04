@@ -432,7 +432,7 @@ progress::-moz-progress-bar {
 }
 .current-weather {
   display: grid;
-  grid-template-columns: auto minmax(64px, 0.8fr) minmax(110px, 1.2fr);
+  grid-template-columns: auto minmax(72px, max-content) minmax(110px, 1fr);
   align-items: center;
   gap: 12px;
   margin: 16px 0;
@@ -460,6 +460,7 @@ progress::-moz-progress-bar {
   color: var(--muted);
   font-size: 12px;
   margin-top: 3px;
+  white-space: nowrap;
 }
 .rain-chart {
   margin: 0;
