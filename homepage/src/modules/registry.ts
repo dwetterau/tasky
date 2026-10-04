@@ -4,6 +4,7 @@ import { taskyModule } from "./tasky";
 import { weatherModule } from "./weather";
 import { portfolioModule } from "./portfolio";
 import { briefingModule } from "./briefing";
+import { releasesModule } from "./releases";
 import { stravaModule } from "./strava";
 
 // Add a module here, a versioned payload schema to home-feed, and a trusted
@@ -14,6 +15,7 @@ export const modules: readonly HomeModule<unknown>[] = [
   taskyModule,
   portfolioModule,
   stravaModule,
+  releasesModule,
 ] as HomeModule<unknown>[];
 const moduleOrder = new Map(
   modules.map((module, index) => [module.id, index]),

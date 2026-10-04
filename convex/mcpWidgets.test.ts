@@ -98,6 +98,13 @@ describe("widget MCP tool", () => {
           },
           additionalProperties: false,
         },
+        {
+          properties: {
+            kind: { const: "releases" },
+            schemaVersion: { const: 1 },
+          },
+          additionalProperties: false,
+        },
       ],
     });
   });
@@ -161,7 +168,9 @@ describe("widget MCP tool", () => {
     expect(body.error?.code).toBe(-32602);
     expect(body.error?.message).toContain("data.markdown");
     expect(body.error?.message).toContain("arguments");
-    expect(body.error?.message).toContain("briefing@1, strava@1");
+    expect(body.error?.message).toContain(
+      "briefing@1, strava@1, releases@1",
+    );
     expect(publish).not.toHaveBeenCalled();
   });
 
@@ -213,6 +222,45 @@ describe("widget MCP tool", () => {
     expect(body.error?.code).toBe(-32602);
     expect(body.error?.message).toContain("averagePowerWatts");
     expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("publishes normalized upcoming releases", async () => {
+    const { handlers, publish } = makeHandler();
+    const data = {
+      asOf: "2026-10-04",
+      releases: [
+        {
+          kind: "tv",
+          title: "Apothecary Diaries",
+          detail: "Season 3",
+          releaseDate: "2026-10-02",
+        },
+        {
+          kind: "movie",
+          title: "The Deceased Empress' Treasure",
+          releaseDate: "2026-12-11",
+        },
+      ],
+    };
+    const response = await handlers.publishWidgetData(
+      6,
+      "user-1",
+      scopes(WIDGETS_WRITE_SCOPE),
+      {
+        kind: "releases",
+        schemaVersion: 1,
+        data,
+        idempotencyKey: "releases:2026-10-04",
+      },
+    );
+    expect((await responseBody(response)).error).toBeUndefined();
+    expect(publish).toHaveBeenCalledWith({
+      userId: "user-1",
+      kind: "releases",
+      schemaVersion: 1,
+      dataJson: JSON.stringify(data),
+      idempotencyKey: "releases:2026-10-04",
+    });
   });
 
   it("requires widgets:read and returns parsed latest data", async () => {

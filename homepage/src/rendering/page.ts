@@ -292,6 +292,45 @@ p {
   font-size: 15px;
   font-weight: 600;
 }
+.release-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.release-list li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.release-list li:last-child {
+  border-bottom: 0;
+}
+.release-kind {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.release-title {
+  display: grid;
+  min-width: 0;
+}
+.release-title strong {
+  overflow-wrap: anywhere;
+}
+.release-title span,
+.release-list time {
+  color: var(--muted);
+  font-size: 10px;
+}
+.release-list time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .tasky-section {
   margin-bottom: 20px;
 }

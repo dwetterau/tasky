@@ -61,12 +61,14 @@ increments per publication so automatic updates work throughout the day.
 ## Agent-published widgets
 
 MCP agents publish strongly validated, immutable widget rows to Convex. The
-registered kinds are `briefing@1` (bounded Markdown) and `strava@1` (normalized
-latest-run and latest-ride summaries). Strava stores source units and links;
+registered kinds are `briefing@1` (bounded Markdown), `strava@1` (normalized
+latest-run and latest-ride summaries), and `releases@1` (dated upcoming TV and
+movie releases). Strava stores source units and links;
 web and mobile format distance, moving time, run pace or ride speed, optional
 elevation gain, ride power, and average heart rate. Optional stats are hidden
 when absent. Activity titles and raw provider responses are intentionally
-excluded.
+excluded. Releases may be published weekly: clients filter expired entries
+against the viewer's current local date whenever they render.
 
 Convex generates each row ID. An optional retry idempotency key prevents
 duplicate publication. The `widgetData.by_user_kind` index implicitly orders
@@ -86,6 +88,10 @@ latest row reactively.
 4. Add the mobile card, reading `widgetData.latest` for the new kind.
 5. Extend the MCP, projection, renderer, and publication tests, and document
    the agent payload in `MCP.md`.
+
+Keep time-sensitive filtering in a shared pure helper and call it from both
+renderers. Publication freshness controls when data is considered stale; it
+does not replace render-time filtering for data that changes meaning each day.
 
 Storage, MCP dispatch, homepage export, and publication are generic and should
 not need kind-specific changes. Pushes to `main` deploy Convex through Vercel
