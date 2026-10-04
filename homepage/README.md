@@ -58,14 +58,21 @@ The cover edition counts calendar days, with September 15, 2026 as Edition 1.
 The generated time changes with each publication; the internal revision still
 increments per publication so automatic updates work throughout the day.
 
-## Briefing widget
+## Agent-published widgets
 
-MCP agents publish strongly validated `briefing@1` rows to Convex. A row contains
-bounded Markdown plus an optional retry idempotency key; Convex generates its
-ID. The `widgetData.by_user_kind` index implicitly orders equal user/kind rows
-by `_creationTime`, so exports select the newest briefing. Publishing requests
-a fresh homepage export, which safely pre-renders the Markdown into the normal
-KV edition. Mobile reads the same latest row reactively.
+MCP agents publish strongly validated, immutable widget rows to Convex. The
+registered kinds are `briefing@1` (bounded Markdown) and `strava@1` (normalized
+latest-run and latest-ride summaries). Strava stores source units and links;
+web and mobile format distance, moving time, run pace or ride speed, optional
+power, and optional average heart rate. Activity titles and raw provider
+responses are intentionally excluded.
+
+Convex generates each row ID. An optional retry idempotency key prevents
+duplicate publication. The `widgetData.by_user_kind` index implicitly orders
+equal user/kind rows by `_creationTime`, so clients select the newest row.
+Publishing requests a fresh homepage export; the generic widget snapshot list
+lets new registered kinds reuse the same delivery machinery. Mobile reads each
+latest row reactively.
 
 ## Portfolio
 

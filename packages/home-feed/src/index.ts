@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Temporal } from "@js-temporal/polyfill";
+import { WIDGET_KINDS } from "./widgets";
 
 export * from "./widgets";
 
@@ -206,6 +207,10 @@ export const moduleSchema = z
   })
   .strict()
   .refine((m) => m.maxAgeMs >= m.freshForMs);
+const widgetModuleSchema = moduleSchema.refine(
+  (module) => (WIDGET_KINDS as readonly string[]).includes(module.id),
+  "Unregistered widget module",
+);
 export const exportSchema = z
   .object({
     schemaVersion: z.literal(VERSION),
@@ -221,8 +226,15 @@ export const exportSchema = z
     briefing: moduleSchema
       .refine((module) => module.id === "briefing")
       .optional(),
+    widgets: z.array(widgetModuleSchema).max(WIDGET_KINDS.length).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) =>
+      new Set(value.widgets?.map((widget) => widget.id) ?? []).size ===
+      (value.widgets?.length ?? 0),
+    "Widget modules must have unique ids",
+  );
 
 export const feedSchema = z
   .object({

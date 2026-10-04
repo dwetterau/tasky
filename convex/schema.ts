@@ -128,7 +128,7 @@ export type EventAction = typeof eventAction.type;
 export const eventSource = v.union(v.literal("APP"), v.literal("MCP"));
 export type EventSource = "APP" | "MCP";
 
-export const widgetKind = v.union(v.literal("briefing"));
+export const widgetKind = v.union(v.literal("briefing"), v.literal("strava"));
 
 export const signalAttention = v.union(
   v.literal("ok"),

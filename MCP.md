@@ -294,12 +294,31 @@ creation time, kind/version, and parsed data.
 
 Publishes an immutable data row for a registered widget kind. The server
 generates the row ID, and homepage/mobile clients select the newest row by
-authenticated user and kind. The first registered contract is
-`briefing@1`: `{ data: { markdown: string } }`. An optional `idempotencyKey`
-deduplicates retries (for example, `briefing:2026-09-30:morning`) and cannot be
-reused with different data. The MCP input JSON Schema is generated from the
-same strict Zod schema used at write time, and validation errors include every
-failing field path.
+authenticated user and kind. Registered contracts:
+
+- `briefing@1`: `{ data: { markdown: string } }`
+- `strava@1`: `{ data: { latestRun, latestRide } }`
+
+Each Strava activity requires:
+
+- `sport`: `"run"` or `"ride"` as appropriate
+- `activityUrl`: canonical `https://www.strava.com/activities/{id}` link
+- `startedAt`: Strava `start_date`
+- `distanceMeters`: Strava `distance`
+- `movingTimeSeconds`: Strava `moving_time`
+- `averageSpeedMetersPerSecond`: Strava `average_speed`
+
+It can also include `elapsedTimeSeconds` from `elapsed_time`,
+`averagePowerWatts` from `average_watts`, and `averageHeartRateBpm` from
+`average_heartrate`. Keep source values in meters, seconds, meters per second,
+watts, and BPM; clients format miles, run pace, and ride speed. Activity titles
+and raw Strava responses are not part of the contract.
+
+An optional `idempotencyKey` deduplicates retries (for example,
+`briefing:2026-09-30:morning` or `strava:2026-10-04`) and cannot be reused with
+different data. The MCP input JSON Schema is generated from the same strict Zod
+schema used at write time, and validation errors include every failing field
+path.
 
 ## Architectural Decisions and Trade-offs
 

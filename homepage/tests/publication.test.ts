@@ -163,6 +163,52 @@ describe("durable ingestion and publication", () => {
     );
     expect(edition!.html).not.toContain("<script>alert('no')</script>");
   });
+  it("publishes generic Strava widget snapshots at the end of the edition", async () => {
+    await enroll();
+    const envelope = fixtureExport();
+    const now = Date.now();
+    envelope.widgets = [
+      {
+        id: "strava",
+        schemaVersion: 1,
+        scope: "user",
+        sourceRevision: 1,
+        sourceDataAt: now,
+        collectedAt: now,
+        freshForMs: 30 * 60 * 60_000,
+        maxAgeMs: 7 * 24 * 60 * 60_000,
+        status: "available",
+        payload: {
+          latestRun: {
+            sport: "run",
+            activityUrl: "https://www.strava.com/activities/20421937807",
+            startedAt: "2026-10-02T15:46:42Z",
+            distanceMeters: 4866.9,
+            movingTimeSeconds: 1563,
+            averageSpeedMetersPerSecond: 3.114,
+            averageHeartRateBpm: 165.8,
+          },
+          latestRide: {
+            sport: "ride",
+            activityUrl: "https://www.strava.com/activities/20380252374",
+            startedAt: "2026-09-29T14:15:57Z",
+            distanceMeters: 35857.6,
+            movingTimeSeconds: 6544,
+            averageSpeedMetersPerSecond: 5.479,
+            averagePowerWatts: 75.2,
+            averageHeartRateBpm: 137.4,
+          },
+        },
+      },
+    ];
+
+    expect((await send(envelope)).status).toBe(202);
+    await tick();
+    const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(edition!.feed.modules.at(-1)?.id).toBe("strava");
+    expect(edition!.html).toContain("Latest run");
+    expect(edition!.html).toContain("View on Strava");
+  });
   it("publishes the saved portfolio alongside Tasky in the same user-scoped edition", async () => {
     await enroll();
     const envelope = fixtureExport();

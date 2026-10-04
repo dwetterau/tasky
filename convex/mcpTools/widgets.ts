@@ -8,6 +8,7 @@ import {
 } from "../mcpScopes";
 import {
   WIDGET_DATA_MAX_BYTES,
+  WIDGET_KINDS,
   parseWidgetData,
   widgetDataInputSchema,
   widgetDataReadInputSchema,
@@ -69,7 +70,7 @@ export const widgetToolDescriptors: McpToolDescriptor[] = [
   {
     name: "publishWidgetData",
     description:
-      "Publish a new immutable data row for a registered widget kind. Clients show the newest row for that kind. For a morning/evening briefing, use a stable retry key such as briefing:2026-09-30:morning. The server generates the widget data ID; do not provide one.",
+      "Publish a new immutable data row for a registered widget kind. Clients show the newest row for that kind. Use a stable retry key such as briefing:2026-09-30:morning or strava:2026-10-04. The server generates the widget data ID; do not provide one.",
     inputSchema: generatedInputSchema,
   },
 ];
@@ -117,7 +118,7 @@ export function createWidgetToolHandlers(
           -32602,
           validationMessage(
             parsed.error,
-            'Expected read shape: {"kind":"briefing"}',
+            `Expected read shape with kind set to one of: ${WIDGET_KINDS.join(", ")}.`,
           ),
         );
       }
@@ -167,7 +168,7 @@ export function createWidgetToolHandlers(
           -32602,
           validationMessage(
             parsed.error,
-            'Expected briefing@1 shape: {"kind":"briefing","schemaVersion":1,"data":{"markdown":"# Briefing\\n..."}}',
+            `Expected a schema-valid registered widget payload for: ${WIDGET_KINDS.map((kind) => `${kind}@1`).join(", ")}. Inspect the generated tool schema for fields.`,
           ),
         );
       }

@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 import { modules } from "./test.setup";
-import { getLatestWidgetData, projectLatestBriefing } from "./widgetData";
+import {
+  getLatestWidgetData,
+  projectLatestWidget,
+  projectLatestWidgets,
+} from "./widgetData";
 import { moduleSchema } from "../packages/home-feed/src/index";
 
 describe("widget data", () => {
@@ -73,7 +77,7 @@ describe("widget data", () => {
       dataJson: JSON.stringify({ markdown: "  # Briefing  " }),
     });
     const projected = await t.run((ctx) =>
-      projectLatestBriefing(ctx, "user-a", Date.now()),
+      projectLatestWidget(ctx, "user-a", Date.now(), "briefing"),
     );
     const latest = await t.run((ctx) =>
       getLatestWidgetData(ctx, "user-a", "briefing"),
@@ -85,5 +89,55 @@ describe("widget data", () => {
       payload: { markdown: "# Briefing" },
     });
     expect(() => moduleSchema.parse(projected)).not.toThrow();
+  });
+
+  it("projects every registered widget with its own freshness policy", async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.widgetData.publishFromMcp, {
+      userId: "user-a",
+      kind: "strava",
+      schemaVersion: 1,
+      dataJson: JSON.stringify({
+        latestRun: {
+          sport: "run",
+          activityUrl: "https://www.strava.com/activities/20421937807",
+          startedAt: "2026-10-02T15:46:42Z",
+          distanceMeters: 4866.9,
+          movingTimeSeconds: 1563,
+          averageSpeedMetersPerSecond: 3.114,
+          averageHeartRateBpm: 165.8,
+        },
+        latestRide: {
+          sport: "ride",
+          activityUrl: "https://www.strava.com/activities/20380252374",
+          startedAt: "2026-09-29T14:15:57Z",
+          distanceMeters: 35857.6,
+          movingTimeSeconds: 6544,
+          averageSpeedMetersPerSecond: 5.479,
+          averagePowerWatts: 75.2,
+          averageHeartRateBpm: 137.4,
+        },
+      }),
+    });
+
+    const projected = await t.run((ctx) =>
+      projectLatestWidgets(ctx, "user-a", Date.now()),
+    );
+    expect(projected).toHaveLength(1);
+    expect(projected[0]).toMatchObject({
+      id: "strava",
+      schemaVersion: 1,
+      freshForMs: 30 * 60 * 60_000,
+      maxAgeMs: 7 * 24 * 60 * 60_000,
+      payload: {
+        latestRun: { sport: "run", distanceMeters: 4866.9 },
+        latestRide: {
+          sport: "ride",
+          averagePowerWatts: 75.2,
+          averageHeartRateBpm: 137.4,
+        },
+      },
+    });
+    expect(() => moduleSchema.parse(projected[0])).not.toThrow();
   });
 });

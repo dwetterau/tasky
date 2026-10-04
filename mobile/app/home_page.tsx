@@ -1,12 +1,20 @@
 import type { FunctionReturnType } from "convex/server";
 import { type Href, useRouter } from "expo-router";
-import { briefingPayloadSchema } from "@tasky/home-feed/widgets";
+import {
+  briefingPayloadSchema,
+  formatStravaDistance,
+  formatStravaDuration,
+  formatStravaPace,
+  stravaPayloadSchema,
+  type StravaActivity,
+} from "@tasky/home-feed/widgets";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Markdown, {
   type RenderRules,
 } from "react-native-markdown-display";
 import {
   ActivityIndicator,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -134,6 +142,90 @@ function BriefingCard() {
           {content.body}
         </Markdown>
       ) : null}
+    </View>
+  );
+}
+
+function StravaActivityRow({ activity }: { activity: StravaActivity }) {
+  const label = activity.sport === "run" ? "Latest run" : "Latest ride";
+  const paceLabel = activity.sport === "run" ? "Avg pace" : "Avg speed";
+  const date = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(activity.startedAt));
+  const stats = [
+    ["Distance", formatStravaDistance(activity.distanceMeters)],
+    ["Moving time", formatStravaDuration(activity.movingTimeSeconds)],
+    [
+      "Avg power",
+      activity.averagePowerWatts === undefined
+        ? "—"
+        : `${Math.round(activity.averagePowerWatts)} W`,
+    ],
+    [paceLabel, formatStravaPace(activity)],
+    [
+      "Avg heart rate",
+      activity.averageHeartRateBpm === undefined
+        ? "—"
+        : `${Math.round(activity.averageHeartRateBpm)} bpm`,
+    ],
+  ] as const;
+
+  return (
+    <TouchableOpacity
+      style={styles.stravaActivity}
+      activeOpacity={0.75}
+      onPress={() => void Linking.openURL(activity.activityUrl)}
+      accessibilityRole="link"
+      accessibilityLabel={`Open ${label.toLowerCase()} on Strava`}
+    >
+      <View style={styles.stravaActivityBody}>
+        <View style={styles.stravaActivityHeading}>
+          <View>
+            <Text style={styles.stravaActivityLabel}>{label}</Text>
+            <Text style={styles.stravaActivityDate}>{date}</Text>
+          </View>
+          <Text style={styles.stravaOpen}>View ↗</Text>
+        </View>
+        <View style={styles.stravaStats}>
+          {stats.map(([statLabel, value]) => (
+            <View key={statLabel} style={styles.stravaStat}>
+              <Text style={styles.stravaStatValue}>{value}</Text>
+              <Text style={styles.stravaStatLabel}>{statLabel}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function StravaCard() {
+  const taskyAuth = useTaskyAuth();
+  const taskyEnabled =
+    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
+  const latest = useTaskyQuery(
+    taskyApi.widgetData.latest,
+    taskyEnabled ? { kind: "strava" } : "skip",
+  );
+  const strava = useMemo(() => {
+    if (!latest.data) return null;
+    try {
+      return stravaPayloadSchema.safeParse(JSON.parse(latest.data.dataJson));
+    } catch {
+      return null;
+    }
+  }, [latest.data]);
+
+  if (!taskyEnabled || latest.isLoading || !strava?.success) return null;
+
+  return (
+    <View style={[sharedStyles.card, styles.stravaCard]}>
+      <CardHeader title="Strava" trailing={<View />} />
+      <StravaActivityRow activity={strava.data.latestRun} />
+      <View style={styles.stravaDivider} />
+      <StravaActivityRow activity={strava.data.latestRide} />
     </View>
   );
 }
@@ -676,6 +768,7 @@ export default function HomePage() {
         <SignalsCard />
         <TaskyCard />
         <PortfolioCard />
+        <StravaCard />
       </ScrollView>
       <FloatingSettingsButton />
     </View>
@@ -768,6 +861,64 @@ const styles = StyleSheet.create({
   briefingTime: {
     color: colors.secondaryLabel,
     fontSize: fontSize.caption,
+  },
+  stravaCard: {
+    paddingBottom: spacing.lg,
+  },
+  stravaActivity: {
+    overflow: "hidden",
+    borderRadius: radius.md,
+    backgroundColor: colors.tertiarySystemGroupedBackground,
+  },
+  stravaActivityBody: {
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  stravaActivityHeading: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  stravaActivityLabel: {
+    color: colors.label,
+    fontSize: fontSize.body,
+    fontWeight: "700",
+  },
+  stravaActivityDate: {
+    marginTop: spacing.xs,
+    color: colors.secondaryLabel,
+    fontSize: fontSize.caption,
+  },
+  stravaOpen: {
+    color: colors.systemBlue,
+    fontSize: fontSize.caption,
+    fontWeight: "600",
+  },
+  stravaStats: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: spacing.md,
+  },
+  stravaStat: {
+    width: "50%",
+  },
+  stravaStatValue: {
+    color: colors.label,
+    fontSize: fontSize.body,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  stravaStatLabel: {
+    marginTop: spacing.xs,
+    color: colors.secondaryLabel,
+    fontSize: fontSize.micro,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  stravaDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.separator,
   },
   signalsCard: {
     paddingBottom: spacing.sm,
