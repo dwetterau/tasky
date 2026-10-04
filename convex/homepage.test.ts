@@ -11,7 +11,7 @@ import { calendar } from "../packages/home-feed/src/index";
 afterEach(() => vi.unstubAllEnvs());
 
 describe("homepage projection and durable outbox", () => {
-  it("exports only the requested user's counts without task or capture details", async () => {
+  it("exports only the requested user's counts and today's task details", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       const tag = await ctx.db.insert("tags", {
@@ -31,6 +31,7 @@ describe("homepage projection and durable outbox", () => {
         model: {
           kind: "activity",
           target: { type: "recency", dueAfterMs: 86400_000 },
+          lastOccurredAt: 0,
         },
         createdAt: 0,
         updatedAt: 0,
@@ -84,7 +85,16 @@ describe("homepage projection and durable outbox", () => {
         Date.parse("2026-09-16T02:00:00Z"),
       ),
     );
-    expect(result.tasks).toEqual([]);
+    expect(result.tasks).toMatchObject([
+      {
+        title: "Today",
+        status: "not_started",
+        priority: "urgent",
+        dueDate: "2026-09-15",
+        due: "today",
+        labels: [],
+      },
+    ]);
     expect(result.captures).toEqual([]);
     expect(result.signals[0].labels).toEqual(["Health"]);
     expect(result.counts).toEqual({
@@ -205,40 +215,34 @@ describe("homepage projection and durable outbox", () => {
       t.query(internal.homepage.weatherKey, { userId: "b" }),
     ).rejects.toThrow("Not enrolled");
   });
-  it("includes today's completed signals without counting yesterday or another user", async () => {
+  it("exports only due signals and skips Weight", async () => {
     const t = convexTest(schema, modules);
     const now = Date.parse("2026-09-16T02:00:00Z");
-    for (const [userId, name, occurredAt] of [
-      ["a", "Today", now - 3600_000],
-      ["a", "Yesterday", Date.parse("2026-09-15T03:59:00Z")],
-      ["b", "Private B signal", now],
-    ] as const) {
-      const { signalId } = await t.mutation(internal.signals.manageFromMcp, {
-        userId,
-        now,
-        operation: {
-          type: "activity.create",
+    await t.run(async (ctx) => {
+      for (const [userId, name, lastOccurredAt, dueAfterMs] of [
+        ["a", "Due signal", now - 2 * 86400_000, 86400_000],
+        ["a", "Soon signal", now - 12 * 3600_000, 86400_000],
+        ["a", "Weight", now - 2 * 86400_000, 86400_000],
+        ["b", "Private B signal", now - 2 * 86400_000, 86400_000],
+      ] as const) {
+        await ctx.db.insert("signals", {
+          userId,
           name,
           tagIds: [],
-          target: { type: "recency", dueAfterMs: 7 * 86400_000 },
-        },
-      });
-      await t.mutation(internal.signals.recordFromMcp, {
-        userId,
-        signalId,
-        now,
-        soonWindowMs: 0,
-        idempotencyKey: name,
-        operation: { type: "activity.occurred", occurredAt },
-      });
-    }
+          model: {
+            kind: "activity",
+            target: { type: "recency", dueAfterMs },
+            lastOccurredAt,
+          },
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
     const result = await t.run((ctx) =>
       projectHomepage(ctx, "a", "America/New_York", now),
     );
-    expect(result.signals).toMatchObject([
-      { name: "Today", attention: "ok", todayCount: 1 },
-    ]);
-    expect(result.signals).toHaveLength(1);
+    expect(result.signals.map((signal) => signal.name)).toEqual(["Due signal"]);
   });
   it("uses local calendar boundaries across daylight-saving changes", () => {
     const spring = calendar(

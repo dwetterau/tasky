@@ -69,7 +69,8 @@ button,
 .dateline,
 .section-heading a,
 details,
-.logged-signals,
+.due-tasks,
+.strava-activity,
 .statline span {
   font-family: system-ui, sans-serif;
 }
@@ -230,12 +231,75 @@ p {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.88em;
 }
+.strava-activities {
+  display: grid;
+  gap: 18px;
+}
+.strava-activity {
+  min-width: 0;
+}
+.strava-activity + .strava-activity {
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+}
+.strava-cover {
+  display: block;
+  margin-bottom: 12px;
+}
+.strava-cover img {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.strava-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.strava-heading h3 {
+  font-size: 16px;
+}
+.strava-heading time {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.strava-heading > a {
+  color: var(--accent);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.strava-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 12px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.strava-stats div {
+  min-width: 0;
+}
+.strava-stats dt {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.strava-stats dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
 .tasky-section {
   margin-bottom: 20px;
 }
 .scorecards,
 .signal-list,
-.logged-signals {
+.due-tasks {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -326,17 +390,17 @@ progress::-moz-progress-bar {
 .signal-dot.soon {
   background: #a88138;
 }
-.logged-label {
-  margin: 16px 0 8px;
+.due-tasks {
+  margin-top: 8px;
+  font-size: 13px;
 }
-.logged-signals {
-  display: flex;
-  gap: 5px 12px;
-  flex-wrap: wrap;
-  font-size: 11px;
+.due-tasks li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.logged-signals li > span:first-child {
-  color: var(--accent);
+.due-tasks li + li {
+  margin-top: 4px;
 }
 .section-heading {
   display: flex;

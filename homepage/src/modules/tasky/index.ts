@@ -20,15 +20,16 @@ export const taskyModule: HomeModule<TaskyPayload> = {
       `${context.taskyOrigin}/tasks`,
       context.taskyOrigin,
     );
-    const attention = data.signals
-      .filter((signal) => signal.attention !== "ok")
-      .sort(
-        (a, b) =>
-          ({ due: 0, soon: 1, unknown: 2, ok: 3 })[a.attention] -
-          { due: 0, soon: 1, unknown: 2, ok: 3 }[b.attention],
+    const dueSignals = data.signals
+      .filter(
+        (signal) => signal.attention === "due" && signal.name !== "Weight",
       )
       .slice(0, 3);
-    const today = data.signals.filter((signal) => signal.todayCount > 0);
+    const dueTasks = data.tasks.filter(
+      (task) =>
+        task.due === "today" &&
+        (task.dueDate === undefined || task.dueDate === data.localDate),
+    );
     const scorecard = (card: TaskyPayload["scorecards"][number]) => `
       <li class="scorecard">
         <div class="row"><h3>${e(card.name)}</h3><span class="score">${card.isComplete ? "✓ " : ""}${Math.round(card.ratio * 100)}%</span></div>
@@ -46,7 +47,7 @@ export const taskyModule: HomeModule<TaskyPayload> = {
       <section class="tasky-section">
         <h3 class="section-label">Signals</h3>
         <ul class="signal-list">
-          ${attention
+          ${dueSignals
             .map(
               (signal) => `
           <li><span class="signal-dot ${e(signal.attention)}" aria-hidden="true"></span>
@@ -54,10 +55,16 @@ export const taskyModule: HomeModule<TaskyPayload> = {
             )
             .join("") || '<li class="empty">All on track.</li>'}
         </ul>
-        ${today.length
-          ? `<h4 class="section-label logged-label">Logged today</h4><ul class="logged-signals">${today.map((signal) => `<li><span aria-hidden="true">✓</span> ${e(signal.name)}${signal.todayCount > 1 ? ` <span class="muted">×${signal.todayCount}</span>` : ""}</li>`).join("")}</ul>`
-          : ""}
       </section>
+      ${dueTasks.length
+        ? `<section class="tasky-section due-tasks-section">
+        <h3 class="section-label">Due today</h3>
+        <ul class="due-tasks">
+          ${dueTasks.map((task) => `<li title="${e(task.title)}">${e(task.title)}</li>`).join("")}
+        </ul>
+        ${data.counts.dueToday > dueTasks.length ? `<p class="meta">+${data.counts.dueToday - dueTasks.length} more due today</p>` : ""}
+      </section>`
+        : ""}
       <section class="task-summary">
         <div class="section-heading">
           <h3 class="section-label">Tasks & inbox</h3>

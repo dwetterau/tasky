@@ -31,7 +31,7 @@ export async function projectHomepage(
   now: number,
 ): Promise<TaskyPayload> {
   const dates = calendar(now, timezone);
-  const [taskGroups, captures, signals, scorecards, todayEntries] =
+  const [taskGroups, dueTaskGroups, captures, signals, scorecards] =
     await Promise.all([
       Promise.all(
         statuses.map((status) =>
@@ -39,6 +39,19 @@ export async function projectHomepage(
             .query("tasks")
             .withIndex("by_user_status", (q) =>
               q.eq("userId", userId).eq("status", status),
+            )
+            .take(201),
+        ),
+      ),
+      Promise.all(
+        statuses.map((status) =>
+          ctx.db
+            .query("tasks")
+            .withIndex("by_user_status_due_date", (q) =>
+              q
+                .eq("userId", userId)
+                .eq("status", status)
+                .eq("dueDate", dates.localDate),
             )
             .take(201),
         ),
@@ -61,33 +74,20 @@ export async function projectHomepage(
           q.eq("userId", userId).eq("archivedAt", undefined),
         )
         .take(31),
-      ctx.db
-        .query("signalEntries")
-        .withIndex("by_user_effective_at", (q) =>
-          q
-            .eq("userId", userId)
-            .gte("effectiveAt", dates.day.startAt)
-            .lt("effectiveAt", Math.min(now + 1, dates.day.endAt)),
-        )
-        .order("desc")
-        .take(501),
     ]);
   let truncated =
     taskGroups.some((group) => group.length > 200) ||
+    dueTaskGroups.some((group) => group.length > 200) ||
     captures.length > 200 ||
     signals.length > 60 ||
-    scorecards.length > 30 ||
-    todayEntries.length > 500;
-  const tasks = taskGroups
+    scorecards.length > 30;
+  const activeTasks = taskGroups
     .flatMap((group) => group.slice(0, 200))
     .map((task) => ({
       ...task,
       dueDate: localDateSchema.safeParse(task.dueDate).data,
     }));
-  const todayCounts = new Map<string, number>();
-  for (const entry of todayEntries.slice(0, 500)) {
-    todayCounts.set(entry.signalId, (todayCounts.get(entry.signalId) ?? 0) + 1);
-  }
+  const dueTasks = dueTaskGroups.flatMap((group) => group.slice(0, 200));
   const evaluated = await Promise.all(
     signals.slice(0, 60).map(async (signal) => {
       const progress = await getActivityPeriodProgress(
@@ -191,27 +191,20 @@ export async function projectHomepage(
       ...cardEvaluation(card._id),
       ...(card.targetCount ? { target: card.targetCount } : {}),
     }));
-  const attentionRank = { due: 0, soon: 1, unknown: 2, ok: 3 };
-  const attention = evaluated
-    .filter((item) => item.evaluation.attention !== "ok")
+  const dueSignals = evaluated
+    .filter(
+      (item) =>
+        item.evaluation.attention === "due" && item.signal.name !== "Weight",
+    )
     .sort(
       (a, b) =>
-        attentionRank[a.evaluation.attention] -
-          attentionRank[b.evaluation.attention] ||
+        (a.evaluation.actionAt ?? Number.POSITIVE_INFINITY) -
+          (b.evaluation.actionAt ?? Number.POSITIVE_INFINITY) ||
         a.signal.name.localeCompare(b.signal.name),
     )
     .slice(0, 3);
-  const today = evaluated
-    .filter((item) => todayCounts.has(item.signal._id))
-    .sort((a, b) => a.signal.name.localeCompare(b.signal.name));
-  const selected = [
-    ...new Map(
-      [...attention, ...today].map((item) => [item.signal._id, item]),
-    ).values(),
-  ];
-  if (selected.length > LIMITS.signals) truncated = true;
   const tagIds = [
-    ...new Set(attention.flatMap(({ signal }) => signal.tagIds.slice(0, 3))),
+    ...new Set(dueSignals.flatMap(({ signal }) => signal.tagIds.slice(0, 3))),
   ];
   const tags = await Promise.all(tagIds.map((id) => ctx.db.get(id)));
   const tagNames = new Map(
@@ -221,24 +214,37 @@ export async function projectHomepage(
   );
   return taskyPayloadSchema.parse({
     localDate: dates.localDate,
-    tasks: [],
-    captures: [],
-    signals: selected
-      .slice(0, LIMITS.signals)
-      .map(({ signal, evaluation }) => ({
-        id: signal._id,
-        name: summary(signal.name),
-        kind: signal.model.kind,
-        attention: evaluation.attention,
-        reason: summary(evaluation.reason),
-        ratio: evaluation.ratio,
-        isComplete: evaluation.isComplete,
-        todayCount: todayCounts.get(signal._id) ?? 0,
-        labels: signal.tagIds.slice(0, 3).flatMap((id) => {
-          const name = tagNames.get(id);
-          return name ? [name] : [];
-        }),
+    tasks: dueTasks
+      .sort(
+        (a, b) =>
+          ({ urgent: 0, high: 1, medium: 2, low: 3, triage: 4 })[a.priority] -
+            ({ urgent: 0, high: 1, medium: 2, low: 3, triage: 4 })[b.priority] ||
+          a.content.localeCompare(b.content),
+      )
+      .slice(0, LIMITS.tasks)
+      .map((task) => ({
+        id: task._id,
+        title: summary(task.content),
+        status: task.status,
+        priority: task.priority,
+        dueDate: dates.localDate,
+        due: "today" as const,
+        labels: [],
       })),
+    captures: [],
+    signals: dueSignals.map(({ signal, evaluation }) => ({
+      id: signal._id,
+      name: summary(signal.name),
+      kind: signal.model.kind,
+      attention: evaluation.attention,
+      reason: summary(evaluation.reason),
+      ratio: evaluation.ratio,
+      isComplete: evaluation.isComplete,
+      labels: signal.tagIds.slice(0, 3).flatMap((id) => {
+        const name = tagNames.get(id);
+        return name ? [name] : [];
+      }),
+    })),
     scorecards: cardItems
       .sort(
         (a, b) =>
@@ -255,11 +261,11 @@ export async function projectHomepage(
         ...(card.target ? { target: card.target } : {}),
       })),
     counts: {
-      active: tasks.length,
-      overdue: tasks.filter(
+      active: activeTasks.length,
+      overdue: activeTasks.filter(
         (task) => task.dueDate && task.dueDate < dates.localDate,
       ).length,
-      dueToday: tasks.filter((task) => task.dueDate === dates.localDate).length,
+      dueToday: dueTasks.length,
       captures: Math.min(200, captures.length),
     },
     truncated,

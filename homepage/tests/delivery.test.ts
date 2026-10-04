@@ -61,7 +61,7 @@ describe("private delivery", () => {
     expect(html).toContain('action="/auth/renew" method="post"');
     expect(html).toContain("font: inherit");
   });
-  it("renders a personal daily edition without task details or duplicate headings", () => {
+  it("renders a personal daily edition with due task details and no duplicate headings", () => {
     const { feed } = fixtureEdition(
       "user-a",
       99,
@@ -75,7 +75,7 @@ describe("private delivery", () => {
     expect(html).toContain('data-revision="99"');
     expect(html).toContain("Generated <time");
     expect(html).toContain("A good week");
-    expect(html).not.toContain("Make space for the work");
+    expect(html).toContain("Make space for the work");
     expect(html).not.toContain("YOUR PRIVATE EDITION");
     expect(html).not.toContain("Outside your window");
     expect(html).not.toContain("Weather by AccuWeather");
