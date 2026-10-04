@@ -4,6 +4,11 @@ import {
   stravaPayloadSchema,
   type StravaPayload,
 } from "./widgets/strava";
+import {
+  RELEASES_SCHEMA_VERSION,
+  releasesPayloadSchema,
+  type ReleasesPayload,
+} from "./widgets/releases";
 
 export {
   formatStravaDistance,
@@ -17,8 +22,20 @@ export {
   type StravaActivity,
   type StravaPayload,
 } from "./widgets/strava";
+export {
+  formatReleaseDate,
+  getUpcomingReleases,
+  localDateAt,
+  RELEASES_MAX_ITEMS,
+  RELEASES_SCHEMA_VERSION,
+  releaseDateSchema,
+  releasesPayloadSchema,
+  upcomingReleaseSchema,
+  type ReleasesPayload,
+  type UpcomingRelease,
+} from "./widgets/releases";
 
-export const WIDGET_KINDS = ["briefing", "strava"] as const;
+export const WIDGET_KINDS = ["briefing", "strava", "releases"] as const;
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
 
 export const BRIEFING_SCHEMA_VERSION = 1 as const;
@@ -53,6 +70,12 @@ export const widgetDefinitions = {
     payloadSchema: stravaPayloadSchema,
     freshForMs: 30 * 60 * 60_000,
     maxAgeMs: 7 * 24 * 60 * 60_000,
+  },
+  releases: {
+    schemaVersion: RELEASES_SCHEMA_VERSION,
+    payloadSchema: releasesPayloadSchema,
+    freshForMs: 8 * 24 * 60 * 60_000,
+    maxAgeMs: 21 * 24 * 60 * 60_000,
   },
 } as const;
 
@@ -105,12 +128,35 @@ export const widgetDataInputSchema = z.discriminatedUnion("kind", [
         .optional(),
     })
     .strict(),
+  z
+    .object({
+      kind: z
+        .literal("releases")
+        .describe("Dated upcoming TV and movie releases."),
+      schemaVersion: z
+        .literal(RELEASES_SCHEMA_VERSION)
+        .describe("The payload schema version expected by clients."),
+      data: releasesPayloadSchema,
+      idempotencyKey: z
+        .string()
+        .trim()
+        .min(1, "idempotencyKey cannot be empty")
+        .max(160, "idempotencyKey cannot exceed 160 characters")
+        .describe(
+          "Optional retry key, for example releases:2026-10-04. Reusing it with different data is rejected.",
+        )
+        .optional(),
+    })
+    .strict(),
 ]);
 
 export type BriefingPayload = z.infer<typeof briefingPayloadSchema>;
 export type WidgetDataReadInput = z.infer<typeof widgetDataReadInputSchema>;
 export type WidgetDataInput = z.infer<typeof widgetDataInputSchema>;
-export type WidgetPayload = BriefingPayload | StravaPayload;
+export type WidgetPayload =
+  | BriefingPayload
+  | StravaPayload
+  | ReleasesPayload;
 
 export function parseWidgetData(
   kind: WidgetKind,

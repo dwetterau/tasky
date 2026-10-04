@@ -2,7 +2,11 @@ import type { FunctionReturnType } from "convex/server";
 import { type Href, useRouter } from "expo-router";
 import {
   briefingPayloadSchema,
+  formatReleaseDate,
+  getUpcomingReleases,
   getStravaActivityStats,
+  localDateAt,
+  releasesPayloadSchema,
   stravaPayloadSchema,
   type StravaActivity,
 } from "@tasky/home-feed/widgets";
@@ -207,6 +211,63 @@ function StravaCard() {
       <StravaActivityRow activity={strava.data.latestRun} />
       <View style={styles.stravaDivider} />
       <StravaActivityRow activity={strava.data.latestRide} />
+    </View>
+  );
+}
+
+function ReleasesCard() {
+  const taskyAuth = useTaskyAuth();
+  const now = useSignalClock();
+  const taskyEnabled =
+    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
+  const latest = useTaskyQuery(
+    taskyApi.widgetData.latest,
+    taskyEnabled ? { kind: "releases" } : "skip",
+  );
+  const releases = useMemo(() => {
+    if (!latest.data) return null;
+    try {
+      return releasesPayloadSchema.safeParse(JSON.parse(latest.data.dataJson));
+    } catch {
+      return null;
+    }
+  }, [latest.data]);
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const today = localDateAt(now, timezone);
+  const upcoming = releases?.success
+    ? getUpcomingReleases(releases.data, today)
+    : [];
+
+  if (!taskyEnabled || latest.isLoading || !releases?.success) return null;
+
+  return (
+    <View style={[sharedStyles.card, styles.releasesCard]}>
+      <CardHeader title="Upcoming releases" trailing={<View />} />
+      {upcoming.length === 0 ? (
+        <Text style={styles.releasesEmpty}>No dated releases ahead.</Text>
+      ) : (
+        <View>
+          {upcoming.map((release, index) => (
+            <View key={`${release.kind}:${release.title}:${release.releaseDate}`}>
+              {index > 0 ? <View style={styles.releaseDivider} /> : null}
+              <View style={styles.releaseRow}>
+                <Text style={styles.releaseKind}>
+                  {release.kind === "tv" ? "TV" : "FILM"}
+                </Text>
+                <View style={styles.releaseName}>
+                  <Text style={styles.releaseTitle}>{release.title}</Text>
+                  {release.detail ? (
+                    <Text style={styles.releaseDetail}>{release.detail}</Text>
+                  ) : null}
+                </View>
+                <Text style={styles.releaseDate}>
+                  {formatReleaseDate(release.releaseDate, today)}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -750,6 +811,7 @@ export default function HomePage() {
         <TaskyCard />
         <PortfolioCard />
         <StravaCard />
+        <ReleasesCard />
       </ScrollView>
       <FloatingSettingsButton />
     </View>
@@ -899,6 +961,51 @@ const styles = StyleSheet.create({
   },
   stravaDivider: {
     height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.separator,
+  },
+  releasesCard: {
+    paddingBottom: spacing.sm,
+  },
+  releasesEmpty: {
+    paddingVertical: spacing.md,
+    color: colors.secondaryLabel,
+    fontSize: fontSize.small,
+  },
+  releaseRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  releaseKind: {
+    width: 34,
+    color: colors.systemBlue,
+    fontSize: fontSize.micro,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  releaseName: {
+    flex: 1,
+    minWidth: 0,
+  },
+  releaseTitle: {
+    color: colors.label,
+    fontSize: fontSize.body,
+    fontWeight: "600",
+  },
+  releaseDetail: {
+    marginTop: spacing.xs,
+    color: colors.secondaryLabel,
+    fontSize: fontSize.caption,
+  },
+  releaseDate: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.caption,
+    fontVariant: ["tabular-nums"],
+  },
+  releaseDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 42,
     backgroundColor: colors.separator,
   },
   signalsCard: {

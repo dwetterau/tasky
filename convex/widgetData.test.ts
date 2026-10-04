@@ -121,11 +121,27 @@ describe("widget data", () => {
         },
       }),
     });
+    await t.mutation(internal.widgetData.publishFromMcp, {
+      userId: "user-a",
+      kind: "releases",
+      schemaVersion: 1,
+      dataJson: JSON.stringify({
+        asOf: "2026-10-04",
+        releases: [
+          {
+            kind: "tv",
+            title: "Blue Eye Samurai",
+            detail: "Season 2",
+            releaseDate: "2027-01",
+          },
+        ],
+      }),
+    });
 
     const projected = await t.run((ctx) =>
       projectLatestWidgets(ctx, "user-a", Date.now()),
     );
-    expect(projected).toHaveLength(1);
+    expect(projected).toHaveLength(2);
     expect(projected[0]).toMatchObject({
       id: "strava",
       schemaVersion: 1,
@@ -145,5 +161,22 @@ describe("widget data", () => {
       },
     });
     expect(() => moduleSchema.parse(projected[0])).not.toThrow();
+    expect(projected[1]).toMatchObject({
+      id: "releases",
+      schemaVersion: 1,
+      freshForMs: 8 * 24 * 60 * 60_000,
+      maxAgeMs: 21 * 24 * 60 * 60_000,
+      payload: {
+        asOf: "2026-10-04",
+        releases: [
+          {
+            kind: "tv",
+            title: "Blue Eye Samurai",
+            releaseDate: "2027-01",
+          },
+        ],
+      },
+    });
+    expect(() => moduleSchema.parse(projected[1])).not.toThrow();
   });
 });

@@ -298,6 +298,7 @@ authenticated user and kind. Registered contracts:
 
 - `briefing@1`: `{ data: { markdown: string } }`
 - `strava@1`: `{ data: { latestRun, latestRide } }`
+- `releases@1`: `{ data: { asOf, releases } }`
 
 Each Strava activity requires:
 
@@ -316,11 +317,45 @@ watts, and BPM; clients format miles, elevation in feet, run pace, and ride
 speed. Power is displayed only for rides, and optional stats are hidden when
 absent. Activity titles and raw Strava responses are not part of the contract.
 
+The upcoming-releases payload is:
+
+```json
+{
+  "kind": "releases",
+  "schemaVersion": 1,
+  "data": {
+    "asOf": "2026-10-04",
+    "releases": [
+      {
+        "kind": "tv",
+        "title": "Blue Eye Samurai",
+        "detail": "Season 2",
+        "releaseDate": "2027-01"
+      },
+      {
+        "kind": "movie",
+        "title": "The Deceased Empress' Treasure",
+        "releaseDate": "2026-12-11"
+      }
+    ]
+  },
+  "idempotencyKey": "releases:2026-10-04"
+}
+```
+
+`asOf` is the agent's collection date. Include at most 24 upcoming, dated
+entries. `kind` is `"tv"` or `"movie"`; `detail` is an optional season or
+installment label. `releaseDate` accepts an exact `YYYY-MM-DD` date or `YYYY-MM`
+when only the month is known. Exclude undated and catch-up entries. Clients
+filter expired entries against the viewer's local date, sort them soonest
+first, and render up to eight, so a weekly publication remains correct each
+day.
+
 An optional `idempotencyKey` deduplicates retries (for example,
-`briefing:2026-09-30:morning` or `strava:2026-10-04`) and cannot be reused with
-different data. The MCP input JSON Schema is generated from the same strict Zod
-schema used at write time, and validation errors include every failing field
-path.
+`briefing:2026-09-30:morning`, `strava:2026-10-04`, or
+`releases:2026-10-04`) and cannot be reused with different data. The MCP input
+JSON Schema is generated from the same strict Zod schema used at write time,
+and validation errors include every failing field path.
 
 ## Architectural Decisions and Trade-offs
 

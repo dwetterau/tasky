@@ -93,5 +93,6 @@ agents can read, update, or delete those history entries through MCP.
 Scorecards compose required and optional signals into a single completion
 ratio; `readScorecards` and `manageScorecard` use the same signal scopes.
 `readWidgetData` and `publishWidgetData` use one strongly validated payload
-union for all registered widget kinds. Briefing rows contain bounded Markdown;
-clients show the newest row for the authenticated user and kind.
+union for all registered widget kinds. Current kinds are `briefing`, `strava`,
+and `releases`; clients show the newest row for the authenticated user and
+kind.

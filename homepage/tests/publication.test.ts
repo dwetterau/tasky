@@ -219,6 +219,50 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Latest run");
     expect(edition!.html).toContain("View on Strava");
   });
+  it("publishes and renders upcoming releases from the generic widget pipeline", async () => {
+    await enroll();
+    const envelope = fixtureExport();
+    const now = Date.now();
+    envelope.widgets = [
+      {
+        id: "releases",
+        schemaVersion: 1,
+        scope: "user",
+        sourceRevision: 1,
+        sourceDataAt: now,
+        collectedAt: now,
+        freshForMs: 8 * 24 * 60 * 60_000,
+        maxAgeMs: 21 * 24 * 60 * 60_000,
+        status: "available",
+        payload: {
+          asOf: "2026-10-04",
+          releases: [
+            {
+              kind: "movie",
+              title: "The Deceased Empress' Treasure",
+              releaseDate: "2026-12-11",
+            },
+            {
+              kind: "tv",
+              title: "Blue Eye Samurai",
+              detail: "Season 2",
+              releaseDate: "2027-01",
+            },
+          ],
+        },
+      },
+    ];
+
+    expect((await send(envelope)).status).toBe(202);
+    await tick();
+    const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(edition!.feed.modules.at(-1)?.id).toBe("releases");
+    expect(edition!.html).toContain(
+      'class="module module-supporting module-releases"',
+    );
+    expect(edition!.html).toContain("Upcoming releases");
+    expect(edition!.html).toContain("Blue Eye Samurai");
+  });
   it("publishes the saved portfolio alongside Tasky in the same user-scoped edition", async () => {
     await enroll();
     const envelope = fixtureExport();
