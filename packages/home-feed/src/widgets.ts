@@ -1,6 +1,22 @@
 import { z } from "zod";
+import {
+  STRAVA_SCHEMA_VERSION,
+  stravaPayloadSchema,
+  type StravaPayload,
+} from "./widgets/strava";
 
-export const WIDGET_KINDS = ["briefing"] as const;
+export {
+  formatStravaDistance,
+  formatStravaDuration,
+  formatStravaPace,
+  STRAVA_SCHEMA_VERSION,
+  stravaActivitySchema,
+  stravaPayloadSchema,
+  type StravaActivity,
+  type StravaPayload,
+} from "./widgets/strava";
+
+export const WIDGET_KINDS = ["briefing", "strava"] as const;
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
 
 export const BRIEFING_SCHEMA_VERSION = 1 as const;
@@ -22,6 +38,21 @@ export const briefingPayloadSchema = z
       ),
   })
   .strict();
+
+export const widgetDefinitions = {
+  briefing: {
+    schemaVersion: BRIEFING_SCHEMA_VERSION,
+    payloadSchema: briefingPayloadSchema,
+    freshForMs: 18 * 60 * 60_000,
+    maxAgeMs: 7 * 24 * 60 * 60_000,
+  },
+  strava: {
+    schemaVersion: STRAVA_SCHEMA_VERSION,
+    payloadSchema: stravaPayloadSchema,
+    freshForMs: 30 * 60 * 60_000,
+    maxAgeMs: 7 * 24 * 60 * 60_000,
+  },
+} as const;
 
 export const widgetDataReadInputSchema = z
   .object({
@@ -52,24 +83,43 @@ export const widgetDataInputSchema = z.discriminatedUnion("kind", [
         .optional(),
     })
     .strict(),
+  z
+    .object({
+      kind: z
+        .literal("strava")
+        .describe("The latest Strava activities widget."),
+      schemaVersion: z
+        .literal(STRAVA_SCHEMA_VERSION)
+        .describe("The payload schema version expected by clients."),
+      data: stravaPayloadSchema,
+      idempotencyKey: z
+        .string()
+        .trim()
+        .min(1, "idempotencyKey cannot be empty")
+        .max(160, "idempotencyKey cannot exceed 160 characters")
+        .describe(
+          "Optional retry key, for example strava:2026-10-04. Reusing it with different data is rejected.",
+        )
+        .optional(),
+    })
+    .strict(),
 ]);
 
 export type BriefingPayload = z.infer<typeof briefingPayloadSchema>;
 export type WidgetDataReadInput = z.infer<typeof widgetDataReadInputSchema>;
 export type WidgetDataInput = z.infer<typeof widgetDataInputSchema>;
+export type WidgetPayload = BriefingPayload | StravaPayload;
 
 export function parseWidgetData(
   kind: WidgetKind,
   schemaVersion: number,
   data: unknown,
-): BriefingPayload {
-  if (kind !== "briefing") {
-    throw new Error(`Unsupported widget kind: ${kind}`);
-  }
-  if (schemaVersion !== BRIEFING_SCHEMA_VERSION) {
+): WidgetPayload {
+  const definition = widgetDefinitions[kind];
+  if (schemaVersion !== definition.schemaVersion) {
     throw new Error(
-      `Unsupported briefing schemaVersion: ${schemaVersion}. Expected ${BRIEFING_SCHEMA_VERSION}.`,
+      `Unsupported ${kind} schemaVersion: ${schemaVersion}. Expected ${definition.schemaVersion}.`,
     );
   }
-  return briefingPayloadSchema.parse(data);
+  return definition.payloadSchema.parse(data);
 }

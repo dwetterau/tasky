@@ -4,6 +4,7 @@ import { taskyModule } from "./tasky";
 import { weatherModule } from "./weather";
 import { portfolioModule } from "./portfolio";
 import { briefingModule } from "./briefing";
+import { stravaModule } from "./strava";
 
 // Add a module here, a versioned payload schema to home-feed, and a trusted
 // collector/ingestor. The publisher and HTTP read path need no provider logic.
@@ -12,7 +13,23 @@ export const modules: readonly HomeModule<unknown>[] = [
   briefingModule,
   weatherModule,
   portfolioModule,
+  stravaModule,
 ] as HomeModule<unknown>[];
+const moduleOrder = new Map(
+  modules.map((module, index) => [module.id, index]),
+);
+
+export function compareModules(
+  a: Pick<ModuleSnapshot, "id">,
+  b: Pick<ModuleSnapshot, "id">,
+) {
+  return (
+    (moduleOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+      (moduleOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
+    a.id.localeCompare(b.id)
+  );
+}
+
 export function moduleFor(id: string) {
   const module = modules.find((candidate) => candidate.id === id);
   if (!module) throw new Error("Unregistered module");

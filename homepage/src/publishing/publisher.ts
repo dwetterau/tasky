@@ -17,7 +17,7 @@ import { taskyService } from "../ingestion/tasky-service";
 import { ingestTasky, taskyModule } from "../modules/tasky";
 import { weatherModule } from "../modules/weather";
 import { missingModule } from "../modules/contract";
-import { validateModule } from "../modules/registry";
+import { compareModules, validateModule } from "../modules/registry";
 import { renderEdition } from "../rendering/page";
 
 export type Enrollment = {
@@ -113,6 +113,15 @@ export class UserPublisher extends DurableObject<Env> {
             return Response.json({ accepted: true, older: true });
           if (envelope.sourceRevision === state.sourceRevision)
             throw new HttpError(409, "Conflicting revision");
+          const incomingWidgets = [
+            ...new Map(
+              [
+                ...(envelope.briefing ? [envelope.briefing] : []),
+                ...(envelope.widgets ?? []),
+              ].map((widget) => [widget.id, widget] as const),
+            ).values(),
+          ];
+          const widgetIds = new Set(incomingWidgets.map((widget) => widget.id));
           const receipt = {
             hash,
             exportId: envelope.exportId,
@@ -122,11 +131,11 @@ export class UserPublisher extends DurableObject<Env> {
             ...state.modules.filter(
               (m) =>
                 m.id !== "tasky" &&
-                (!envelope.briefing || m.id !== "briefing") &&
+                !widgetIds.has(m.id) &&
                 (!envelope.portfolio || m.id !== "portfolio"),
             ),
             ingestTasky(envelope),
-            ...(envelope.briefing ? [validateModule(envelope.briefing)] : []),
+            ...incomingWidgets.map(validateModule),
             ...(envelope.portfolio ? [validateModule(envelope.portfolio)] : []),
           ];
           state.sourceRevision = envelope.sourceRevision;
@@ -271,13 +280,7 @@ export class UserPublisher extends DurableObject<Env> {
           displayName: state.displayName,
           revision: state.editionRevision + 1,
           publishedAt: now,
-          modules: [...state.modules].sort((a, b) =>
-            a.id === "tasky"
-              ? -1
-              : b.id === "tasky"
-                ? 1
-                : a.id.localeCompare(b.id),
-          ),
+          modules: [...state.modules].sort(compareModules),
         });
         const edition = editionSchema.parse({
           schemaVersion: 1,

@@ -25,6 +25,30 @@ function scopes(...values: string[]): ParsedMcpScopes {
   return { scopes: new Set(values) };
 }
 
+const stravaData = {
+  latestRun: {
+    sport: "run" as const,
+    activityUrl: "https://www.strava.com/activities/00000000001",
+    startedAt: "2020-01-02T12:00:00Z",
+    distanceMeters: 5000,
+    movingTimeSeconds: 1500,
+    elapsedTimeSeconds: 1600,
+    averageSpeedMetersPerSecond: 3.333,
+    averageHeartRateBpm: 150,
+  },
+  latestRide: {
+    sport: "ride" as const,
+    activityUrl: "https://www.strava.com/activities/00000000002",
+    startedAt: "2020-01-01T12:00:00Z",
+    distanceMeters: 30000,
+    movingTimeSeconds: 6000,
+    elapsedTimeSeconds: 6300,
+    averageSpeedMetersPerSecond: 5,
+    averagePowerWatts: 100,
+    averageHeartRateBpm: 130,
+  },
+};
+
 function makeHandler() {
   const read = vi.fn<WidgetExecutors["read"]>(async () => ({
     id: "widget-data-1" as never,
@@ -61,6 +85,13 @@ describe("widget MCP tool", () => {
         {
           properties: {
             kind: { const: "briefing" },
+            schemaVersion: { const: 1 },
+          },
+          additionalProperties: false,
+        },
+        {
+          properties: {
+            kind: { const: "strava" },
             schemaVersion: { const: 1 },
           },
           additionalProperties: false,
@@ -128,14 +159,37 @@ describe("widget MCP tool", () => {
     expect(body.error?.code).toBe(-32602);
     expect(body.error?.message).toContain("data.markdown");
     expect(body.error?.message).toContain("arguments");
-    expect(body.error?.message).toContain("Expected briefing@1 shape");
+    expect(body.error?.message).toContain("briefing@1, strava@1");
     expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("publishes normalized Strava activity summaries", async () => {
+    const { handlers, publish } = makeHandler();
+    const response = await handlers.publishWidgetData(
+      4,
+      "user-1",
+      scopes(WIDGETS_WRITE_SCOPE),
+      {
+        kind: "strava",
+        schemaVersion: 1,
+        data: stravaData,
+        idempotencyKey: "strava:2026-10-04",
+      },
+    );
+    expect((await responseBody(response)).error).toBeUndefined();
+    expect(publish).toHaveBeenCalledWith({
+      userId: "user-1",
+      kind: "strava",
+      schemaVersion: 1,
+      dataJson: JSON.stringify(stravaData),
+      idempotencyKey: "strava:2026-10-04",
+    });
   });
 
   it("requires widgets:read and returns parsed latest data", async () => {
     const { handlers, read } = makeHandler();
     const denied = await handlers.readWidgetData(
-      4,
+      5,
       "user-1",
       scopes(WIDGETS_WRITE_SCOPE),
       { kind: "briefing" },
@@ -147,7 +201,7 @@ describe("widget MCP tool", () => {
     expect(read).not.toHaveBeenCalled();
 
     const response = await handlers.readWidgetData(
-      5,
+      6,
       "user-1",
       scopes(WIDGETS_READ_SCOPE),
       { kind: "briefing" },

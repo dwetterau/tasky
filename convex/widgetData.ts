@@ -10,8 +10,10 @@ import { internal } from "./_generated/api";
 import { getAuthUserId } from "./auth";
 import { widgetKind } from "./schema";
 import {
-  briefingPayloadSchema,
+  parseWidgetData,
   WIDGET_DATA_MAX_BYTES,
+  WIDGET_KINDS,
+  widgetDefinitions,
   widgetDataInputSchema,
   type ModuleSnapshot,
   type WidgetKind,
@@ -42,26 +44,47 @@ export async function getLatestWidgetData(
     .first();
 }
 
-export async function projectLatestBriefing(
+export async function projectLatestWidget(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   userId: string,
   now: number,
+  kind: WidgetKind,
 ): Promise<ModuleSnapshot | undefined> {
-  const row = await getLatestWidgetData(ctx, userId, "briefing");
+  const row = await getLatestWidgetData(ctx, userId, kind);
   if (!row) return undefined;
-  const payload = briefingPayloadSchema.parse(JSON.parse(row.dataJson));
+  const definition = widgetDefinitions[kind];
+  const payload = parseWidgetData(
+    kind,
+    row.schemaVersion,
+    JSON.parse(row.dataJson),
+  );
   return {
-    id: "briefing",
+    id: kind,
     schemaVersion: 1,
     scope: "user",
     sourceRevision: Math.max(1, Math.floor(row._creationTime)),
     sourceDataAt: Math.floor(row._creationTime),
     collectedAt: now,
-    freshForMs: 18 * 60 * 60_000,
-    maxAgeMs: 7 * 24 * 60 * 60_000,
+    freshForMs: definition.freshForMs,
+    maxAgeMs: definition.maxAgeMs,
     status: "available",
     payload,
   };
+}
+
+export async function projectLatestWidgets(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  userId: string,
+  now: number,
+): Promise<ModuleSnapshot[]> {
+  const widgets = await Promise.all(
+    WIDGET_KINDS.map((kind) =>
+      projectLatestWidget(ctx, userId, now, kind),
+    ),
+  );
+  return widgets.filter(
+    (widget): widget is ModuleSnapshot => widget !== undefined,
+  );
 }
 
 export const latest = query({
