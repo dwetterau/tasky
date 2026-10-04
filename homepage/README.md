@@ -75,6 +75,24 @@ Publishing requests a fresh homepage export; the generic widget snapshot list
 lets new registered kinds reuse the same delivery machinery. Mobile reads each
 latest row reactively.
 
+### Adding another widget
+
+1. Add its strict, versioned Zod payload under
+   `packages/home-feed/src/widgets/`, then register it in `widgets.ts`
+   (`WIDGET_KINDS`, `widgetDefinitions`, and `widgetDataInputSchema`).
+2. Add the same kind literal to `widgetKind` in `convex/schema.ts`.
+3. Add a trusted web renderer under `homepage/src/modules/` and register it in
+   `modules/registry.ts`; registry order is display order.
+4. Add the mobile card, reading `widgetData.latest` for the new kind.
+5. Extend the MCP, projection, renderer, and publication tests, and document
+   the agent payload in `MCP.md`.
+
+Storage, MCP dispatch, homepage export, and publication are generic and should
+not need kind-specific changes. Pushes to `main` deploy Convex through Vercel
+and the homepage Worker through its GitHub workflow. Deployment does not seed
+data: an agent must publish the first row. Reconnect MCP clients that cached the
+older tool schema.
+
 ## Portfolio
 
 The export reuses Tasky's configured Airtable Positions views and shared
