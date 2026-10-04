@@ -108,6 +108,16 @@ button {
 .module {
   min-width: 0;
 }
+@media (min-width: 961px) {
+  .module-portfolio {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .module-strava {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
 .module-header {
   border-bottom: 1px solid var(--rule);
   padding-bottom: 10px;
@@ -893,7 +903,7 @@ export function renderEdition(
             ? "Outdated"
             : snapshot.status;
       return /* HTML */ `<section
-        class="module module-${module.placement}"
+        class="module module-${module.placement} module-${e(module.id)}"
         aria-label="${e(module.title)}"
       >
         <div class="module-header">

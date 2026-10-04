@@ -156,6 +156,11 @@ describe("durable ingestion and publication", () => {
     expect(
       edition!.feed.modules.find((module) => module.id === "briefing")!.payload,
     ).toMatchObject({ markdown: expect.stringContaining("Morning briefing") });
+    expect(edition!.feed.modules.map((module) => module.id)).toEqual([
+      "weather",
+      "briefing",
+      "tasky",
+    ]);
     expect(edition!.html).toContain("<h1>Morning briefing</h1>");
     expect(edition!.html).toContain("<li>Review the launch plan</li>");
     expect(edition!.html).toContain(
@@ -206,6 +211,9 @@ describe("durable ingestion and publication", () => {
     await tick();
     const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
     expect(edition!.feed.modules.at(-1)?.id).toBe("strava");
+    expect(edition!.html).toContain(
+      'class="module module-supporting module-strava"',
+    );
     expect(edition!.html).toContain("Latest run");
     expect(edition!.html).toContain("View on Strava");
   });
@@ -302,6 +310,9 @@ describe("durable ingestion and publication", () => {
     expect(
       edition!.feed.modules.find((m) => m.id === "portfolio")!.payload,
     ).toMatchObject({ totalValue: 1250 });
+    expect(edition!.html).toContain(
+      'class="module module-supporting module-portfolio"',
+    );
     expect(edition!.html).toContain("$1,250");
     expect(edition!.html).not.toContain("Unrealized return");
     expect(edition!.html).toContain('action="/api/sync-prices"');
