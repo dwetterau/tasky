@@ -309,10 +309,12 @@ Each Strava activity requires:
 - `averageSpeedMetersPerSecond`: Strava `average_speed`
 
 It can also include `elapsedTimeSeconds` from `elapsed_time`,
+`totalElevationGainMeters` from `total_elevation_gain`,
 `averagePowerWatts` from `average_watts`, and `averageHeartRateBpm` from
 `average_heartrate`. Keep source values in meters, seconds, meters per second,
-watts, and BPM; clients format miles, run pace, and ride speed. Activity titles
-and raw Strava responses are not part of the contract.
+watts, and BPM; clients format miles, elevation in feet, run pace, and ride
+speed. Power is displayed only for rides, and optional stats are hidden when
+absent. Activity titles and raw Strava responses are not part of the contract.
 
 An optional `idempotencyKey` deduplicates retries (for example,
 `briefing:2026-09-30:morning` or `strava:2026-10-04`) and cannot be reused with

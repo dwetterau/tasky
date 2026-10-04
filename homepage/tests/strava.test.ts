@@ -22,6 +22,7 @@ describe("Strava homepage module", () => {
           activityUrl: "https://www.strava.com/activities/00000000001",
           startedAt: "2020-01-02T12:00:00Z",
           distanceMeters: 5000,
+          totalElevationGainMeters: 10,
           movingTimeSeconds: 1500,
           elapsedTimeSeconds: 1600,
           averageSpeedMetersPerSecond: 3.333,
@@ -32,6 +33,7 @@ describe("Strava homepage module", () => {
           activityUrl: "https://www.strava.com/activities/00000000002",
           startedAt: "2020-01-01T12:00:00Z",
           distanceMeters: 30000,
+          totalElevationGainMeters: 200,
           movingTimeSeconds: 6000,
           elapsedTimeSeconds: 6300,
           averageSpeedMetersPerSecond: 5,
@@ -54,7 +56,10 @@ describe("Strava homepage module", () => {
     expect(html).toContain("18.6 mi");
     expect(html).toContain("1h 40m");
     expect(html).toContain("100 W");
+    expect(html.match(/Avg power/g)).toHaveLength(1);
     expect(html).toContain("11.2 mph");
+    expect(html).toContain("33 ft");
+    expect(html).toContain("656 ft");
     expect(html).toContain("150 bpm");
     expect(html).toContain("130 bpm");
     expect(html).toContain(

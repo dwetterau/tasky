@@ -31,6 +31,7 @@ const stravaData = {
     activityUrl: "https://www.strava.com/activities/00000000001",
     startedAt: "2020-01-02T12:00:00Z",
     distanceMeters: 5000,
+    totalElevationGainMeters: 10,
     movingTimeSeconds: 1500,
     elapsedTimeSeconds: 1600,
     averageSpeedMetersPerSecond: 3.333,
@@ -41,6 +42,7 @@ const stravaData = {
     activityUrl: "https://www.strava.com/activities/00000000002",
     startedAt: "2020-01-01T12:00:00Z",
     distanceMeters: 30000,
+    totalElevationGainMeters: 200,
     movingTimeSeconds: 6000,
     elapsedTimeSeconds: 6300,
     averageSpeedMetersPerSecond: 5,
@@ -181,15 +183,42 @@ describe("widget MCP tool", () => {
       userId: "user-1",
       kind: "strava",
       schemaVersion: 1,
-      dataJson: JSON.stringify(stravaData),
+      dataJson: expect.any(String),
       idempotencyKey: "strava:2026-10-04",
     });
+    expect(JSON.parse(publish.mock.calls[0]![0].dataJson)).toEqual(
+      stravaData,
+    );
+  });
+
+  it("rejects average power on runs", async () => {
+    const { handlers, publish } = makeHandler();
+    const response = await handlers.publishWidgetData(
+      5,
+      "user-1",
+      scopes(WIDGETS_WRITE_SCOPE),
+      {
+        kind: "strava",
+        schemaVersion: 1,
+        data: {
+          ...stravaData,
+          latestRun: {
+            ...stravaData.latestRun,
+            averagePowerWatts: 250,
+          },
+        },
+      },
+    );
+    const body = await responseBody(response);
+    expect(body.error?.code).toBe(-32602);
+    expect(body.error?.message).toContain("averagePowerWatts");
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("requires widgets:read and returns parsed latest data", async () => {
     const { handlers, read } = makeHandler();
     const denied = await handlers.readWidgetData(
-      5,
+      6,
       "user-1",
       scopes(WIDGETS_WRITE_SCOPE),
       { kind: "briefing" },
@@ -201,7 +230,7 @@ describe("widget MCP tool", () => {
     expect(read).not.toHaveBeenCalled();
 
     const response = await handlers.readWidgetData(
-      6,
+      7,
       "user-1",
       scopes(WIDGETS_READ_SCOPE),
       { kind: "briefing" },

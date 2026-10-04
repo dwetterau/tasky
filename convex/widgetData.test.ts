@@ -103,6 +103,7 @@ describe("widget data", () => {
           activityUrl: "https://www.strava.com/activities/00000000001",
           startedAt: "2020-01-02T12:00:00Z",
           distanceMeters: 5000,
+          totalElevationGainMeters: 10,
           movingTimeSeconds: 1500,
           averageSpeedMetersPerSecond: 3.333,
           averageHeartRateBpm: 150,
@@ -112,6 +113,7 @@ describe("widget data", () => {
           activityUrl: "https://www.strava.com/activities/00000000002",
           startedAt: "2020-01-01T12:00:00Z",
           distanceMeters: 30000,
+          totalElevationGainMeters: 200,
           movingTimeSeconds: 6000,
           averageSpeedMetersPerSecond: 5,
           averagePowerWatts: 100,
@@ -130,7 +132,11 @@ describe("widget data", () => {
       freshForMs: 30 * 60 * 60_000,
       maxAgeMs: 7 * 24 * 60 * 60_000,
       payload: {
-        latestRun: { sport: "run", distanceMeters: 5000 },
+        latestRun: {
+          sport: "run",
+          distanceMeters: 5000,
+          totalElevationGainMeters: 10,
+        },
         latestRide: {
           sport: "ride",
           averagePowerWatts: 100,
