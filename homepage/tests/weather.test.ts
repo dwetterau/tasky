@@ -228,7 +228,7 @@ it("shows real feel and humidity in one compact line when available", () => {
 
   const html = renderEdition(edition.feed, env.TASKY_ORIGIN);
   expect(html).toContain(
-    '<p class="current-details">Feels 75°F · Humidity 61%</p>',
+    '<p class="current-details" aria-label="Feels like 75 degrees Fahrenheit; Relative humidity 61 percent">Feels 75° · 61% RH</p>',
   );
 });
 it("counts attempts in a rolling 24-hour window across restarts and location changes", async () => {

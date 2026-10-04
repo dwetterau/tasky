@@ -65,17 +65,24 @@ function renderCurrentDetails(
   current: NonNullable<WeatherPayload["current"]>,
   units: WeatherPayload["units"],
 ) {
-  const details = [
-    current.realFeelTemperature == null
-      ? null
-      : `Feels ${Math.round(current.realFeelTemperature)}°${units}`,
-    current.relativeHumidity == null
-      ? null
-      : `Humidity ${Math.round(current.relativeHumidity)}%`,
-  ].filter((detail): detail is string => detail !== null);
+  const details: Array<{ visible: string; accessible: string }> = [];
+  if (current.realFeelTemperature != null) {
+    const temperature = Math.round(current.realFeelTemperature);
+    details.push({
+      visible: `Feels ${temperature}°`,
+      accessible: `Feels like ${temperature} degrees ${units === "F" ? "Fahrenheit" : "Celsius"}`,
+    });
+  }
+  if (current.relativeHumidity != null) {
+    const humidity = Math.round(current.relativeHumidity);
+    details.push({
+      visible: `${humidity}% RH`,
+      accessible: `Relative humidity ${humidity} percent`,
+    });
+  }
 
   return details.length
-    ? `<p class="current-details">${details.map(e).join(" · ")}</p>`
+    ? `<p class="current-details" aria-label="${e(details.map((detail) => detail.accessible).join("; "))}">${details.map((detail) => e(detail.visible)).join(" · ")}</p>`
     : "";
 }
 
