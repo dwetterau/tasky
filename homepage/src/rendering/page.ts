@@ -292,6 +292,82 @@ p {
   font-size: 15px;
   font-weight: 600;
 }
+.recurring-expenses {
+  display: grid;
+  gap: 22px;
+}
+.recurring-expenses .section-label {
+  margin-bottom: 4px;
+}
+.expense-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.expense-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.expense-list li:last-child {
+  border-bottom: 0;
+}
+.expense-name {
+  display: grid;
+  min-width: 0;
+}
+.expense-name strong {
+  overflow-wrap: anywhere;
+}
+.expense-name span,
+.expense-amount small,
+.expense-list time {
+  color: var(--muted);
+  font-size: 10px;
+}
+.expense-amount {
+  display: grid;
+  justify-items: end;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.expense-amount small {
+  font-weight: 400;
+}
+.expense-list time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.expense-category-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+  margin: 10px 0 0;
+}
+.expense-category-totals div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--rule);
+}
+.expense-category-totals dt {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+}
+.expense-category-totals dd {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .release-list {
   list-style: none;
   margin: 0;

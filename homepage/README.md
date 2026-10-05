@@ -62,13 +62,16 @@ increments per publication so automatic updates work throughout the day.
 
 MCP agents publish strongly validated, immutable widget rows to Convex. The
 registered kinds are `briefing@1` (bounded Markdown), `strava@1` (normalized
-latest-run and latest-ride summaries), and `releases@1` (dated upcoming TV and
-movie releases). Strava stores source units and links;
+latest-run and latest-ride summaries), `releases@1` (dated upcoming TV and
+movie releases), and `recurring-expenses@1` (payments due within seven days and
+monthly totals by category). Strava stores source units and links;
 web and mobile format distance, moving time, run pace or ride speed, optional
 elevation gain, ride power, and average heart rate. Optional stats are hidden
 when absent. Activity titles and raw provider responses are intentionally
 excluded. Releases may be published weekly: clients filter expired entries
 against the viewer's current local date whenever they render.
+Recurring expenses use the same render-time filtering window. Their housing
+category total remains in the payload but is currently hidden from both clients.
 
 Convex generates each row ID. An optional retry idempotency key prevents
 duplicate publication. The `widgetData.by_user_kind` index implicitly orders

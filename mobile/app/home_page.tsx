@@ -2,10 +2,16 @@ import type { FunctionReturnType } from "convex/server";
 import { type Href, useRouter } from "expo-router";
 import {
   briefingPayloadSchema,
+  formatRecurringExpenseAmount,
+  formatRecurringExpenseDate,
+  formatRecurringExpenseMonth,
   formatReleaseDate,
+  getUpcomingRecurringExpenses,
   getUpcomingReleases,
   getStravaActivityStats,
+  getVisibleRecurringExpenseCategoryTotals,
   localDateAt,
+  recurringExpensesPayloadSchema,
   releasesPayloadSchema,
   stravaPayloadSchema,
   type StravaActivity,
@@ -268,6 +274,118 @@ function ReleasesCard() {
           ))}
         </View>
       )}
+    </View>
+  );
+}
+
+function RecurringExpensesCard() {
+  const taskyAuth = useTaskyAuth();
+  const now = useSignalClock();
+  const taskyEnabled =
+    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
+  const latest = useTaskyQuery(
+    taskyApi.widgetData.latest,
+    taskyEnabled ? { kind: "recurring-expenses" } : "skip",
+  );
+  const recurringExpenses = useMemo(() => {
+    if (!latest.data) return null;
+    try {
+      return recurringExpensesPayloadSchema.safeParse(
+        JSON.parse(latest.data.dataJson),
+      );
+    } catch {
+      return null;
+    }
+  }, [latest.data]);
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const today = localDateAt(now, timezone);
+  const upcoming = recurringExpenses?.success
+    ? getUpcomingRecurringExpenses(recurringExpenses.data, today)
+    : [];
+  const categoryTotals = recurringExpenses?.success
+    ? getVisibleRecurringExpenseCategoryTotals(recurringExpenses.data)
+    : [];
+
+  if (
+    !taskyEnabled ||
+    latest.isLoading ||
+    !recurringExpenses?.success
+  ) {
+    return null;
+  }
+
+  return (
+    <View style={[sharedStyles.card, styles.recurringExpensesCard]}>
+      <CardHeader title="Recurring expenses" trailing={<View />} />
+      <View style={styles.expenseSection}>
+        <Text style={styles.expenseSectionTitle}>DUE IN THE NEXT WEEK</Text>
+        {upcoming.length === 0 ? (
+          <Text style={styles.expenseEmpty}>
+            No recurring payments due in the next week.
+          </Text>
+        ) : (
+          <View>
+            {upcoming.map((expense, index) => (
+              <View
+                key={`${expense.name}:${expense.nextPaymentDate}`}
+                style={[
+                  styles.expenseRow,
+                  index > 0 && styles.expenseRowBorder,
+                ]}
+              >
+                <View style={styles.expenseName}>
+                  <Text style={styles.expenseTitle}>{expense.name}</Text>
+                  <Text style={styles.expenseCategory}>
+                    {expense.category}
+                  </Text>
+                </View>
+                <View style={styles.expenseAmount}>
+                  <Text style={styles.expenseAmountValue}>
+                    {formatRecurringExpenseAmount(
+                      expense.monthlyAmount,
+                      recurringExpenses.data.currency,
+                    )}
+                  </Text>
+                  <Text style={styles.expenseAmountLabel}>monthly</Text>
+                </View>
+                <Text style={styles.expenseDate}>
+                  {formatRecurringExpenseDate(
+                    expense.nextPaymentDate,
+                    today,
+                  )}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+      <View style={styles.expenseSection}>
+        <Text style={styles.expenseSectionTitle}>
+          {formatRecurringExpenseMonth(
+            recurringExpenses.data.monthlyTotals.month,
+          ).toUpperCase()}{" "}
+          BY CATEGORY
+        </Text>
+        {categoryTotals.length === 0 ? (
+          <Text style={styles.expenseEmpty}>No category totals to show.</Text>
+        ) : (
+          <View style={styles.expenseTotals}>
+            {categoryTotals.map((total) => (
+              <View key={total.category} style={styles.expenseTotal}>
+                <Text style={styles.expenseTotalCategory} numberOfLines={1}>
+                  {total.category}
+                </Text>
+                <Text style={styles.expenseTotalAmount}>
+                  {formatRecurringExpenseAmount(
+                    total.totalMonthlyAmount,
+                    recurringExpenses.data.currency,
+                  )}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -810,6 +928,7 @@ export default function HomePage() {
         <SignalsCard />
         <TaskyCard />
         <PortfolioCard />
+        <RecurringExpensesCard />
         <StravaCard />
         <ReleasesCard />
       </ScrollView>
@@ -1007,6 +1126,91 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     marginLeft: 42,
     backgroundColor: colors.separator,
+  },
+  recurringExpensesCard: {
+    paddingBottom: spacing.lg,
+    gap: spacing.lg,
+  },
+  expenseSection: {
+    gap: spacing.xs,
+  },
+  expenseSectionTitle: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.micro,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  expenseEmpty: {
+    paddingVertical: spacing.md,
+    color: colors.secondaryLabel,
+    fontSize: fontSize.small,
+  },
+  expenseRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  expenseRowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
+  },
+  expenseName: {
+    flex: 1,
+    minWidth: 0,
+  },
+  expenseTitle: {
+    color: colors.label,
+    fontSize: fontSize.body,
+    fontWeight: "600",
+  },
+  expenseCategory: {
+    marginTop: spacing.xs,
+    color: colors.secondaryLabel,
+    fontSize: fontSize.caption,
+  },
+  expenseAmount: {
+    alignItems: "flex-end",
+  },
+  expenseAmountValue: {
+    color: colors.label,
+    fontSize: fontSize.small,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
+  expenseAmountLabel: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.micro,
+  },
+  expenseDate: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.caption,
+    fontVariant: ["tabular-nums"],
+  },
+  expenseTotals: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    columnGap: spacing.lg,
+  },
+  expenseTotal: {
+    width: "46%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  expenseTotalCategory: {
+    flex: 1,
+    color: colors.secondaryLabel,
+    fontSize: fontSize.caption,
+  },
+  expenseTotalAmount: {
+    color: colors.label,
+    fontSize: fontSize.caption,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
   },
   signalsCard: {
     paddingBottom: spacing.sm,

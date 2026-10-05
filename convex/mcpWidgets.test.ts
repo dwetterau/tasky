@@ -105,6 +105,13 @@ describe("widget MCP tool", () => {
           },
           additionalProperties: false,
         },
+        {
+          properties: {
+            kind: { const: "recurring-expenses" },
+            schemaVersion: { const: 1 },
+          },
+          additionalProperties: false,
+        },
       ],
     });
   });
@@ -169,7 +176,7 @@ describe("widget MCP tool", () => {
     expect(body.error?.message).toContain("data.markdown");
     expect(body.error?.message).toContain("arguments");
     expect(body.error?.message).toContain(
-      "briefing@1, strava@1, releases@1",
+      "briefing@1, strava@1, releases@1, recurring-expenses@1",
     );
     expect(publish).not.toHaveBeenCalled();
   });
@@ -260,6 +267,48 @@ describe("widget MCP tool", () => {
       schemaVersion: 1,
       dataJson: JSON.stringify(data),
       idempotencyKey: "releases:2026-10-04",
+    });
+  });
+
+  it("publishes normalized recurring expenses and category totals", async () => {
+    const { handlers, publish } = makeHandler();
+    const data = {
+      asOf: "2026-10-04",
+      currency: "USD" as const,
+      upcomingExpenses: [
+        {
+          name: "Cloud storage",
+          monthlyAmount: 2.99,
+          category: "Software",
+          nextPaymentDate: "2026-10-05",
+        },
+      ],
+      monthlyTotals: {
+        month: "2026-10",
+        byCategory: [
+          { category: "Housing", totalMonthlyAmount: 3200 },
+          { category: "Software", totalMonthlyAmount: 42.98 },
+        ],
+      },
+    };
+    const response = await handlers.publishWidgetData(
+      7,
+      "user-1",
+      scopes(WIDGETS_WRITE_SCOPE),
+      {
+        kind: "recurring-expenses",
+        schemaVersion: 1,
+        data,
+        idempotencyKey: "recurring-expenses:2026-10-04",
+      },
+    );
+    expect((await responseBody(response)).error).toBeUndefined();
+    expect(publish).toHaveBeenCalledWith({
+      userId: "user-1",
+      kind: "recurring-expenses",
+      schemaVersion: 1,
+      dataJson: JSON.stringify(data),
+      idempotencyKey: "recurring-expenses:2026-10-04",
     });
   });
 
