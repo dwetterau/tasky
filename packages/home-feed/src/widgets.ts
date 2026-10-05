@@ -9,6 +9,11 @@ import {
   releasesPayloadSchema,
   type ReleasesPayload,
 } from "./widgets/releases";
+import {
+  RECURRING_EXPENSES_SCHEMA_VERSION,
+  recurringExpensesPayloadSchema,
+  type RecurringExpensesPayload,
+} from "./widgets/recurring-expenses";
 
 export {
   formatStravaDistance,
@@ -34,8 +39,30 @@ export {
   type ReleasesPayload,
   type UpcomingRelease,
 } from "./widgets/releases";
+export {
+  formatRecurringExpenseAmount,
+  formatRecurringExpenseDate,
+  formatRecurringExpenseMonth,
+  getUpcomingRecurringExpenses,
+  getVisibleRecurringExpenseCategoryTotals,
+  RECURRING_EXPENSES_MAX_CATEGORIES,
+  RECURRING_EXPENSES_MAX_UPCOMING,
+  RECURRING_EXPENSES_SCHEMA_VERSION,
+  RECURRING_EXPENSES_WINDOW_DAYS,
+  recurringExpenseCategoryTotalSchema,
+  recurringExpenseSchema,
+  recurringExpensesPayloadSchema,
+  type RecurringExpense,
+  type RecurringExpenseCategoryTotal,
+  type RecurringExpensesPayload,
+} from "./widgets/recurring-expenses";
 
-export const WIDGET_KINDS = ["briefing", "strava", "releases"] as const;
+export const WIDGET_KINDS = [
+  "briefing",
+  "strava",
+  "releases",
+  "recurring-expenses",
+] as const;
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
 
 export const BRIEFING_SCHEMA_VERSION = 1 as const;
@@ -74,6 +101,12 @@ export const widgetDefinitions = {
   releases: {
     schemaVersion: RELEASES_SCHEMA_VERSION,
     payloadSchema: releasesPayloadSchema,
+    freshForMs: 8 * 24 * 60 * 60_000,
+    maxAgeMs: 21 * 24 * 60 * 60_000,
+  },
+  "recurring-expenses": {
+    schemaVersion: RECURRING_EXPENSES_SCHEMA_VERSION,
+    payloadSchema: recurringExpensesPayloadSchema,
     freshForMs: 8 * 24 * 60 * 60_000,
     maxAgeMs: 21 * 24 * 60 * 60_000,
   },
@@ -148,6 +181,26 @@ export const widgetDataInputSchema = z.discriminatedUnion("kind", [
         .optional(),
     })
     .strict(),
+  z
+    .object({
+      kind: z
+        .literal("recurring-expenses")
+        .describe("Recurring expenses due soon and monthly category totals."),
+      schemaVersion: z
+        .literal(RECURRING_EXPENSES_SCHEMA_VERSION)
+        .describe("The payload schema version expected by clients."),
+      data: recurringExpensesPayloadSchema,
+      idempotencyKey: z
+        .string()
+        .trim()
+        .min(1, "idempotencyKey cannot be empty")
+        .max(160, "idempotencyKey cannot exceed 160 characters")
+        .describe(
+          "Optional retry key, for example recurring-expenses:2026-10-04. Reusing it with different data is rejected.",
+        )
+        .optional(),
+    })
+    .strict(),
 ]);
 
 export type BriefingPayload = z.infer<typeof briefingPayloadSchema>;
@@ -156,7 +209,8 @@ export type WidgetDataInput = z.infer<typeof widgetDataInputSchema>;
 export type WidgetPayload =
   | BriefingPayload
   | StravaPayload
-  | ReleasesPayload;
+  | ReleasesPayload
+  | RecurringExpensesPayload;
 
 export function parseWidgetData(
   kind: WidgetKind,

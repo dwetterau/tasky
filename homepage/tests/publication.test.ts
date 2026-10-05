@@ -263,6 +263,54 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Upcoming releases");
     expect(edition!.html).toContain("Blue Eye Samurai");
   });
+  it("publishes and renders recurring expenses from the generic widget pipeline", async () => {
+    await enroll();
+    const now = Date.parse("2026-10-04T14:00:00Z");
+    const envelope = fixtureExport("user-a", 1, now);
+    envelope.widgets = [
+      {
+        id: "recurring-expenses",
+        schemaVersion: 1,
+        scope: "user",
+        sourceRevision: 1,
+        sourceDataAt: now,
+        collectedAt: now,
+        freshForMs: 8 * 24 * 60 * 60_000,
+        maxAgeMs: 21 * 24 * 60 * 60_000,
+        status: "available",
+        payload: {
+          asOf: "2026-10-04",
+          currency: "USD",
+          upcomingExpenses: [
+            {
+              name: "Cloud storage",
+              monthlyAmount: 2.99,
+              category: "Software",
+              nextPaymentDate: "2026-10-05",
+            },
+          ],
+          monthlyTotals: {
+            month: "2026-10",
+            byCategory: [
+              { category: "Housing", totalMonthlyAmount: 3200 },
+              { category: "Software", totalMonthlyAmount: 42.98 },
+            ],
+          },
+        },
+      },
+    ];
+
+    expect((await send(envelope)).status).toBe(202);
+    await tick();
+    const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(edition!.feed.modules.at(-1)?.id).toBe("recurring-expenses");
+    expect(edition!.html).toContain(
+      'class="module module-supporting module-recurring-expenses"',
+    );
+    expect(edition!.html).toContain("Cloud storage");
+    expect(edition!.html).toContain("$42.98");
+    expect(edition!.html).not.toContain("Housing");
+  });
   it("publishes the saved portfolio alongside Tasky in the same user-scoped edition", async () => {
     await enroll();
     const envelope = fixtureExport();

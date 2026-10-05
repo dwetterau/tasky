@@ -5,6 +5,7 @@ import { weatherModule } from "./weather";
 import { portfolioModule } from "./portfolio";
 import { briefingModule } from "./briefing";
 import { releasesModule } from "./releases";
+import { recurringExpensesModule } from "./recurring-expenses";
 import { stravaModule } from "./strava";
 
 // Add a module here, a versioned payload schema to home-feed, and a trusted
@@ -14,6 +15,7 @@ export const modules: readonly HomeModule<unknown>[] = [
   briefingModule,
   taskyModule,
   portfolioModule,
+  recurringExpensesModule,
   stravaModule,
   releasesModule,
 ] as HomeModule<unknown>[];

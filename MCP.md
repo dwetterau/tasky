@@ -299,6 +299,7 @@ authenticated user and kind. Registered contracts:
 - `briefing@1`: `{ data: { markdown: string } }`
 - `strava@1`: `{ data: { latestRun, latestRide } }`
 - `releases@1`: `{ data: { asOf, releases } }`
+- `recurring-expenses@1`: `{ data: { asOf, currency, upcomingExpenses, monthlyTotals } }`
 
 Each Strava activity requires:
 
@@ -351,9 +352,45 @@ filter expired entries against the viewer's local date, sort them soonest
 first, and render up to eight, so a weekly publication remains correct each
 day.
 
+The recurring-expenses payload is:
+
+```json
+{
+  "kind": "recurring-expenses",
+  "schemaVersion": 1,
+  "data": {
+    "asOf": "2026-10-04",
+    "currency": "USD",
+    "upcomingExpenses": [
+      {
+        "name": "Cloud storage",
+        "monthlyAmount": 2.99,
+        "category": "Software",
+        "nextPaymentDate": "2026-10-05"
+      }
+    ],
+    "monthlyTotals": {
+      "month": "2026-10",
+      "byCategory": [
+        { "category": "Housing", "totalMonthlyAmount": 3200 },
+        { "category": "Software", "totalMonthlyAmount": 42.98 }
+      ]
+    }
+  },
+  "idempotencyKey": "recurring-expenses:2026-10-04"
+}
+```
+
+Include at most 40 upcoming expenses and 24 unique category totals. Amounts are
+normalized monthly USD amounts, including expenses that bill on a different
+cadence. Clients keep payments dated from the viewer's current local day through
+seven days ahead, sorted by payment date. The `Housing` category total is
+accepted and retained but currently hidden from both rendered clients; a housing
+expense due soon still appears in the upcoming-payment list.
+
 An optional `idempotencyKey` deduplicates retries (for example,
 `briefing:2026-09-30:morning`, `strava:2026-10-04`, or
-`releases:2026-10-04`) and cannot be reused with different data. The MCP input
+`releases:2026-10-04`, or `recurring-expenses:2026-10-04`) and cannot be reused with different data. The MCP input
 JSON Schema is generated from the same strict Zod schema used at write time,
 and validation errors include every failing field path.
 

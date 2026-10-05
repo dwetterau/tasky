@@ -137,11 +137,35 @@ describe("widget data", () => {
         ],
       }),
     });
+    await t.mutation(internal.widgetData.publishFromMcp, {
+      userId: "user-a",
+      kind: "recurring-expenses",
+      schemaVersion: 1,
+      dataJson: JSON.stringify({
+        asOf: "2026-10-04",
+        currency: "USD",
+        upcomingExpenses: [
+          {
+            name: "Cloud storage",
+            monthlyAmount: 2.99,
+            category: "Software",
+            nextPaymentDate: "2026-10-05",
+          },
+        ],
+        monthlyTotals: {
+          month: "2026-10",
+          byCategory: [
+            { category: "Housing", totalMonthlyAmount: 3200 },
+            { category: "Software", totalMonthlyAmount: 42.98 },
+          ],
+        },
+      }),
+    });
 
     const projected = await t.run((ctx) =>
       projectLatestWidgets(ctx, "user-a", Date.now()),
     );
-    expect(projected).toHaveLength(2);
+    expect(projected).toHaveLength(3);
     expect(projected[0]).toMatchObject({
       id: "strava",
       schemaVersion: 1,
@@ -178,5 +202,31 @@ describe("widget data", () => {
       },
     });
     expect(() => moduleSchema.parse(projected[1])).not.toThrow();
+    expect(projected[2]).toMatchObject({
+      id: "recurring-expenses",
+      schemaVersion: 1,
+      freshForMs: 8 * 24 * 60 * 60_000,
+      maxAgeMs: 21 * 24 * 60 * 60_000,
+      payload: {
+        asOf: "2026-10-04",
+        currency: "USD",
+        upcomingExpenses: [
+          {
+            name: "Cloud storage",
+            monthlyAmount: 2.99,
+            category: "Software",
+            nextPaymentDate: "2026-10-05",
+          },
+        ],
+        monthlyTotals: {
+          month: "2026-10",
+          byCategory: [
+            { category: "Housing", totalMonthlyAmount: 3200 },
+            { category: "Software", totalMonthlyAmount: 42.98 },
+          ],
+        },
+      },
+    });
+    expect(() => moduleSchema.parse(projected[2])).not.toThrow();
   });
 });

@@ -132,6 +132,7 @@ export const widgetKind = v.union(
   v.literal("briefing"),
   v.literal("strava"),
   v.literal("releases"),
+  v.literal("recurring-expenses"),
 );
 
 export const signalAttention = v.union(
