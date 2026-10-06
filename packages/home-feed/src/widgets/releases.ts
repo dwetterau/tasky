@@ -98,23 +98,32 @@ export function formatReleaseDate(
   releaseDate: string,
   today: string,
 ): string {
-  if (releaseDate.length === 10 && releaseDate === today) return "Today";
+  const exactDate = releaseDate.length === 10;
+  const date = new Date(
+    exactDate
+      ? `${releaseDate}T00:00:00Z`
+      : `${releaseDate}-01T00:00:00Z`,
+  );
+  const weekday = exactDate
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone: "UTC",
+        weekday: "short",
+      }).format(date)
+    : null;
+
+  if (exactDate && releaseDate === today) return `Today (${weekday})`;
   if (releaseDate.length === 10) {
     const tomorrow = new Date(`${today}T00:00:00Z`);
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     if (releaseDate === tomorrow.toISOString().slice(0, 10)) {
-      return "Tomorrow";
+      return `Tomorrow (${weekday})`;
     }
   }
-  const date = new Date(
-    releaseDate.length === 7
-      ? `${releaseDate}-01T00:00:00Z`
-      : `${releaseDate}T00:00:00Z`,
-  );
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "UTC",
+    ...(exactDate ? { weekday: "short" as const } : {}),
     month: releaseDate.length === 7 ? "long" : "short",
-    ...(releaseDate.length === 10 ? { day: "numeric" as const } : {}),
+    ...(exactDate ? { day: "numeric" as const } : {}),
     ...(releaseDate.slice(0, 4) !== today.slice(0, 4)
       ? { year: "numeric" as const }
       : {}),

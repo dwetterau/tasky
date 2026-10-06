@@ -55,9 +55,9 @@ describe("upcoming releases homepage module", () => {
     expect(html).not.toContain("Expired show");
     expect(html).toContain("Apothecary Diaries");
     expect(html).toContain("Season 3");
-    expect(html).toContain(">Today</time>");
+    expect(html).toContain(">Today (Sun)</time>");
     expect(html).toContain("The Deceased Empress&#39; Treasure");
-    expect(html).toContain(">Dec 11</time>");
+    expect(html).toContain(">Fri, Dec 11</time>");
     expect(html).toContain(">January 2027</time>");
   });
 });
