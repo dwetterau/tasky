@@ -6,7 +6,11 @@ import {
   evictDurableObject,
 } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type Edition, type PortfolioPayload } from "@tasky/home-feed";
+import {
+  localDateAt,
+  type Edition,
+  type PortfolioPayload,
+} from "@tasky/home-feed";
 import worker from "../src/index";
 import { objectCall, type Env } from "../src/env";
 import { signedHeaders } from "../src/transport";
@@ -265,8 +269,8 @@ describe("durable ingestion and publication", () => {
   });
   it("publishes and renders recurring expenses from the generic widget pipeline", async () => {
     await enroll();
-    const now = Date.parse("2026-10-04T14:00:00Z");
-    vi.spyOn(Date, "now").mockReturnValue(now);
+    const now = Date.now();
+    const today = localDateAt(now, "America/New_York");
     const envelope = fixtureExport("user-a", 1, now);
     envelope.widgets = [
       {
@@ -280,18 +284,18 @@ describe("durable ingestion and publication", () => {
         maxAgeMs: 21 * 24 * 60 * 60_000,
         status: "available",
         payload: {
-          asOf: "2026-10-04",
+          asOf: today,
           currency: "USD",
           upcomingExpenses: [
             {
               name: "Cloud storage",
               monthlyAmount: 2.99,
               category: "Software",
-              nextPaymentDate: "2026-10-05",
+              nextPaymentDate: today,
             },
           ],
           monthlyTotals: {
-            month: "2026-10",
+            month: today.slice(0, 7),
             byCategory: [
               { category: "Housing", totalMonthlyAmount: 3200 },
               { category: "Software", totalMonthlyAmount: 42.98 },
