@@ -266,6 +266,7 @@ describe("durable ingestion and publication", () => {
   it("publishes and renders recurring expenses from the generic widget pipeline", async () => {
     await enroll();
     const now = Date.parse("2026-10-04T14:00:00Z");
+    vi.spyOn(Date, "now").mockReturnValue(now);
     const envelope = fixtureExport("user-a", 1, now);
     envelope.widgets = [
       {
