@@ -10,7 +10,11 @@ import {
 import { api as taskyApi } from "tasky-convex/_generated/api";
 import { createAuthClient } from "better-auth/react";
 import type { BetterAuthClientPlugin } from "better-auth/client";
-import { ConvexReactClient, useConvexAuth } from "convex/react";
+import {
+  ConvexProviderWithAuth,
+  ConvexReactClient,
+  useConvexAuth,
+} from "convex/react";
 import type {
   FunctionArgs,
   FunctionReference,
@@ -26,11 +30,17 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
+import {
+  isRetryableTaskyTokenError,
+  shouldRestartTaskyAuthOnForeground,
+  taskyAuthRetryDelay,
+} from "./taskyAuthRecovery";
 
 const APP_SCHEME = "tasky";
 
@@ -110,6 +120,217 @@ export const taskyConvex = taskyConvexUrl
       unsavedChangesWarning: false,
     })
   : null;
+
+// The stock adapter treats a transient token request failure as signed out and
+// only restarts Convex auth when the Better Auth session ID changes. A sleeping
+// native app can therefore stay unauthenticated forever with a valid session.
+// Give native clients a new fetcher identity on resume/failure so setAuth retries.
+function useRecoveringTaskyConvexAuth() {
+  const {
+    data: session,
+    isPending: isSessionPending,
+    refetch: refetchSession,
+  } = taskyAuthClient.useSession();
+  const sessionId = session?.session?.id;
+
+  const cachedTokenRef = useRef<string | null>(null);
+  const cachedTokenSessionIdRef = useRef<string | undefined>(undefined);
+  const pendingTokenRef = useRef<{
+    sessionId: string | undefined;
+    promise: Promise<string | null>;
+  } | null>(null);
+  const previousSessionIdRef = useRef(sessionId);
+  const tokenEpochRef = useRef(0);
+  const retryAttemptRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backgroundedAtRef = useRef<number | null>(null);
+  const previousAppStateRef = useRef(AppState.currentState);
+  const mountedRef = useRef(false);
+  const [authCycle, setAuthCycle] = useState(0);
+
+  const clearRetryTimer = useCallback(() => {
+    if (retryTimerRef.current !== null) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+
+  const restartAuth = useCallback(() => {
+    clearRetryTimer();
+    tokenEpochRef.current += 1;
+    pendingTokenRef.current = null;
+    cachedTokenRef.current = null;
+    cachedTokenSessionIdRef.current = undefined;
+    setAuthCycle((current) => current + 1);
+  }, [clearRetryTimer]);
+
+  const scheduleRetry = useCallback(
+    (tokenEpoch: number) => {
+      if (
+        tokenEpoch !== tokenEpochRef.current ||
+        retryTimerRef.current !== null
+      ) {
+        return;
+      }
+
+      const delay = taskyAuthRetryDelay(retryAttemptRef.current);
+      retryAttemptRef.current += 1;
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        if (
+          mountedRef.current &&
+          sessionId &&
+          AppState.currentState === "active"
+        ) {
+          restartAuth();
+        }
+      }, delay);
+    },
+    [restartAuth, sessionId],
+  );
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearRetryTimer();
+    };
+  }, [clearRetryTimer]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const previousState = previousAppStateRef.current;
+      previousAppStateRef.current = nextState;
+
+      if (nextState !== "active") {
+        if (previousState === "active") {
+          backgroundedAtRef.current = Date.now();
+        }
+        return;
+      }
+
+      if (
+        previousState !== "active" &&
+        shouldRestartTaskyAuthOnForeground({
+          hasSession: Boolean(sessionId),
+          hasCachedToken: cachedTokenRef.current !== null,
+          backgroundedAt: backgroundedAtRef.current,
+          now: Date.now(),
+        })
+      ) {
+        restartAuth();
+      }
+      backgroundedAtRef.current = null;
+    });
+
+    return () => subscription.remove();
+  }, [restartAuth, sessionId]);
+
+  useLayoutEffect(() => {
+    if (previousSessionIdRef.current !== sessionId) {
+      previousSessionIdRef.current = sessionId;
+      clearRetryTimer();
+      tokenEpochRef.current += 1;
+      pendingTokenRef.current = null;
+      cachedTokenRef.current = null;
+      cachedTokenSessionIdRef.current = undefined;
+      retryAttemptRef.current = 0;
+    }
+  }, [clearRetryTimer, sessionId]);
+
+  const fetchAccessToken = useCallback(
+    async ({
+      forceRefreshToken = false,
+    }: {
+      forceRefreshToken?: boolean;
+    } = {}): Promise<string | null> => {
+      void authCycle;
+      if (
+        cachedTokenRef.current &&
+        cachedTokenSessionIdRef.current === sessionId &&
+        !forceRefreshToken
+      ) {
+        return cachedTokenRef.current;
+      }
+      const pendingToken = pendingTokenRef.current;
+      if (
+        !forceRefreshToken &&
+        pendingToken &&
+        pendingToken.sessionId === sessionId
+      ) {
+        return await pendingToken.promise;
+      }
+
+      const tokenEpoch = tokenEpochRef.current;
+      const request = taskyAuthClient.convex
+        .token({ fetchOptions: { throw: false } })
+        .then(({ data, error }) => {
+          const token = data?.token || null;
+          const isCurrentRequest =
+            mountedRef.current &&
+            tokenEpoch === tokenEpochRef.current &&
+            sessionId === previousSessionIdRef.current;
+          if (isCurrentRequest) {
+            cachedTokenRef.current = token;
+            cachedTokenSessionIdRef.current = token ? sessionId : undefined;
+            if (token) {
+              clearRetryTimer();
+              retryAttemptRef.current = 0;
+            } else if (isRetryableTaskyTokenError(error)) {
+              scheduleRetry(tokenEpoch);
+            } else {
+              void refetchSession();
+            }
+          }
+          return isCurrentRequest ? token : null;
+        })
+        .catch(() => {
+          if (
+            mountedRef.current &&
+            tokenEpoch === tokenEpochRef.current &&
+            sessionId === previousSessionIdRef.current
+          ) {
+            cachedTokenRef.current = null;
+            cachedTokenSessionIdRef.current = undefined;
+            scheduleRetry(tokenEpoch);
+          }
+          return null;
+        })
+        .finally(() => {
+          if (pendingTokenRef.current?.promise === request) {
+            pendingTokenRef.current = null;
+          }
+        });
+      pendingTokenRef.current = { sessionId, promise: request };
+      return await request;
+    },
+    [authCycle, clearRetryTimer, refetchSession, scheduleRetry, sessionId],
+  );
+
+  return useMemo(
+    () => ({
+      isLoading: isSessionPending,
+      isAuthenticated: Boolean(session?.session),
+      fetchAccessToken,
+    }),
+    [fetchAccessToken, isSessionPending, session?.session],
+  );
+}
+
+function RecoveringTaskyConvexProvider({ children }: { children: ReactNode }) {
+  if (!taskyConvex) {
+    return children;
+  }
+
+  return (
+    <ConvexProviderWithAuth
+      client={taskyConvex}
+      useAuth={useRecoveringTaskyConvexAuth}
+    >
+      {children}
+    </ConvexProviderWithAuth>
+  );
+}
 
 const TASKY_QUERY_CACHE_TTL_MS = 5 * 60 * 1000;
 const TASKY_QUERY_CACHE_MAX_ENTRIES = 100;
@@ -305,6 +526,14 @@ export function TaskyAuthProvider({ children }: { children: ReactNode }) {
       <UnconfiguredTaskyAuthProvider>
         {children}
       </UnconfiguredTaskyAuthProvider>
+    );
+  }
+
+  if (Platform.OS !== "web") {
+    return (
+      <RecoveringTaskyConvexProvider>
+        <ConfiguredTaskyAuthProvider>{children}</ConfiguredTaskyAuthProvider>
+      </RecoveringTaskyConvexProvider>
     );
   }
 
