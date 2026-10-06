@@ -38,6 +38,7 @@ describe("recurring expenses homepage module", () => {
           byCategory: [
             { category: "Housing", totalMonthlyAmount: 3200 },
             { category: "Software", totalMonthlyAmount: 42.98 },
+            { category: "Health", totalMonthlyAmount: 75 },
           ],
         },
       },
@@ -56,6 +57,7 @@ describe("recurring expenses homepage module", () => {
     expect(html).toContain("Mon, Oct 5");
     expect(html).toContain("October 2026 by category");
     expect(html).toContain("$42.98");
+    expect(html).toContain("<dt>Total</dt><dd>$117.98</dd>");
     expect(html).not.toContain("Rent");
     expect(html).not.toContain("Housing");
     expect(html).not.toContain("$3,200");

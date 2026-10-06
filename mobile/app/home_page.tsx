@@ -305,6 +305,10 @@ function RecurringExpensesCard() {
   const categoryTotals = recurringExpenses?.success
     ? getVisibleRecurringExpenseCategoryTotals(recurringExpenses.data)
     : [];
+  const monthlyTotal = categoryTotals.reduce(
+    (sum, total) => sum + total.totalMonthlyAmount,
+    0,
+  );
 
   if (
     !taskyEnabled ||
@@ -383,6 +387,15 @@ function RecurringExpensesCard() {
                 </Text>
               </View>
             ))}
+            <View style={styles.expenseTotal}>
+              <Text style={styles.expenseTotalCategory}>Total</Text>
+              <Text style={styles.expenseTotalAmount}>
+                {formatRecurringExpenseAmount(
+                  monthlyTotal,
+                  recurringExpenses.data.currency,
+                )}
+              </Text>
+            </View>
           </View>
         )}
       </View>
