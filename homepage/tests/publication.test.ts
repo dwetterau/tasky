@@ -6,11 +6,7 @@ import {
   evictDurableObject,
 } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  localDateAt,
-  type Edition,
-  type PortfolioPayload,
-} from "@tasky/home-feed";
+import { type Edition, type PortfolioPayload } from "@tasky/home-feed";
 import worker from "../src/index";
 import { objectCall, type Env } from "../src/env";
 import { signedHeaders } from "../src/transport";
@@ -270,7 +266,6 @@ describe("durable ingestion and publication", () => {
   it("publishes and renders recurring expenses from the generic widget pipeline", async () => {
     await enroll();
     const now = Date.now();
-    const today = localDateAt(now, "America/New_York");
     const envelope = fixtureExport("user-a", 1, now);
     envelope.widgets = [
       {
@@ -284,18 +279,18 @@ describe("durable ingestion and publication", () => {
         maxAgeMs: 21 * 24 * 60 * 60_000,
         status: "available",
         payload: {
-          asOf: today,
+          asOf: "2026-10-04",
           currency: "USD",
           upcomingExpenses: [
             {
               name: "Cloud storage",
               monthlyAmount: 2.99,
               category: "Software",
-              nextPaymentDate: today,
+              nextPaymentDate: "2026-10-05",
             },
           ],
           monthlyTotals: {
-            month: today.slice(0, 7),
+            month: "2026-10",
             byCategory: [
               { category: "Housing", totalMonthlyAmount: 3200 },
               { category: "Software", totalMonthlyAmount: 42.98 },
@@ -308,11 +303,15 @@ describe("durable ingestion and publication", () => {
     expect((await send(envelope)).status).toBe(202);
     await tick();
     const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
-    expect(edition!.feed.modules.at(-1)?.id).toBe("recurring-expenses");
+    expect(edition!.feed.modules.at(-1)).toMatchObject({
+      id: "recurring-expenses",
+      payload: {
+        upcomingExpenses: [{ name: "Cloud storage" }],
+      },
+    });
     expect(edition!.html).toContain(
       'class="module module-supporting module-recurring-expenses"',
     );
-    expect(edition!.html).toContain("Cloud storage");
     expect(edition!.html).toContain("$42.98");
     expect(edition!.html).not.toContain("Housing");
   });
