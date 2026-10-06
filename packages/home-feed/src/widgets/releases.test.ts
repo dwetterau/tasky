@@ -68,10 +68,12 @@ describe("releases widget", () => {
   });
 
   it("formats relative and month-precision dates", () => {
-    expect(formatReleaseDate("2026-10-04", "2026-10-04")).toBe("Today");
-    expect(formatReleaseDate("2026-10-05", "2026-10-04")).toBe("Tomorrow");
+    expect(formatReleaseDate("2026-10-04", "2026-10-04")).toBe("Today (Sun)");
+    expect(formatReleaseDate("2026-10-05", "2026-10-04")).toBe(
+      "Tomorrow (Mon)",
+    );
     expect(formatReleaseDate("2027-01", "2026-10-04")).toBe("January 2027");
-    expect(formatReleaseDate("2026-12-11", "2026-10-04")).toBe("Dec 11");
+    expect(formatReleaseDate("2026-12-11", "2026-10-04")).toBe("Fri, Dec 11");
   });
 
   it("derives the viewer's local day from a timestamp and timezone", () => {
