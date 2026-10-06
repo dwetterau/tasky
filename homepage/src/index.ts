@@ -215,7 +215,7 @@ export async function handleRequest(
       return redirect("/auth/sign-in");
     return privateResponse(
       shell(
-        '<main class="preparation"><p class="eyebrow">Welcome back</p><h2>Continuing to your private edition.</h2><p>Renewing your homepage session before your information is shown.</p><form action="/auth/renew" method="post" data-auto-renew><button>Continue securely →</button></form><p><a href="/auth/login">Sign in with Tasky again</a></p></main>',
+        '<main class="preparation"><p class="eyebrow">Welcome back</p><h2>Authenticating your private edition.</h2><p>Securely re-authenticating with Tasky before your private information is shown.</p><form action="/auth/renew" method="post" data-auto-renew><button>Authenticate securely →</button></form><p><a href="/auth/login">Sign in with Tasky again</a></p></main>',
         { script: true },
       ),
     );
