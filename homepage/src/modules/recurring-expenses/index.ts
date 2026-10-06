@@ -24,6 +24,10 @@ export const recurringExpensesModule: HomeModule<RecurringExpensesPayload> = {
     const today = localDateAt(context.now, context.timezone);
     const upcoming = getUpcomingRecurringExpenses(data, today);
     const categoryTotals = getVisibleRecurringExpenseCategoryTotals(data);
+    const monthlyTotal = categoryTotals.reduce(
+      (sum, total) => sum + total.totalMonthlyAmount,
+      0,
+    );
     const upcomingHtml =
       upcoming.length === 0
         ? '<p class="empty">No recurring payments due in the next week.</p>'
@@ -44,7 +48,7 @@ export const recurringExpensesModule: HomeModule<RecurringExpensesPayload> = {
               (total) =>
                 `<div><dt>${e(total.category)}</dt><dd>${e(formatRecurringExpenseAmount(total.totalMonthlyAmount, data.currency))}</dd></div>`,
             )
-            .join("")}</dl>`;
+            .join("")}<div><dt>Total</dt><dd>${e(formatRecurringExpenseAmount(monthlyTotal, data.currency))}</dd></div></dl>`;
     return `<div class="recurring-expenses">
       <section>
         <h3 class="section-label">Due in the next week</h3>
