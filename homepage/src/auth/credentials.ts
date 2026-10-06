@@ -90,7 +90,7 @@ export async function verifySession(
     if (
       typeof payload.iat !== "number" ||
       typeof payload.exp !== "number" ||
-      payload.exp - payload.iat > 86400 ||
+      payload.exp - payload.iat > sessionLifetime(env) ||
       payload.iat > now / 1000 + 30
     )
       return null;

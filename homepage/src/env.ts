@@ -20,6 +20,9 @@ export interface Env {
   WEATHER_CONFIG?: string;
 }
 
+export const DEFAULT_SESSION_TTL_SECONDS = 7 * 86400;
+export const MAX_SESSION_TTL_SECONDS = 30 * 86400;
+
 export function origin(value: string) {
   const url = new URL(value);
   if (url.protocol !== "https:" || url.origin !== value)
@@ -28,8 +31,14 @@ export function origin(value: string) {
 }
 
 export function sessionLifetime(env: Env) {
-  const value = Number(env.SESSION_TTL_SECONDS ?? 86400);
-  if (!Number.isInteger(value) || value < 300 || value > 86400)
+  const value = Number(
+    env.SESSION_TTL_SECONDS ?? DEFAULT_SESSION_TTL_SECONDS,
+  );
+  if (
+    !Number.isInteger(value) ||
+    value < 300 ||
+    value > MAX_SESSION_TTL_SECONDS
+  )
     throw new Error("Invalid session lifetime");
   return value;
 }

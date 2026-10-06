@@ -58,6 +58,8 @@ describe("private delivery", () => {
     expect(html).toContain(
       `/assets/home.js?v=${browserScriptVersion}`,
     );
+    expect(html).toContain("Authenticating your private edition.");
+    expect(html).toContain("re-authenticating with Tasky");
     expect(html).toContain('action="/auth/renew" method="post"');
     expect(html).toContain("font: inherit");
   });
@@ -103,7 +105,7 @@ describe("private delivery", () => {
         env,
         "user-a",
         await sid(),
-        Date.now() - 2 * 86400_000,
+        Date.now() - 8 * 86400_000,
       ),
     ]) {
       expect(
@@ -281,6 +283,16 @@ describe("private delivery", () => {
   });
 });
 describe("local credentials", () => {
+  it("keeps a homepage session valid for the configured week", async () => {
+    const now = Date.now();
+    const token = await issueSession(env, "user-a", await sid(), now);
+    expect(
+      await verifySession(env, token, now + 7 * 86400_000 - 1_000),
+    ).not.toBeNull();
+    expect(
+      await verifySession(env, token, now + 7 * 86400_000 + 1_000),
+    ).toBeNull();
+  });
   it("rejects bad signatures, issuer, audience, scope and type", async () => {
     const key = base64ToBytes(JSON.parse(env.SESSION_KEYS).test);
     for (const patch of [
