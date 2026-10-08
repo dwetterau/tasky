@@ -297,9 +297,29 @@ generates the row ID, and homepage/mobile clients select the newest row by
 authenticated user and kind. Registered contracts:
 
 - `briefing@1`: `{ data: { markdown: string } }`
+- `on-this-day@1`: `{ data: { date, markdown } }`
 - `strava@1`: `{ data: { latestRun, latestRide } }`
 - `releases@1`: `{ data: { asOf, releases } }`
 - `recurring-expenses@1`: `{ data: { asOf, currency, upcomingExpenses, monthlyTotals } }`
+
+The on-this-day payload is:
+
+```json
+{
+  "kind": "on-this-day",
+  "schemaVersion": 1,
+  "data": {
+    "date": "2026-10-08",
+    "markdown": "- **2021:** Moved into a new apartment.\n- **2024:** Ran along the river."
+  },
+  "idempotencyKey": "on-this-day:2026-10-08"
+}
+```
+
+`date` is the local calendar date the retrospective is for. `markdown` should
+be a concise bullet list of facts sourced from journal entries on that month
+and day in prior years. Include the source year in each bullet. Raw HTML is not
+supported.
 
 Each Strava activity requires:
 
@@ -389,7 +409,7 @@ accepted and retained but currently hidden from both rendered clients; a housing
 expense due soon still appears in the upcoming-payment list.
 
 An optional `idempotencyKey` deduplicates retries (for example,
-`briefing:2026-09-30:morning`, `strava:2026-10-04`, or
+`briefing:2026-09-30:morning`, `on-this-day:2026-10-08`, `strava:2026-10-04`, or
 `releases:2026-10-04`, or `recurring-expenses:2026-10-04`) and cannot be reused with different data. The MCP input
 JSON Schema is generated from the same strict Zod schema used at write time,
 and validation errors include every failing field path.

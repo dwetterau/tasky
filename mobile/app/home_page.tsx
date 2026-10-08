@@ -2,6 +2,7 @@ import type { FunctionReturnType } from "convex/server";
 import { type Href, useRouter } from "expo-router";
 import {
   briefingPayloadSchema,
+  formatOnThisDayDate,
   formatRecurringExpenseAmount,
   formatRecurringExpenseDate,
   formatRecurringExpenseMonth,
@@ -11,6 +12,7 @@ import {
   getStravaActivityStats,
   getVisibleRecurringExpenseCategoryTotals,
   localDateAt,
+  onThisDayPayloadSchema,
   recurringExpensesPayloadSchema,
   releasesPayloadSchema,
   stravaPayloadSchema,
@@ -150,6 +152,45 @@ function BriefingCard() {
           {content.body}
         </Markdown>
       ) : null}
+    </View>
+  );
+}
+
+function OnThisDayCard() {
+  const taskyAuth = useTaskyAuth();
+  const taskyEnabled =
+    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
+  const latest = useTaskyQuery(
+    taskyApi.widgetData.latest,
+    taskyEnabled ? { kind: "on-this-day" } : "skip",
+  );
+  const onThisDay = useMemo(() => {
+    if (!latest.data) return null;
+    try {
+      return onThisDayPayloadSchema.safeParse(
+        JSON.parse(latest.data.dataJson),
+      );
+    } catch {
+      return null;
+    }
+  }, [latest.data]);
+
+  if (!taskyEnabled || latest.isLoading || !onThisDay?.success) return null;
+
+  return (
+    <View style={[sharedStyles.card, styles.onThisDayCard]}>
+      <CardHeader
+        title="On this day"
+        subtitle={formatOnThisDayDate(onThisDay.data.date)}
+        trailing={<View />}
+      />
+      <Markdown
+        style={markdownStyles}
+        rules={briefingMarkdownRules}
+        onLinkPress={(url) => /^https?:\/\//i.test(url)}
+      >
+        {onThisDay.data.markdown}
+      </Markdown>
     </View>
   );
 }
@@ -937,6 +978,7 @@ export default function HomePage() {
         ]}
       >
         <BriefingCard />
+        <OnThisDayCard />
         <TodayCard />
         <SignalsCard />
         <TaskyCard />
@@ -1031,6 +1073,9 @@ const markdownStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   briefingCard: {
+    paddingBottom: spacing.sm,
+  },
+  onThisDayCard: {
     paddingBottom: spacing.sm,
   },
   briefingTime: {

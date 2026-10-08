@@ -4,6 +4,7 @@ import { taskyModule } from "./tasky";
 import { weatherModule } from "./weather";
 import { portfolioModule } from "./portfolio";
 import { briefingModule } from "./briefing";
+import { onThisDayModule } from "./on-this-day";
 import { releasesModule } from "./releases";
 import { recurringExpensesModule } from "./recurring-expenses";
 import { stravaModule } from "./strava";
@@ -13,6 +14,7 @@ import { stravaModule } from "./strava";
 export const modules: readonly HomeModule<unknown>[] = [
   weatherModule,
   briefingModule,
+  onThisDayModule,
   taskyModule,
   portfolioModule,
   recurringExpensesModule,

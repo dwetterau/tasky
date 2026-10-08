@@ -70,7 +70,7 @@ export const widgetToolDescriptors: McpToolDescriptor[] = [
   {
     name: "publishWidgetData",
     description:
-      "Publish a new immutable data row for a registered widget kind. Clients show the newest row for that kind. Use a stable retry key such as briefing:2026-09-30:morning, strava:2026-10-04, releases:2026-10-04, or recurring-expenses:2026-10-04. The server generates the widget data ID; do not provide one.",
+      "Publish a new immutable data row for a registered widget kind. Clients show the newest row for that kind. Use a stable retry key such as briefing:2026-09-30:morning, on-this-day:2026-10-08, strava:2026-10-04, releases:2026-10-04, or recurring-expenses:2026-10-04. The server generates the widget data ID; do not provide one.",
     inputSchema: generatedInputSchema,
   },
 ];

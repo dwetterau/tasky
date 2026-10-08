@@ -93,6 +93,13 @@ describe("widget MCP tool", () => {
         },
         {
           properties: {
+            kind: { const: "on-this-day" },
+            schemaVersion: { const: 1 },
+          },
+          additionalProperties: false,
+        },
+        {
+          properties: {
             kind: { const: "strava" },
             schemaVersion: { const: 1 },
           },
@@ -176,9 +183,39 @@ describe("widget MCP tool", () => {
     expect(body.error?.message).toContain("data.markdown");
     expect(body.error?.message).toContain("arguments");
     expect(body.error?.message).toContain(
-      "briefing@1, strava@1, releases@1, recurring-expenses@1",
+      "briefing@1, on-this-day@1, strava@1, releases@1, recurring-expenses@1",
     );
     expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("publishes a dated on-this-day journal retrospective", async () => {
+    const { handlers, publish } = makeHandler();
+    const data = {
+      date: "2026-10-08",
+      markdown: "  - **2022:** Took the train to Boston.  ",
+    };
+    const response = await handlers.publishWidgetData(
+      4,
+      "user-1",
+      scopes(WIDGETS_WRITE_SCOPE),
+      {
+        kind: "on-this-day",
+        schemaVersion: 1,
+        data,
+        idempotencyKey: "on-this-day:2026-10-08",
+      },
+    );
+    expect((await responseBody(response)).error).toBeUndefined();
+    expect(publish).toHaveBeenCalledWith({
+      userId: "user-1",
+      kind: "on-this-day",
+      schemaVersion: 1,
+      dataJson: JSON.stringify({
+        date: "2026-10-08",
+        markdown: "- **2022:** Took the train to Boston.",
+      }),
+      idempotencyKey: "on-this-day:2026-10-08",
+    });
   });
 
   it("publishes normalized Strava activity summaries", async () => {

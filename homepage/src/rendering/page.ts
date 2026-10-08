@@ -240,6 +240,14 @@ p {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.88em;
 }
+.on-this-day > time {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font:
+    11px system-ui,
+    sans-serif;
+}
 .strava-activities {
   display: grid;
   gap: 18px;
