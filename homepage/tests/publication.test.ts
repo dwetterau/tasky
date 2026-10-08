@@ -145,8 +145,9 @@ describe("durable ingestion and publication", () => {
       maxAgeMs: 7 * 24 * 60 * 60_000,
       status: "available",
       payload: {
+        date: "2026-10-08",
         markdown:
-          "# Morning briefing\n\n- Review the launch plan\n\n<script>alert('no')</script>",
+          "## Tasks\n\n- Review the launch plan\n\n<script>alert('no')</script>",
       },
     };
 
@@ -155,13 +156,20 @@ describe("durable ingestion and publication", () => {
     const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
     expect(
       edition!.feed.modules.find((module) => module.id === "briefing")!.payload,
-    ).toMatchObject({ markdown: expect.stringContaining("Morning briefing") });
+    ).toMatchObject({
+      date: "2026-10-08",
+      markdown: expect.stringContaining("Review the launch plan"),
+    });
     expect(edition!.feed.modules.map((module) => module.id)).toEqual([
       "weather",
       "briefing",
       "tasky",
     ]);
-    expect(edition!.html).toContain("<h1>Morning briefing</h1>");
+    expect(edition!.html).toContain(
+      '<time class="widget-date" datetime="2026-10-08">Thursday, October 8, 2026</time>',
+    );
+    expect(edition!.html).not.toContain("<h1>Thursday, Oct 8</h1>");
+    expect(edition!.html).toContain("<h2>Tasks</h2>");
     expect(edition!.html).toContain("<li>Review the launch plan</li>");
     expect(edition!.html).toContain(
       "&lt;script&gt;alert('no')&lt;/script&gt;",
@@ -203,7 +211,7 @@ describe("durable ingestion and publication", () => {
       'class="module module-supporting module-on-this-day"',
     );
     expect(edition!.html).toContain(
-      '<time datetime="2026-10-08">Thursday, October 8, 2026</time>',
+      '<time class="widget-date" datetime="2026-10-08">Thursday, October 8, 2026</time>',
     );
     expect(edition!.html).toContain("Moved into a new apartment.");
   });

@@ -78,25 +78,52 @@ export const WIDGET_KINDS = [
 ] as const;
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
 
-export const BRIEFING_SCHEMA_VERSION = 1 as const;
+export const BRIEFING_SCHEMA_VERSION = 2 as const;
 export const BRIEFING_MAX_MARKDOWN_LENGTH = 16_000;
 export const WIDGET_DATA_MAX_BYTES = 32_000;
 
+export const briefingDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return (
+      Number.isFinite(date.getTime()) &&
+      date.toISOString().slice(0, 10) === value
+    );
+  }, "Invalid calendar date");
+
+const briefingMarkdownSchema = z
+  .string()
+  .trim()
+  .min(1, "Briefing markdown cannot be empty")
+  .max(
+    BRIEFING_MAX_MARKDOWN_LENGTH,
+    `Briefing markdown cannot exceed ${BRIEFING_MAX_MARKDOWN_LENGTH} characters`,
+  );
+
 export const briefingPayloadSchema = z
   .object({
-    markdown: z
-      .string()
-      .trim()
-      .min(1, "Briefing markdown cannot be empty")
-      .max(
-        BRIEFING_MAX_MARKDOWN_LENGTH,
-        `Briefing markdown cannot exceed ${BRIEFING_MAX_MARKDOWN_LENGTH} characters`,
-      )
+    date: briefingDateSchema.describe(
+      "The local calendar date this briefing report is for.",
+    ),
+    markdown: briefingMarkdownSchema
       .describe(
-        "Markdown briefing text. Raw HTML is not supported; keep headings and lists concise.",
+        "Markdown briefing body. Omit the report date and title; clients render the structured date. Raw HTML is not supported.",
       ),
   })
   .strict();
+
+export const legacyBriefingPayloadSchema = z
+  .object({
+    markdown: briefingMarkdownSchema,
+  })
+  .strict();
+
+export const briefingRenderPayloadSchema = z.union([
+  briefingPayloadSchema,
+  legacyBriefingPayloadSchema,
+]);
 
 export const widgetDefinitions = {
   briefing: {
@@ -243,10 +270,17 @@ export const widgetDataInputSchema = z.discriminatedUnion("kind", [
 ]);
 
 export type BriefingPayload = z.infer<typeof briefingPayloadSchema>;
+export type LegacyBriefingPayload = z.infer<
+  typeof legacyBriefingPayloadSchema
+>;
+export type BriefingRenderPayload = z.infer<
+  typeof briefingRenderPayloadSchema
+>;
 export type WidgetDataReadInput = z.infer<typeof widgetDataReadInputSchema>;
 export type WidgetDataInput = z.infer<typeof widgetDataInputSchema>;
 export type WidgetPayload =
   | BriefingPayload
+  | LegacyBriefingPayload
   | OnThisDayPayload
   | StravaPayload
   | ReleasesPayload
@@ -257,6 +291,9 @@ export function parseWidgetData(
   schemaVersion: number,
   data: unknown,
 ): WidgetPayload {
+  if (kind === "briefing" && schemaVersion === 1) {
+    return legacyBriefingPayloadSchema.parse(data);
+  }
   const definition = widgetDefinitions[kind];
   if (schemaVersion !== definition.schemaVersion) {
     throw new Error(

@@ -87,7 +87,7 @@ describe("widget MCP tool", () => {
         {
           properties: {
             kind: { const: "briefing" },
-            schemaVersion: { const: 1 },
+            schemaVersion: { const: 2 },
           },
           additionalProperties: false,
         },
@@ -131,8 +131,8 @@ describe("widget MCP tool", () => {
       scopes("tasks:write"),
       {
         kind: "briefing",
-        schemaVersion: 1,
-        data: { markdown: "# Morning" },
+        schemaVersion: 2,
+        data: { date: "2026-10-08", markdown: "## Calendar\n\n- Haircut" },
       },
     );
     expect((await responseBody(response)).error).toEqual({
@@ -150,18 +150,24 @@ describe("widget MCP tool", () => {
       scopes(WIDGETS_WRITE_SCOPE),
       {
         kind: "briefing",
-        schemaVersion: 1,
-        data: { markdown: "  # Evening briefing  " },
-        idempotencyKey: "briefing:2026-09-30:evening",
+        schemaVersion: 2,
+        data: {
+          date: "2026-10-08",
+          markdown: "  ## Tasks\n\n- Review the launch plan  ",
+        },
+        idempotencyKey: "briefing:2026-10-08:evening",
       },
     );
     expect((await responseBody(response)).error).toBeUndefined();
     expect(publish).toHaveBeenCalledWith({
       userId: "user-1",
       kind: "briefing",
-      schemaVersion: 1,
-      dataJson: JSON.stringify({ markdown: "# Evening briefing" }),
-      idempotencyKey: "briefing:2026-09-30:evening",
+      schemaVersion: 2,
+      dataJson: JSON.stringify({
+        date: "2026-10-08",
+        markdown: "## Tasks\n\n- Review the launch plan",
+      }),
+      idempotencyKey: "briefing:2026-10-08:evening",
     });
   });
 
@@ -173,17 +179,18 @@ describe("widget MCP tool", () => {
       scopes(WIDGETS_WRITE_SCOPE),
       {
         kind: "briefing",
-        schemaVersion: 1,
-        data: { markdown: "", unexpected: true },
+        schemaVersion: 2,
+        data: { date: "not-a-date", markdown: "", unexpected: true },
         extra: "no",
       },
     );
     const body = await responseBody(response);
     expect(body.error?.code).toBe(-32602);
+    expect(body.error?.message).toContain("data.date");
     expect(body.error?.message).toContain("data.markdown");
     expect(body.error?.message).toContain("arguments");
     expect(body.error?.message).toContain(
-      "briefing@1, on-this-day@1, strava@1, releases@1, recurring-expenses@1",
+      "briefing@2, on-this-day@1, strava@1, releases@1, recurring-expenses@1",
     );
     expect(publish).not.toHaveBeenCalled();
   });

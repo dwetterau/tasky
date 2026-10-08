@@ -18,7 +18,7 @@ export const onThisDayModule: HomeModule<OnThisDayPayload> = {
   parse: (value) => onThisDayPayloadSchema.parse(value),
   render(data) {
     return `<div class="on-this-day">
-      <time datetime="${e(data.date)}">${e(formatOnThisDayDate(data.date))}</time>
+      <time class="widget-date" datetime="${e(data.date)}">${e(formatOnThisDayDate(data.date))}</time>
       <div class="briefing-markdown">${micromark(data.markdown)}</div>
     </div>`;
   },

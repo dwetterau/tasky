@@ -61,7 +61,8 @@ increments per publication so automatic updates work throughout the day.
 ## Agent-published widgets
 
 MCP agents publish strongly validated, immutable widget rows to Convex. The
-registered kinds are `briefing@1` (bounded Markdown), `on-this-day@1` (a dated
+registered kinds are `briefing@2` (a structured report date plus bounded
+Markdown body), `on-this-day@1` (a dated
 Markdown list of journal facts from prior years), `strava@1` (normalized
 latest-run and latest-ride summaries), `releases@1` (dated upcoming TV and
 movie releases), and `recurring-expenses@1` (payments due within seven days and
