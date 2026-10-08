@@ -240,7 +240,7 @@ p {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.88em;
 }
-.on-this-day > time {
+.widget-date {
   display: block;
   margin-bottom: 12px;
   color: var(--muted);

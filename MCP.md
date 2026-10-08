@@ -296,11 +296,30 @@ Publishes an immutable data row for a registered widget kind. The server
 generates the row ID, and homepage/mobile clients select the newest row by
 authenticated user and kind. Registered contracts:
 
-- `briefing@1`: `{ data: { markdown: string } }`
+- `briefing@2`: `{ data: { date, markdown } }`
 - `on-this-day@1`: `{ data: { date, markdown } }`
 - `strava@1`: `{ data: { latestRun, latestRide } }`
 - `releases@1`: `{ data: { asOf, releases } }`
 - `recurring-expenses@1`: `{ data: { asOf, currency, upcomingExpenses, monthlyTotals } }`
+
+The briefing payload is:
+
+```json
+{
+  "kind": "briefing",
+  "schemaVersion": 2,
+  "data": {
+    "date": "2026-10-08",
+    "markdown": "## Calendar\n\n- 11:00–12:00 Haircut\n\n## Tasks\n\n- Review the launch plan"
+  },
+  "idempotencyKey": "briefing:2026-10-08:morning"
+}
+```
+
+`date` is the local calendar date the report is for. Keep the report title and
+date out of `markdown`; homepage and mobile clients render the structured date.
+Stored `briefing@1` rows remain readable, but new publications must use version
+2.
 
 The on-this-day payload is:
 
@@ -409,7 +428,7 @@ accepted and retained but currently hidden from both rendered clients; a housing
 expense due soon still appears in the upcoming-payment list.
 
 An optional `idempotencyKey` deduplicates retries (for example,
-`briefing:2026-09-30:morning`, `on-this-day:2026-10-08`, `strava:2026-10-04`, or
+`briefing:2026-10-08:morning`, `on-this-day:2026-10-08`, `strava:2026-10-04`, or
 `releases:2026-10-04`, or `recurring-expenses:2026-10-04`) and cannot be reused with different data. The MCP input
 JSON Schema is generated from the same strict Zod schema used at write time,
 and validation errors include every failing field path.

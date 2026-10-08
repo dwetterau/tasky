@@ -16,27 +16,39 @@ describe("widget data", () => {
     await t.mutation(internal.widgetData.publishFromMcp, {
       userId: "user-a",
       kind: "briefing",
-      schemaVersion: 1,
-      dataJson: JSON.stringify({ markdown: "# Morning" }),
+      schemaVersion: 2,
+      dataJson: JSON.stringify({
+        date: "2026-10-08",
+        markdown: "## Calendar\n\n- Morning appointment",
+      }),
     });
     await t.mutation(internal.widgetData.publishFromMcp, {
       userId: "user-b",
       kind: "briefing",
-      schemaVersion: 1,
-      dataJson: JSON.stringify({ markdown: "# Private" }),
+      schemaVersion: 2,
+      dataJson: JSON.stringify({
+        date: "2026-10-08",
+        markdown: "## Private",
+      }),
     });
     const evening = await t.mutation(internal.widgetData.publishFromMcp, {
       userId: "user-a",
       kind: "briefing",
-      schemaVersion: 1,
-      dataJson: JSON.stringify({ markdown: "# Evening" }),
+      schemaVersion: 2,
+      dataJson: JSON.stringify({
+        date: "2026-10-08",
+        markdown: "## Tasks\n\n- Evening review",
+      }),
     });
 
     const latest = await t.run((ctx) =>
       getLatestWidgetData(ctx, "user-a", "briefing"),
     );
     expect(latest?._id).toBe(evening.id);
-    expect(JSON.parse(latest!.dataJson)).toEqual({ markdown: "# Evening" });
+    expect(JSON.parse(latest!.dataJson)).toEqual({
+      date: "2026-10-08",
+      markdown: "## Tasks\n\n- Evening review",
+    });
   });
 
   it("deduplicates retry keys and rejects conflicting reuse", async () => {
@@ -44,9 +56,12 @@ describe("widget data", () => {
     const input = {
       userId: "user-a",
       kind: "briefing" as const,
-      schemaVersion: 1,
-      dataJson: JSON.stringify({ markdown: "# Morning" }),
-      idempotencyKey: "briefing:2026-09-30:morning",
+      schemaVersion: 2,
+      dataJson: JSON.stringify({
+        date: "2026-10-08",
+        markdown: "## Calendar\n\n- Morning appointment",
+      }),
+      idempotencyKey: "briefing:2026-10-08:morning",
     };
     const first = await t.mutation(
       internal.widgetData.publishFromMcp,
@@ -61,7 +76,10 @@ describe("widget data", () => {
     await expect(
       t.mutation(internal.widgetData.publishFromMcp, {
         ...input,
-        dataJson: JSON.stringify({ markdown: "# Different" }),
+        dataJson: JSON.stringify({
+          date: "2026-10-08",
+          markdown: "## Different",
+        }),
       }),
     ).rejects.toThrow(
       "idempotencyKey was already used with different widget data",
@@ -73,8 +91,11 @@ describe("widget data", () => {
     await t.mutation(internal.widgetData.publishFromMcp, {
       userId: "user-a",
       kind: "briefing",
-      schemaVersion: 1,
-      dataJson: JSON.stringify({ markdown: "  # Briefing  " }),
+      schemaVersion: 2,
+      dataJson: JSON.stringify({
+        date: "2026-10-08",
+        markdown: "  ## Calendar\n\n- Haircut  ",
+      }),
     });
     const projected = await t.run((ctx) =>
       projectLatestWidget(ctx, "user-a", Date.now(), "briefing"),
@@ -86,7 +107,10 @@ describe("widget data", () => {
       id: "briefing",
       schemaVersion: 1,
       sourceDataAt: Math.floor(latest!._creationTime),
-      payload: { markdown: "# Briefing" },
+      payload: {
+        date: "2026-10-08",
+        markdown: "## Calendar\n\n- Haircut",
+      },
     });
     expect(() => moduleSchema.parse(projected)).not.toThrow();
   });

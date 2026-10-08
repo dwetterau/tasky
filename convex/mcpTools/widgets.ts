@@ -10,6 +10,7 @@ import {
   WIDGET_DATA_MAX_BYTES,
   WIDGET_KINDS,
   parseWidgetData,
+  widgetDefinitions,
   widgetDataInputSchema,
   widgetDataReadInputSchema,
   type WidgetDataInput,
@@ -168,7 +169,7 @@ export function createWidgetToolHandlers(
           -32602,
           validationMessage(
             parsed.error,
-            `Expected a schema-valid registered widget payload for: ${WIDGET_KINDS.map((kind) => `${kind}@1`).join(", ")}. Inspect the generated tool schema for fields.`,
+            `Expected a schema-valid registered widget payload for: ${WIDGET_KINDS.map((kind) => `${kind}@${widgetDefinitions[kind].schemaVersion}`).join(", ")}. Inspect the generated tool schema for fields.`,
           ),
         );
       }

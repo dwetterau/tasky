@@ -1,7 +1,7 @@
 import type { FunctionReturnType } from "convex/server";
 import { type Href, useRouter } from "expo-router";
 import {
-  briefingPayloadSchema,
+  briefingRenderPayloadSchema,
   formatOnThisDayDate,
   formatRecurringExpenseAmount,
   formatRecurringExpenseDate,
@@ -123,7 +123,9 @@ function BriefingCard() {
   const briefing = useMemo(() => {
     if (!latest.data) return null;
     try {
-      return briefingPayloadSchema.safeParse(JSON.parse(latest.data.dataJson));
+      return briefingRenderPayloadSchema.safeParse(
+        JSON.parse(latest.data.dataJson),
+      );
     } catch {
       return null;
     }
@@ -131,7 +133,10 @@ function BriefingCard() {
 
   if (!taskyEnabled || latest.isLoading || !briefing?.success) return null;
 
-  const content = splitBriefingMarkdown(briefing.data.markdown);
+  const content =
+    "date" in briefing.data
+      ? { title: "Briefing", body: briefing.data.markdown }
+      : splitBriefingMarkdown(briefing.data.markdown);
   const published = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -141,6 +146,11 @@ function BriefingCard() {
     <View style={[sharedStyles.card, styles.briefingCard]}>
       <CardHeader
         title={content.title}
+        subtitle={
+          "date" in briefing.data
+            ? formatOnThisDayDate(briefing.data.date)
+            : undefined
+        }
         trailing={<Text style={styles.briefingTime}>{published}</Text>}
       />
       {content.body ? (
