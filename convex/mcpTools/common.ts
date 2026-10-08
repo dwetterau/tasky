@@ -1,16 +1,13 @@
 const jsonHeaders = {
   "content-type": "application/json",
+  "cache-control": "private, no-store",
 } as const;
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 }
 
-export function mcpError(
-  id: unknown,
-  code: number,
-  message: string,
-): Response {
+export function mcpError(id: unknown, code: number, message: string): Response {
   return jsonResponse({
     jsonrpc: "2.0",
     id,
@@ -32,4 +29,5 @@ export type McpToolDescriptor = {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: { readOnlyHint: boolean };
 };

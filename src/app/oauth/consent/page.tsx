@@ -1,16 +1,13 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { SignIn } from "@/components/SignIn";
 import { TaskyWordmark } from "@/components/TaskyWordmark";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { authClient } from "@/lib/auth-client";
 import { UserIdentity } from "@/components/UserIdentity";
-import {
-  oauthApplicationName,
-  oauthPermissionDescriptions,
-} from "@/lib/oauth";
+import { oauthPermissionDescriptions } from "@/lib/oauth";
 
 function OAuthConsentPageContent() {
   const { session, isPending } = useAuthSession();
@@ -19,14 +16,14 @@ function OAuthConsentPageContent() {
   const [didReturnToApp, setDidReturnToApp] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const clientName = oauthApplicationName(searchParams);
-  const isHomepage = searchParams.get("flow") === "homepage";
-  const hasFriendlyClientName =
-    isHomepage || Boolean(searchParams.get("client_name")?.trim());
-  const requestedScope = useMemo(
-    () => searchParams.get("scope") ?? "",
-    [searchParams],
-  );
+  const [details, setDetails] = useState<{
+    clientName: string;
+    scopes: string[];
+    isHomepage: boolean;
+  } | null>(null);
+  const clientName = details?.clientName ?? "MCP client";
+  const isHomepage = details?.isHomepage ?? false;
+  const hasFriendlyClientName = Boolean(details);
   const consentCode = useMemo(
     () => searchParams.get("consent_code") ?? "",
     [searchParams],
@@ -36,22 +33,46 @@ function OAuthConsentPageContent() {
     if (!convexSiteUrl) return null;
     return `${convexSiteUrl}/api/auth/oauth2/consent`;
   }, []);
+  const userId = session?.user.id;
 
-  const scopeList = useMemo(
-    () =>
-      requestedScope
-        .split(/\s+/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0),
-    [requestedScope],
-  );
-  const permissionDescriptions = useMemo(
-    () => oauthPermissionDescriptions(scopeList),
-    [scopeList],
-  );
+  useEffect(() => {
+    if (!userId) return;
+    if (!consentCode) {
+      setError("Missing authorization request. Start again from your client.");
+      return;
+    }
+    const controller = new AbortController();
+    setDetails(null);
+    const issuer = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
+    fetch(
+      `${issuer}/api/auth/mcp/consent-details?code=${encodeURIComponent(consentCode)}`,
+      {
+        headers: { "Better-Auth-Cookie": authClient.getCookie() },
+        cache: "no-store",
+        signal: controller.signal,
+      },
+    )
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error(
+            "This authorization request is invalid or expired. Start again from your client.",
+          );
+        return response.json();
+      })
+      .then((value) => {
+        if (!controller.signal.aborted) setDetails(value);
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) setError(err.message);
+      });
+    return () => controller.abort();
+  }, [userId, consentCode]);
+  const permissionDescriptions = details
+    ? oauthPermissionDescriptions(details.scopes)
+    : ["Loading verified permissions…"];
 
   const submitConsent = async (accept: boolean) => {
-    if (!consentUrl) return;
+    if (!consentUrl || !details) return;
     setIsSubmitting(true);
     setError(null);
     try {
@@ -177,14 +198,14 @@ function OAuthConsentPageContent() {
           <div className="flex gap-3 justify-end">
             <button
               onClick={() => void submitConsent(false)}
-              disabled={isSubmitting || !consentUrl}
+              disabled={isSubmitting || !consentUrl || !details}
               className="px-4 py-2 rounded-lg border border-(--card-border) hover:border-red-400 hover:text-red-400 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               Deny
             </button>
             <button
               onClick={() => void submitConsent(true)}
-              disabled={isSubmitting || !consentUrl}
+              disabled={isSubmitting || !consentUrl || !details}
               className="px-4 py-2 rounded-lg bg-accent hover:bg-(--accent-hover) text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isSubmitting

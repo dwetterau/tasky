@@ -1,3 +1,4 @@
+import { journalTables } from "./journalSchema";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -287,6 +288,8 @@ export const signalEntryOperation = v.union(
 // Note: better-auth manages its own tables (users, sessions, accounts, verifications)
 // through the component. Our app tables use string userId to reference better-auth users.
 export default defineSchema({
+  ...journalTables,
+  mcpRefreshClaims: defineTable({ tokenHash: v.string(), expiresAt: v.number() }).index("by_hash", ["tokenHash"]).index("by_expiry", ["expiresAt"]),
   userSettings: defineTable({
     userId: v.string(),
     timezone: v.string(),

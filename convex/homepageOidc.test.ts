@@ -2,11 +2,11 @@
 import { expect, it, vi } from "vitest";
 import { betterAuth } from "better-auth";
 import { memoryAdapter, type MemoryDB } from "better-auth/adapters/memory";
-import { jwt, mcp, withMcpAuth } from "better-auth/plugins";
+import { jwt, mcp } from "better-auth/plugins";
 import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify } from "jose";
 import { symmetricEncrypt } from "better-auth/crypto";
 import { homepageOidc } from "./lib/homepageOidc";
-import { isolateHomepageFromMcp } from "./lib/mcp";
+import { isolateHomepageFromMcp, withMcpAuth } from "./lib/mcp";
 import { POST as continueAuthorization } from "../src/app/api/oauth/mcp/continue/route";
 
 const issuer = "https://issuer.example.test";
@@ -17,6 +17,7 @@ const clientSecret = "fixture-homepage-secret-at-least-32-characters";
 const scope = "openid profile email offline_access";
 const verifier = "fixture-pkce-verifier-at-least-forty-three-characters-long";
 
+const refreshClaims = new WeakMap<MemoryDB, Set<string>>();
 function createAuth(db: MemoryDB, homepageEnabled = true) {
   return betterAuth({
     baseURL: issuer,
@@ -42,6 +43,13 @@ function createAuth(db: MemoryDB, homepageEnabled = true) {
           },
         }),
         clientId,
+        async (hash) => {
+          const claims = refreshClaims.get(db) ?? new Set<string>();
+          refreshClaims.set(db, claims);
+          if (claims.has(hash)) return false;
+          claims.add(hash);
+          return true;
+        },
       ),
       ...(homepageEnabled
         ? [
@@ -548,3 +556,195 @@ it.each(["none", "client_secret_basic"] as const)(
     });
   },
 );
+
+async function journalGrant(f: Fixture) {
+  const callback = "https://journal-client.example.test/callback";
+  const registration = await f.auth.handler(
+    new Request(`${issuer}/api/auth/mcp/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Journal fixture",
+        redirect_uris: [callback],
+        token_endpoint_auth_method: "none",
+      }),
+    }),
+  );
+  const client = await registration.json();
+  const query = new URLSearchParams(f.query);
+  query.set("client_id", client.client_id);
+  query.set("redirect_uri", callback);
+  query.set("scope", "openid offline_access tasks:read");
+  query.set("resource", `${issuer}/api/mcp`);
+  // No prompt=consent: the server, not a cooperative client, must require it.
+  const code = await authorizationCode(f, "mcp", query);
+  const response = await token(
+    f.auth,
+    new URLSearchParams({
+      client_id: client.client_id,
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: callback,
+      code_verifier: verifier,
+      resource: `${issuer}/api/mcp`,
+    }),
+    "mcp",
+  );
+  expect(response.status).toBe(200);
+  return {
+    ...((await response.json()) as Tokens),
+    clientId: client.client_id,
+    query,
+  };
+}
+
+it("rejects expired, unbound, tampered, disabled-client and revoked MCP grants", async () => {
+  const f = await fixture(),
+    issued = await journalGrant(f);
+  const session = () =>
+    f.auth.api.getMcpSession({
+      headers: new Headers({ authorization: `Bearer ${issued.access_token}` }),
+    });
+  expect(await session()).toMatchObject({ userId: f.account.user.id });
+  expect(await session()).not.toHaveProperty("refreshToken");
+  const grant = f.db.oauthAccessToken.find(
+    (g) => g.accessToken === issued.access_token,
+  )!;
+  const expiry = grant.accessTokenExpiresAt;
+  grant.accessTokenExpiresAt = new Date(Date.now() - 1);
+  expect(await session()).toBeNull();
+  grant.accessTokenExpiresAt = expiry;
+  const original = issued.access_token;
+  issued.access_token = original.slice(0, -5) + "aaaaa";
+  expect(await session()).toBeNull();
+  issued.access_token = grant.accessToken = "old-unbound-opaque-token";
+  expect(await session()).toBeNull();
+  issued.access_token = grant.accessToken = original;
+  const client = f.db.oauthApplication.find(
+    (c) => c.clientId === issued.clientId,
+  )!;
+  client.disabled = true;
+  expect(await session()).toBeNull();
+  client.disabled = false;
+  const revoked = await f.auth.handler(
+    new Request(`${issuer}/api/auth/mcp/revoke-client`, {
+      method: "POST",
+      headers: {
+        cookie: f.cookies,
+        origin: issuer,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ clientId: issued.clientId }),
+    }),
+  );
+  expect(revoked.status).toBe(200);
+  expect(await session()).toBeNull();
+  expect(
+    (
+      await token(
+        f.auth,
+        new URLSearchParams({
+          client_id: issued.clientId,
+          grant_type: "refresh_token",
+          refresh_token: issued.refresh_token,
+        }),
+        "mcp",
+      )
+    ).status,
+  ).toBe(401);
+});
+
+it("rejects a wrong OAuth resource and permits only one concurrent refresh", async () => {
+  const f = await fixture(),
+    issued = await journalGrant(f);
+  const wrong = new URLSearchParams(issued.query);
+  wrong.set("resource", "https://other.example/mcp");
+  expect(
+    (
+      await f.auth.handler(
+        new Request(`${issuer}/api/auth/mcp/authorize?${wrong}`, {
+          headers: { cookie: f.cookies },
+        }),
+      )
+    ).status,
+  ).toBe(400);
+  const body = new URLSearchParams({
+    client_id: issued.clientId,
+    grant_type: "refresh_token",
+    refresh_token: issued.refresh_token,
+    resource: "https://other.example/mcp",
+  });
+  expect((await token(f.auth, body, "mcp")).status).toBe(400);
+  body.set("resource", `${issuer}/api/mcp`);
+  const attempts = await Promise.all([
+    token(f.auth, body, "mcp"),
+    token(f.auth, body, "mcp"),
+  ]);
+  expect(attempts.map((r) => r.status).sort()).toEqual([200, 401]);
+  expect(
+    await f.auth.api.getMcpSession({
+      headers: new Headers({ authorization: `Bearer ${issued.access_token}` }),
+    }),
+  ).toBeNull();
+});
+
+it("does not accept another user's consent approval or exchange an unapproved consent code", async () => {
+  const f = await fixture(),
+    issued = await journalGrant(f);
+  const response = await f.auth.handler(
+    new Request(`${issuer}/api/auth/mcp/authorize?${issued.query}`, {
+      headers: { cookie: f.cookies },
+    }),
+  );
+  const consentCode = new URL(
+    response.headers.get("location")!,
+  ).searchParams.get("consent_code")!;
+  const details = await f.auth.handler(
+    new Request(`${issuer}/api/auth/mcp/consent-details?code=${consentCode}`, {
+      headers: { cookie: f.cookies },
+    }),
+  );
+  expect(await details.json()).toMatchObject({
+    clientName: "Journal fixture",
+    scopes: ["openid", "offline_access", "tasks:read"],
+  });
+  const premature = await token(
+    f.auth,
+    new URLSearchParams({
+      client_id: issued.clientId,
+      grant_type: "authorization_code",
+      code: consentCode,
+      redirect_uri: "https://journal-client.example.test/callback",
+      code_verifier: verifier,
+    }),
+    "mcp",
+  );
+  expect(premature.status).toBe(401);
+  const signup = await f.auth.handler(
+    new Request(`${issuer}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: issuer },
+      body: JSON.stringify({
+        name: "Other",
+        email: "other@example.test",
+        password: "other-fixture-password-12345",
+      }),
+    }),
+  );
+  const cookies = signup.headers
+    .getSetCookie()
+    .map((s) => s.split(";")[0])
+    .join("; ");
+  const approve = await f.auth.handler(
+    new Request(`${issuer}/api/auth/oauth2/consent`, {
+      method: "POST",
+      headers: {
+        cookie: cookies,
+        origin: issuer,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ accept: true, consent_code: consentCode }),
+    }),
+  );
+  expect(approve.status).toBe(401);
+});
