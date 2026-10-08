@@ -12,8 +12,8 @@ import { stravaModule } from "./strava";
 // Add a module here, a versioned payload schema to home-feed, and a trusted
 // collector/ingestor. The publisher and HTTP read path need no provider logic.
 export const modules: readonly HomeModule<unknown>[] = [
-  weatherModule,
   briefingModule,
+  weatherModule,
   onThisDayModule,
   taskyModule,
   portfolioModule,

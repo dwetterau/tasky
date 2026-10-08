@@ -988,9 +988,9 @@ export default function HomePage() {
         ]}
       >
         <BriefingCard />
-        <OnThisDayCard />
         <TodayCard />
         <SignalsCard />
+        <OnThisDayCard />
         <TaskyCard />
         <PortfolioCard />
         <RecurringExpensesCard />
