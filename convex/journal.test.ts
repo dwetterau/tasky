@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 import { modules } from "./test.setup";
-import { digest, DIMENSIONS, MODEL, partition } from "./lib/journal";
+import { digest, DIMENSIONS, MODEL } from "./lib/journal";
 import {
   createJournalToolHandlers,
   journalToolDescriptors,
@@ -33,7 +33,7 @@ async function fixture() {
         queryPrefix: "",
         createdAt: Date.now(),
       });
-      const corpusId = await ctx.db.insert("journalCorpora", {
+      const settingsId = await ctx.db.insert("journalSettings", {
         userId,
         baseId: `app${userId.replace("-", "")}`,
         table: "Journal",
@@ -47,7 +47,6 @@ async function fixture() {
       });
       const runId = await ctx.db.insert("journalSyncRuns", {
         userId,
-        corpusId,
         mode: "airtable",
         status: "fetching",
         startedAt: Date.now(),
@@ -56,11 +55,11 @@ async function fixture() {
         attempt: 0,
         batch: 0,
       });
-      await ctx.db.patch(corpusId, {
+      await ctx.db.patch(settingsId, {
         currentRun: runId,
         leaseUntil: Date.now() + 600_000,
       });
-      out.push({ userId, corpusId, profileId, runId });
+      out.push({ userId, settingsId, profileId, runId });
     }
     return out;
   });
@@ -71,12 +70,11 @@ async function fixture() {
     record = "recOne",
   ) {
     return t.run(async (ctx) => {
-      const c = (await ctx.db.get(owner.corpusId))!;
+      const c = (await ctx.db.get(owner.settingsId))!;
       const contentHash = await digest(text),
         sourceKey = `${c.baseId}/Journal/${record}`;
       const id = await ctx.db.insert("journalEntries", {
         userId: owner.userId,
-        corpusId: c._id,
         sourceKey,
         recordId: record,
         date,
@@ -89,12 +87,10 @@ async function fixture() {
       });
       const embeddingId = await ctx.db.insert("journalEmbeddings", {
         userId: owner.userId,
-        corpusId: c._id,
         entryId: id,
         profileId: c.profileId,
         contentHash,
         date,
-        partition: partition(c),
         vector: vector(),
         embeddedAt: Date.now(),
       });
@@ -162,7 +158,7 @@ describe("private journal retrieval", () => {
       t.query(internal.journal.status, { userId: "not-enrolled" }),
     ).rejects.toThrow("Journal is not available");
   });
-  it("uses date-constrained vectors, binds cursors, and rejects a changed corpus", async () => {
+  it("uses date-constrained vectors, binds cursors, and rejects a changed journal", async () => {
     const { t, owners, add } = await fixture();
     const a = await add();
     const second = await add(owners[0], "2025-01-01", "Garden 2025", "recTwo");
@@ -199,7 +195,7 @@ describe("private journal retrieval", () => {
       }),
     ).rejects.toThrow("Cursor is invalid");
     await t.run(async (ctx) =>
-      ctx.db.patch(owners[0].corpusId, { revision: 1 }),
+      ctx.db.patch(owners[0].settingsId, { revision: 1 }),
     );
     await expect(
       t.query(internal.journal.hydrate, {

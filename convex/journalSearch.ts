@@ -10,10 +10,9 @@ export const search = internalAction({
   args: { userId: v.string(), input: v.any() },
   handler: async (ctx, { userId, input }): Promise<unknown> => {
     const args = searchSchema.parse(input);
-    const { corpus, partition } = await ctx.runQuery(
-      internal.journal.searchContext,
-      { userId },
-    );
+    const { settings } = await ctx.runQuery(internal.journal.searchContext, {
+      userId,
+    });
     await ctx.runMutation(internal.journal.claimSearch, { userId });
     let semantic: Hit[] = [],
       warning: string | undefined;
@@ -39,7 +38,7 @@ export const search = internalAction({
               from: args.date_from,
               to: args.date_to,
               cursor,
-              revision: corpus.revision,
+              revision: settings.revision,
             });
           semantic.push(...page.hits);
           semantic.sort((a, b) => b.score - a.score);
@@ -51,15 +50,19 @@ export const search = internalAction({
             );
         } while (cursor);
       } else {
-        const found = await ctx.vectorSearch("journalEmbeddings", "by_vector", {
-          vector,
-          limit: 100,
-          filter: (q) => q.eq("partition", partition),
-        });
+        const found = await ctx.vectorSearch(
+          "journalEmbeddings",
+          "by_vector",
+          {
+            vector,
+            limit: 100,
+            filter: (q) => q.eq("userId", userId),
+          },
+        );
         const rows = await ctx.runQuery(internal.journal.vectorHits, {
           userId,
           ids: found.map((r) => r._id),
-          revision: corpus.revision,
+          revision: settings.revision,
         });
         semantic = rows.flatMap((row, i) =>
           row ? [{ ...row, score: found[i]._score }] : [],
@@ -90,7 +93,7 @@ export const search = internalAction({
     const results = await ctx.runQuery(internal.journal.hydrate, {
       userId,
       hits: hits.slice(0, args.limit),
-      revision: corpus.revision,
+      revision: settings.revision,
     });
     return {
       results,

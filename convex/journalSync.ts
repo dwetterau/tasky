@@ -12,13 +12,13 @@ export const step = internalAction({
     } catch {
       return;
     }
-    const { run, corpus } = state;
+    const { run, settings } = state;
     try {
       if (run.status === "fetching") {
-        const token = process.env[corpus.tokenEnv];
+        const token = process.env[settings.tokenEnv];
         if (!token) throw new Error("Source credential is unavailable");
         const url = new URL(
-          `https://api.airtable.com/v0/${encodeURIComponent(corpus.baseId)}/${encodeURIComponent(corpus.table)}`,
+          `https://api.airtable.com/v0/${encodeURIComponent(settings.baseId)}/${encodeURIComponent(settings.table)}`,
         );
         url.searchParams.set("pageSize", "100");
         url.searchParams.append("fields[]", "Date");
