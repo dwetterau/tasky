@@ -161,8 +161,8 @@ describe("durable ingestion and publication", () => {
       markdown: expect.stringContaining("Review the launch plan"),
     });
     expect(edition!.feed.modules.map((module) => module.id)).toEqual([
-      "weather",
       "briefing",
+      "weather",
       "tasky",
     ]);
     expect(edition!.html).toContain(
