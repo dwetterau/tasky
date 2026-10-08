@@ -24,28 +24,6 @@ export const journalTables = {
     .index("by_user", ["userId"])
     .index("by_enabled", ["enabled"])
     .index("by_source", ["baseId", "table"]),
-  journalCorpora: defineTable({
-    userId: v.string(),
-    baseId: v.string(),
-    table: v.string(),
-    tokenEnv: v.string(),
-    enabled: v.boolean(),
-    readable: v.boolean(),
-    profileId: v.id("journalEmbeddingProfiles"),
-    revision: v.number(),
-    documents: v.number(),
-    embeddings: v.number(),
-    lastFullFetch: v.optional(v.number()),
-    lastFullIndex: v.optional(v.number()),
-    currentRun: v.optional(v.id("journalSyncRuns")),
-    leaseUntil: v.optional(v.number()),
-    lastRequestedAt: v.optional(v.number()),
-    searchWindow: v.optional(v.number()),
-    searchCount: v.optional(v.number()),
-  })
-    .index("by_user", ["userId"])
-    .index("by_enabled", ["enabled"])
-    .index("by_source", ["baseId", "table"]),
   journalEmbeddingProfiles: defineTable({
     userId: v.string(),
     provider: v.literal("convex-ai-gateway"),
@@ -58,7 +36,6 @@ export const journalTables = {
   }).index("by_user", ["userId"]),
   journalEntries: defineTable({
     userId: v.string(),
-    corpusId: v.optional(v.id("journalCorpora")),
     sourceKey: v.string(),
     recordId: v.string(),
     date: v.string(),
@@ -74,44 +51,28 @@ export const journalTables = {
     .index("by_user_source", ["userId", "sourceKey"])
     .index("by_user", ["userId"])
     .index("by_user_active_date", ["userId", "active", "date"])
-    .index("by_user_corpus_active_date", [
-      "userId",
-      "corpusId",
-      "active",
-      "date",
-    ])
-    .index("by_corpus", ["corpusId"])
     .searchIndex("search_text_user", {
       searchField: "text",
       filterFields: ["userId", "active"],
-    })
-    .searchIndex("search_text", {
-      searchField: "text",
-      filterFields: ["userId", "corpusId", "active"],
     }),
   journalEmbeddings: defineTable({
     userId: v.string(),
-    corpusId: v.optional(v.id("journalCorpora")),
     entryId: v.id("journalEntries"),
     profileId: v.id("journalEmbeddingProfiles"),
     contentHash: v.string(),
     date: v.string(),
-    partition: v.optional(v.string()),
     vector: v.array(v.float64()),
     embeddedAt: v.number(),
   })
     .index("by_user_date", ["userId", "date"])
-    .index("by_corpus", ["corpusId"])
     .index("by_entry", ["entryId"])
-    .index("by_partition_date", ["partition", "date"])
     .vectorIndex("by_vector", {
       vectorField: "vector",
       dimensions: 1536,
-      filterFields: ["partition", "userId"],
+      filterFields: ["userId"],
     }),
   journalSyncRuns: defineTable({
     userId: v.string(),
-    corpusId: v.optional(v.id("journalCorpora")),
     mode: v.union(v.literal("airtable"), v.literal("import")),
     status: v.union(
       v.literal("fetching"),
@@ -130,7 +91,5 @@ export const journalTables = {
     attempt: v.number(),
     batch: v.number(),
     fullFetchAt: v.optional(v.number()),
-  })
-    .index("by_user", ["userId"])
-    .index("by_corpus", ["corpusId"]),
+  }).index("by_user", ["userId"]),
 };
