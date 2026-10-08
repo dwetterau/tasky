@@ -8,12 +8,11 @@ import {
 import { internal, components } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
-  corpusFor,
+  settingsFor,
   dateSchema,
   digest,
   DIMENSIONS,
   MODEL,
-  partition,
   validVector,
 } from "./lib/journal";
 
@@ -26,7 +25,7 @@ export const enroll = internalMutation({
     table: v.string(),
     tokenEnv: v.string(),
   },
-  handler: async (ctx, args): Promise<Id<"journalCorpora">> => {
+  handler: async (ctx, args): Promise<Id<"journalSettings">> => {
     const user = await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: "user",
       where: [{ field: "_id", value: args.userId }],
@@ -40,7 +39,7 @@ export const enroll = internalMutation({
     )
       throw new Error("Invalid journal source configuration");
     const existing = await ctx.db
-      .query("journalCorpora")
+      .query("journalSettings")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .unique();
     if (existing) {
@@ -49,16 +48,16 @@ export const enroll = internalMutation({
         existing.table !== args.table ||
         existing.tokenEnv !== args.tokenEnv
       )
-        throw new Error("Corpus source already bound");
+        throw new Error("Journal source already bound");
       return existing._id;
     }
     const source = await ctx.db
-      .query("journalCorpora")
+      .query("journalSettings")
       .withIndex("by_source", (q) =>
         q.eq("baseId", args.baseId).eq("table", args.table),
       )
       .first();
-    if (source) throw new Error("Source already bound to another corpus");
+    if (source) throw new Error("Source already bound to another user");
     const profileId = await ctx.db.insert("journalEmbeddingProfiles", {
       userId: args.userId,
       provider: "convex-ai-gateway",
@@ -69,7 +68,7 @@ export const enroll = internalMutation({
       queryPrefix: "",
       createdAt: Date.now(),
     });
-    return ctx.db.insert("journalCorpora", {
+    return ctx.db.insert("journalSettings", {
       userId: args.userId,
       baseId: args.baseId,
       table: args.table,
@@ -84,7 +83,7 @@ export const enroll = internalMutation({
   },
 });
 async function start(ctx: MutationCtx, userId: string) {
-  const c = await corpusFor(ctx, userId, false);
+  const c = await settingsFor(ctx, userId, false);
   if (c.currentRun && (c.leaseUntil ?? 0) > Date.now())
     return { queued: false };
   if (c.lastRequestedAt && Date.now() - c.lastRequestedAt < 60_000)
@@ -100,7 +99,6 @@ async function start(ctx: MutationCtx, userId: string) {
   }
   const id = await ctx.db.insert("journalSyncRuns", {
     userId,
-    corpusId: c._id,
     mode: "airtable",
     status: "fetching",
     startedAt: Date.now(),
@@ -128,16 +126,16 @@ export const requestSync = internalMutation({
 export const dispatch = internalMutation({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }): Promise<void> => {
-    const corpora = await ctx.db
-      .query("journalCorpora")
+    const settingsPage = await ctx.db
+      .query("journalSettings")
       .withIndex("by_enabled", (q) => q.eq("enabled", true))
       .paginate({ numItems: 50, cursor: cursor ?? null });
-    for (const c of corpora.page)
+    for (const c of settingsPage.page)
       if (!c.lastRequestedAt || Date.now() - c.lastRequestedAt >= 60_000)
         await start(ctx, c.userId);
-    if (!corpora.isDone)
+    if (!settingsPage.isDone)
       await ctx.scheduler.runAfter(0, internal.journalImport.dispatch, {
-        cursor: corpora.continueCursor,
+        cursor: settingsPage.continueCursor,
       });
   },
 });
@@ -154,7 +152,7 @@ async function current(
     run.status === "failed"
   )
     throw new Error("Stale sync worker");
-  const c = await ctx.db.get(run.corpusId);
+  const c = await settingsFor(ctx, run.userId, false);
   if (
     !c?.enabled ||
     c.userId !== run.userId ||
@@ -162,7 +160,7 @@ async function current(
     (c.leaseUntil ?? 0) < Date.now()
   )
     throw new Error("Stale sync worker");
-  return { run, corpus: c };
+  return { run, settings: c };
 }
 export const state = internalQuery({
   args: { runId: v.id("journalSyncRuns"), batch: v.number() },
@@ -171,10 +169,10 @@ export const state = internalQuery({
 async function next(
   ctx: MutationCtx,
   run: Doc<"journalSyncRuns">,
-  corpus: Doc<"journalCorpora">,
+  settings: Doc<"journalSettings">,
 ) {
   await ctx.db.patch(run._id, { batch: run.batch + 1, attempt: 0 });
-  await ctx.db.patch(corpus._id, { leaseUntil: Date.now() + leaseMs });
+  await ctx.db.patch(settings._id, { leaseUntil: Date.now() + leaseMs });
   await ctx.scheduler.runAfter(250, internal.journalSync.step, {
     runId: run._id,
     batch: run.batch + 1,
@@ -198,7 +196,7 @@ export const ingestPage = internalMutation({
     offset: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { run, corpus: c } = await current(ctx, args.runId, args.batch);
+    const { run, settings: c } = await current(ctx, args.runId, args.batch);
     if (run.status !== "fetching" || args.records.length > 100)
       throw new Error("Invalid fetch phase");
     let documents = c.documents,
@@ -221,11 +219,8 @@ export const ingestPage = internalMutation({
           q.eq("userId", c.userId).eq("sourceKey", sourceKey),
         )
         .unique();
-      if (old && old.corpusId !== c._id)
-        throw new Error("Source ownership mismatch");
       const value = {
         userId: c.userId,
-        corpusId: c._id,
         sourceKey,
         recordId: record.recordId,
         date: record.date,
@@ -292,12 +287,12 @@ export const ingestPage = internalMutation({
 export const reconcilePage = internalMutation({
   args: { runId: v.id("journalSyncRuns"), batch: v.number() },
   handler: async (ctx, args) => {
-    const { run, corpus: c } = await current(ctx, args.runId, args.batch);
+    const { run, settings: c } = await current(ctx, args.runId, args.batch);
     if (run.status !== "reconciling")
       throw new Error("Invalid reconciliation phase");
     const page = await ctx.db
       .query("journalEntries")
-      .withIndex("by_corpus", (q) => q.eq("corpusId", c._id))
+      .withIndex("by_user", (q) => q.eq("userId", c.userId))
       .paginate({ numItems: 100, cursor: run.cursor ?? null });
     let documents = c.documents,
       embeddings = c.embeddings,
@@ -339,12 +334,12 @@ export const reconcilePage = internalMutation({
 export const embeddingPage = internalQuery({
   args: { runId: v.id("journalSyncRuns"), batch: v.number() },
   handler: async (ctx, args) => {
-    const { run, corpus: c } = await current(ctx, args.runId, args.batch);
+    const { run, settings: c } = await current(ctx, args.runId, args.batch);
     if (run.status !== "embedding") throw new Error("Invalid embedding phase");
     const page = await ctx.db
       .query("journalEntries")
-      .withIndex("by_user_corpus_active_date", (q) =>
-        q.eq("userId", c.userId).eq("corpusId", c._id).eq("active", true),
+      .withIndex("by_user_active_date", (q) =>
+        q.eq("userId", c.userId).eq("active", true),
       )
       .paginate({ numItems: 32, cursor: run.cursor ?? null });
     const entries = [];
@@ -378,7 +373,7 @@ export const saveEmbeddingPage = internalMutation({
     cursor: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
-    const { run, corpus: c } = await current(ctx, args.runId, args.batch);
+    const { run, settings: c } = await current(ctx, args.runId, args.batch);
     if (run.status !== "embedding" || args.items.length > 32)
       throw new Error("Invalid embedding phase");
     let embeddings = c.embeddings,
@@ -388,7 +383,6 @@ export const saveEmbeddingPage = internalMutation({
       if (
         !d ||
         d.userId !== c.userId ||
-        d.corpusId !== c._id ||
         !d.active ||
         d.contentHash !== item.hash
       )
@@ -399,18 +393,16 @@ export const saveEmbeddingPage = internalMutation({
         .withIndex("by_entry", (q) => q.eq("entryId", d._id))
         .unique();
       if (old) {
-        if (old.userId !== c.userId || old.corpusId !== c._id)
+        if (old.userId !== c.userId)
           throw new Error("Embedding ownership mismatch");
         await ctx.db.delete(old._id);
       } else embeddings++;
       await ctx.db.insert("journalEmbeddings", {
         userId: c.userId,
-        corpusId: c._id,
         entryId: d._id,
         profileId: c.profileId,
         contentHash: d.contentHash,
         date: d.date,
-        partition: partition(c),
         vector: item.vector,
         embeddedAt: Date.now(),
       });
@@ -442,7 +434,7 @@ export const saveEmbeddingPage = internalMutation({
 export const failure = internalMutation({
   args: { runId: v.id("journalSyncRuns"), batch: v.number(), code: v.string() },
   handler: async (ctx, args) => {
-    const { run, corpus: c } = await current(ctx, args.runId, args.batch);
+    const { run, settings: c } = await current(ctx, args.runId, args.batch);
     const attempt = run.attempt + 1;
     if (attempt >= 5) {
       await ctx.db.patch(run._id, {

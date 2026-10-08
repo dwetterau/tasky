@@ -57,21 +57,18 @@ export const getSchema = z
       s.dates.length + s.ids.length > 0 && s.dates.length + s.ids.length <= 100,
     "Provide 1–100 dates/IDs",
   );
-export async function corpusFor(
+export async function settingsFor(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   userId: string,
   requireReadable = true,
 ) {
-  const corpus = await ctx.db
-    .query("journalCorpora")
+  const settings = await ctx.db
+    .query("journalSettings")
     .withIndex("by_user", (q) => q.eq("userId", userId))
     .unique();
-  if (!corpus?.enabled || (requireReadable && !corpus.readable))
+  if (!settings?.enabled || (requireReadable && !settings.readable))
     throw new Error("Journal is not available");
-  return corpus;
-}
-export function partition(c: Doc<"journalCorpora">) {
-  return JSON.stringify([c.userId, c._id, c.profileId]);
+  return settings;
 }
 export function present(d: Doc<"journalEntries">, excerpt = false) {
   const text = Array.from(d.text);
@@ -128,11 +125,10 @@ export function matches(
 }
 export async function cursorBinding(
   userId: string,
-  corpusId: string,
   input: unknown,
   revision: number,
 ) {
-  return digest(JSON.stringify([userId, corpusId, input, revision]));
+  return digest(JSON.stringify([userId, input, revision]));
 }
 export function encodeCursor(signature: string, cursor: string) {
   return JSON.stringify({ signature, cursor });

@@ -7,6 +7,19 @@ Only the configured table's `Date` and `Entry` fields are imported. Whole entrie
 are embedded with `openai/text-embedding-3-small`, 1536 dimensions, through Convex
 AI Gateway. No old vectors are uploaded.
 
+## Storage
+
+Each user has one `journalSettings` row for source configuration, active model,
+coverage, sync progress, and search limits. Entries, embeddings, and sync history
+are owned directly by `userId`; there is no separate collection identity.
+
+`journalEmbeddings` uses Convex's native vector index. Embedding generation uses
+Convex AI Gateway; a vector index does not automatically generate vectors when
+text changes. Vectors remain separate from entry text so date/text/batch reads
+do not load 1,536 floating-point values per entry. This is a documented
+[Convex storage pattern](https://docs.convex.dev/search/vector-search#using-a-separate-table-to-store-vectors).
+The model profile preserves the provider, model, dimensions, and formatting used.
+
 ## MCP access
 
 Reconnect existing MCP clients after deploying this change: old tokens lack the
@@ -46,7 +59,7 @@ has different users and must not receive production journal data.
    Invoke the internal `journalImport:enroll` mutation with `userId`,
    `expectedEmail`, the exact `baseId` and `table` used by Knit3, and
    `tokenEnv: "JOURNAL_AIRTABLE_TOKEN"`. Enrollment verifies the account, binds
-   the source once, and creates an unreadable corpus and model profile. It does
+   the source once, and creates an unreadable journal settings row and model profile. It does
    not fetch records. Tables support other users, but enroll only David now.
 4. Invoke `journalImport:requestSync` with that `userId`. The scheduler fetches
    Airtable pages, reconciles records, and embeds batches of at most 32 entries.
@@ -61,7 +74,7 @@ verified. Neither enrollment nor deployment deletes or disables the local MCP.
 
 ## Ongoing operation
 
-Enabled corpora synchronize daily at 09:15 UTC. Authorized users can also request
+Enabled journals synchronize daily at 09:15 UTC. Authorized users can also request
 a sync. A transactional lease prevents overlapping workers, and each committed
 page advances a fenced batch number. Transient failures retry five times;
 `journal_status` reports a sanitized phase error if exhausted. A subsequent run
@@ -72,12 +85,12 @@ Missing source records are deactivated and their text/vectors removed after two
 complete enumerations miss them; partial fetches never trigger reconciliation.
 Initial retrieval stays disabled until all active entries have vectors. Later
 syncs retain available text retrieval while changed entries await embedding.
-Searches/pagination detect concurrent corpus changes and require a retry.
+Searches/pagination detect concurrent journal changes and require a retry.
 
 Literal search is bounded scanning; its limit bounds examined entries, so empty
 pages can have a continuation. Unbounded semantic search uses Convex's vector
-index with one server-derived owner/corpus/profile partition. Date-filtered
-semantic search scores all vectors in the selected partition/date range, capped
+index filtered directly by the authenticated `userId`. Date-filtered
+semantic search scores all vectors in the selected user/date range, capped
 at 10,000 examined rows. Hybrid search combines lexical and semantic rankings;
 it reports lexical fallback when the embedding service is unavailable. Semantic
 requests are limited to 30 per owner per minute.
@@ -85,8 +98,8 @@ requests are limited to 30 per owner per minute.
 ## Security boundaries
 
 All journal functions are internal. MCP injects the owner from the validated
-token; callers cannot supply one. Every retrieval path checks owner/corpus, and
-hydration also checks current content hashes. Journal tools are hidden without
+token; callers cannot supply one. Every retrieval path checks the authenticated owner, and
+vector retrieval checks the active model profile and hydration checks current content hashes. Journal tools are hidden without
 their scope and independently reject calls lacking it. Responses use `no-store`.
 
 Access and refresh tokens require a valid HMAC envelope bound to this exact MCP
@@ -99,7 +112,7 @@ user's MCP consent and tokens; no deployment credential is needed by clients.
 This is application-level isolation, not end-to-end encryption. Deployment
 administrators, Convex, the gateway/provider chain, and authorized MCP clients
 are trusted with the data they process. Generic account deletion currently
-does not implement a journal purge; an operator must remove that user's corpus,
+does not implement a journal purge; an operator must remove that user's settings,
 entries, vectors, profiles, and sync history as part of deletion. Provider and
 backup retention require separate handling. No public journal enrollment,
 arbitrary source selection, or reflection-writing endpoint exists.

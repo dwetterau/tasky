@@ -6,7 +6,7 @@ import {
 } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import {
-  corpusFor,
+  settingsFor,
   present,
   listSchema,
   textSchema,
@@ -15,24 +15,20 @@ import {
   cursorBinding,
   encodeCursor,
   decodeCursor,
-  partition,
   cosine,
   validVector,
 } from "./lib/journal";
 
 function dateQuery(
   ctx: QueryCtx,
-  c: Doc<"journalCorpora">,
+  c: Doc<"journalSettings">,
   from?: string,
   to?: string,
 ) {
   return ctx.db
     .query("journalEntries")
-    .withIndex("by_user_corpus_active_date", (q) => {
-      const base = q
-        .eq("userId", c.userId)
-        .eq("corpusId", c._id)
-        .eq("active", true);
+    .withIndex("by_user_active_date", (q) => {
+      const base = q.eq("userId", c.userId).eq("active", true);
       if (from && to) return base.gte("date", from).lte("date", to);
       if (from) return base.gte("date", from);
       if (to) return base.lte("date", to);
@@ -42,7 +38,7 @@ function dateQuery(
 export const status = internalQuery({
   args: { userId: v.string() },
   handler: async (ctx, { userId }) => {
-    const c = await corpusFor(ctx, userId, false);
+    const c = await settingsFor(ctx, userId, false);
     const p = await ctx.db.get(c.profileId);
     if (!p || p.userId !== userId) throw new Error("Invalid journal profile");
     const first = await dateQuery(ctx, c).first(),
@@ -81,7 +77,7 @@ export const status = internalQuery({
 export const get = internalQuery({
   args: { userId: v.string(), input: v.any() },
   handler: async (ctx, { userId, input }) => {
-    const c = await corpusFor(ctx, userId),
+    const c = await settingsFor(ctx, userId),
       args = getSchema.parse(input);
     const documents = new Map<string, ReturnType<typeof present>>();
     const missing_ids: string[] = [],
@@ -93,7 +89,7 @@ export const get = internalQuery({
           q.eq("userId", userId).eq("sourceKey", id),
         )
         .unique();
-      if (!d || d.corpusId !== c._id || !d.active) missing_ids.push(id);
+      if (!d || !d.active) missing_ids.push(id);
       else documents.set(d.sourceKey, present(d));
     }
     for (const date of args.dates) {
@@ -118,11 +114,10 @@ export const get = internalQuery({
 export const list = internalQuery({
   args: { userId: v.string(), input: v.any() },
   handler: async (ctx, { userId, input }) => {
-    const c = await corpusFor(ctx, userId),
+    const c = await settingsFor(ctx, userId),
       args = listSchema.parse(input);
     const signature = await cursorBinding(
       userId,
-      c._id,
       ["list", args.date_from, args.date_to],
       c.revision,
     );
@@ -134,18 +129,17 @@ export const list = internalQuery({
       next_cursor: page.isDone
         ? null
         : encodeCursor(signature, page.continueCursor),
-      corpus_documents: c.documents,
+      journal_documents: c.documents,
     };
   },
 });
 export const text = internalQuery({
   args: { userId: v.string(), input: v.any() },
   handler: async (ctx, { userId, input }) => {
-    const c = await corpusFor(ctx, userId),
+    const c = await settingsFor(ctx, userId),
       args = textSchema.parse(input);
     const signature = await cursorBinding(
       userId,
-      c._id,
       ["text", args.query, args.mode, args.date_from, args.date_to],
       c.revision,
     );
@@ -168,11 +162,11 @@ export const text = internalQuery({
 export const searchContext = internalQuery({
   args: { userId: v.string() },
   handler: async (ctx, { userId }) => {
-    const c = await corpusFor(ctx, userId),
+    const c = await settingsFor(ctx, userId),
       profile = await ctx.db.get(c.profileId);
     if (!profile || profile.userId !== userId)
       throw new Error("Invalid journal profile");
-    return { corpus: c, profile, partition: partition(c) };
+    return { settings: c, profile };
   },
 });
 export const lexical = internalQuery({
@@ -183,14 +177,13 @@ export const lexical = internalQuery({
     to: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const c = await corpusFor(ctx, args.userId);
+    await settingsFor(ctx, args.userId);
     let q = ctx.db
       .query("journalEntries")
-      .withSearchIndex("search_text", (q) =>
+      .withSearchIndex("search_text_user", (q) =>
         q
           .search("text", args.query)
           .eq("userId", args.userId)
-          .eq("corpusId", c._id)
           .eq("active", true),
       );
     if (args.from) q = q.filter((q) => q.gte(q.field("date"), args.from!));
@@ -212,13 +205,13 @@ export const scorePage = internalQuery({
   },
   handler: async (ctx, args) => {
     if (!validVector(args.vector)) throw new Error("Invalid query embedding");
-    const c = await corpusFor(ctx, args.userId);
+    const c = await settingsFor(ctx, args.userId);
     if (c.revision !== args.revision)
       throw new Error("Journal changed during search; retry");
     const page = await ctx.db
       .query("journalEmbeddings")
-      .withIndex("by_partition_date", (q) => {
-        const base = q.eq("partition", partition(c));
+      .withIndex("by_user_date", (q) => {
+        const base = q.eq("userId", args.userId);
         if (args.from && args.to)
           return base.gte("date", args.from).lte("date", args.to);
         if (args.from) return base.gte("date", args.from);
@@ -228,12 +221,7 @@ export const scorePage = internalQuery({
       .paginate({ numItems: 100, cursor: args.cursor });
     return {
       hits: page.page
-        .filter(
-          (e) =>
-            e.userId === args.userId &&
-            e.corpusId === c._id &&
-            e.profileId === c.profileId,
-        )
+        .filter((e) => e.userId === args.userId && e.profileId === c.profileId)
         .map((e) => ({
           entryId: e.entryId,
           hash: e.contentHash,
@@ -252,16 +240,12 @@ export const vectorHits = internalQuery({
     revision: v.number(),
   },
   handler: async (ctx, { userId, ids, revision }) => {
-    const c = await corpusFor(ctx, userId);
+    const c = await settingsFor(ctx, userId);
     if (c.revision !== revision)
       throw new Error("Journal changed during search; retry");
     const rows = await Promise.all(ids.map((id) => ctx.db.get(id)));
     return rows.map((e) =>
-      e &&
-      e.userId === userId &&
-      e.corpusId === c._id &&
-      e.profileId === c.profileId &&
-      e.partition === partition(c)
+      e && e.userId === userId && e.profileId === c.profileId
         ? { entryId: e.entryId, hash: e.contentHash }
         : null,
     );
@@ -280,19 +264,13 @@ export const hydrate = internalQuery({
     revision: v.number(),
   },
   handler: async (ctx, { userId, hits, revision }) => {
-    const c = await corpusFor(ctx, userId);
+    const c = await settingsFor(ctx, userId);
     if (c.revision !== revision)
       throw new Error("Journal changed during search; retry");
     const out = [];
     for (const hit of hits) {
       const d = await ctx.db.get(hit.entryId);
-      if (
-        d &&
-        d.userId === userId &&
-        d.corpusId === c._id &&
-        d.active &&
-        d.contentHash === hit.hash
-      )
+      if (d && d.userId === userId && d.active && d.contentHash === hit.hash)
         out.push({ document: present(d, true), score: hit.score });
     }
     return out;
@@ -301,7 +279,7 @@ export const hydrate = internalQuery({
 export const claimSearch = internalMutation({
   args: { userId: v.string() },
   handler: async (ctx, { userId }) => {
-    const c = await corpusFor(ctx, userId);
+    const c = await settingsFor(ctx, userId);
     const fresh = !c.searchWindow || Date.now() - c.searchWindow >= 60_000;
     if (!fresh && (c.searchCount ?? 0) >= 30)
       throw new Error("Journal search rate limit; retry later");
