@@ -131,6 +131,7 @@ export type EventSource = "APP" | "MCP";
 
 export const widgetKind = v.union(
   v.literal("briefing"),
+  v.literal("on-this-day"),
   v.literal("strava"),
   v.literal("releases"),
   v.literal("recurring-expenses"),

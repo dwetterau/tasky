@@ -95,6 +95,15 @@ describe("widget data", () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.widgetData.publishFromMcp, {
       userId: "user-a",
+      kind: "on-this-day",
+      schemaVersion: 1,
+      dataJson: JSON.stringify({
+        date: "2026-10-08",
+        markdown: "- **2021:** Moved into a new apartment.",
+      }),
+    });
+    await t.mutation(internal.widgetData.publishFromMcp, {
+      userId: "user-a",
       kind: "strava",
       schemaVersion: 1,
       dataJson: JSON.stringify({
@@ -165,8 +174,19 @@ describe("widget data", () => {
     const projected = await t.run((ctx) =>
       projectLatestWidgets(ctx, "user-a", Date.now()),
     );
-    expect(projected).toHaveLength(3);
+    expect(projected).toHaveLength(4);
     expect(projected[0]).toMatchObject({
+      id: "on-this-day",
+      schemaVersion: 1,
+      freshForMs: 18 * 60 * 60_000,
+      maxAgeMs: 7 * 24 * 60 * 60_000,
+      payload: {
+        date: "2026-10-08",
+        markdown: "- **2021:** Moved into a new apartment.",
+      },
+    });
+    expect(() => moduleSchema.parse(projected[0])).not.toThrow();
+    expect(projected[1]).toMatchObject({
       id: "strava",
       schemaVersion: 1,
       freshForMs: 30 * 60 * 60_000,
@@ -184,8 +204,8 @@ describe("widget data", () => {
         },
       },
     });
-    expect(() => moduleSchema.parse(projected[0])).not.toThrow();
-    expect(projected[1]).toMatchObject({
+    expect(() => moduleSchema.parse(projected[1])).not.toThrow();
+    expect(projected[2]).toMatchObject({
       id: "releases",
       schemaVersion: 1,
       freshForMs: 8 * 24 * 60 * 60_000,
@@ -201,8 +221,8 @@ describe("widget data", () => {
         ],
       },
     });
-    expect(() => moduleSchema.parse(projected[1])).not.toThrow();
-    expect(projected[2]).toMatchObject({
+    expect(() => moduleSchema.parse(projected[2])).not.toThrow();
+    expect(projected[3]).toMatchObject({
       id: "recurring-expenses",
       schemaVersion: 1,
       freshForMs: 8 * 24 * 60 * 60_000,
@@ -227,6 +247,6 @@ describe("widget data", () => {
         },
       },
     });
-    expect(() => moduleSchema.parse(projected[2])).not.toThrow();
+    expect(() => moduleSchema.parse(projected[3])).not.toThrow();
   });
 });

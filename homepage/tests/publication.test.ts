@@ -168,6 +168,45 @@ describe("durable ingestion and publication", () => {
     );
     expect(edition!.html).not.toContain("<script>alert('no')</script>");
   });
+  it("publishes a dated on-this-day journal retrospective", async () => {
+    await enroll();
+    const envelope = fixtureExport();
+    const now = Date.now();
+    envelope.widgets = [
+      {
+        id: "on-this-day",
+        schemaVersion: 1,
+        scope: "user",
+        sourceRevision: 1,
+        sourceDataAt: now,
+        collectedAt: now,
+        freshForMs: 18 * 60 * 60_000,
+        maxAgeMs: 7 * 24 * 60 * 60_000,
+        status: "available",
+        payload: {
+          date: "2026-10-08",
+          markdown:
+            "- **2021:** Moved into a new apartment.\n- **2024:** Ran along the river.",
+        },
+      },
+    ];
+
+    expect((await send(envelope)).status).toBe(202);
+    await tick();
+    const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(edition!.feed.modules.map((module) => module.id)).toEqual([
+      "weather",
+      "on-this-day",
+      "tasky",
+    ]);
+    expect(edition!.html).toContain(
+      'class="module module-supporting module-on-this-day"',
+    );
+    expect(edition!.html).toContain(
+      '<time datetime="2026-10-08">Thursday, October 8, 2026</time>',
+    );
+    expect(edition!.html).toContain("Moved into a new apartment.");
+  });
   it("publishes generic Strava widget snapshots at the end of the edition", async () => {
     await enroll();
     const envelope = fixtureExport();

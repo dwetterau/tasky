@@ -14,6 +14,11 @@ import {
   recurringExpensesPayloadSchema,
   type RecurringExpensesPayload,
 } from "./widgets/recurring-expenses";
+import {
+  ON_THIS_DAY_SCHEMA_VERSION,
+  onThisDayPayloadSchema,
+  type OnThisDayPayload,
+} from "./widgets/on-this-day";
 
 export {
   formatStravaDistance,
@@ -56,9 +61,17 @@ export {
   type RecurringExpenseCategoryTotal,
   type RecurringExpensesPayload,
 } from "./widgets/recurring-expenses";
+export {
+  formatOnThisDayDate,
+  ON_THIS_DAY_MAX_MARKDOWN_LENGTH,
+  ON_THIS_DAY_SCHEMA_VERSION,
+  onThisDayPayloadSchema,
+  type OnThisDayPayload,
+} from "./widgets/on-this-day";
 
 export const WIDGET_KINDS = [
   "briefing",
+  "on-this-day",
   "strava",
   "releases",
   "recurring-expenses",
@@ -89,6 +102,12 @@ export const widgetDefinitions = {
   briefing: {
     schemaVersion: BRIEFING_SCHEMA_VERSION,
     payloadSchema: briefingPayloadSchema,
+    freshForMs: 18 * 60 * 60_000,
+    maxAgeMs: 7 * 24 * 60 * 60_000,
+  },
+  "on-this-day": {
+    schemaVersion: ON_THIS_DAY_SCHEMA_VERSION,
+    payloadSchema: onThisDayPayloadSchema,
     freshForMs: 18 * 60 * 60_000,
     maxAgeMs: 7 * 24 * 60 * 60_000,
   },
@@ -137,6 +156,26 @@ export const widgetDataInputSchema = z.discriminatedUnion("kind", [
         .max(160, "idempotencyKey cannot exceed 160 characters")
         .describe(
           "Optional retry key, for example briefing:2026-09-30:morning. Reusing it with different data is rejected.",
+        )
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z
+        .literal("on-this-day")
+        .describe("Journal facts from this calendar date in prior years."),
+      schemaVersion: z
+        .literal(ON_THIS_DAY_SCHEMA_VERSION)
+        .describe("The payload schema version expected by clients."),
+      data: onThisDayPayloadSchema,
+      idempotencyKey: z
+        .string()
+        .trim()
+        .min(1, "idempotencyKey cannot be empty")
+        .max(160, "idempotencyKey cannot exceed 160 characters")
+        .describe(
+          "Optional retry key, for example on-this-day:2026-10-08. Reusing it with different data is rejected.",
         )
         .optional(),
     })
@@ -208,6 +247,7 @@ export type WidgetDataReadInput = z.infer<typeof widgetDataReadInputSchema>;
 export type WidgetDataInput = z.infer<typeof widgetDataInputSchema>;
 export type WidgetPayload =
   | BriefingPayload
+  | OnThisDayPayload
   | StravaPayload
   | ReleasesPayload
   | RecurringExpensesPayload;
