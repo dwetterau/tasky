@@ -23,7 +23,6 @@ import type * as journalEmbeddings from "../journalEmbeddings.js";
 import type * as journalImport from "../journalImport.js";
 import type * as journalSchema from "../journalSchema.js";
 import type * as journalSearch from "../journalSearch.js";
-import type * as journalSettingsMigration from "../journalSettingsMigration.js";
 import type * as journalSync from "../journalSync.js";
 import type * as lib_accountSnapshots from "../lib/accountSnapshots.js";
 import type * as lib_homepageOidc from "../lib/homepageOidc.js";
@@ -82,7 +81,6 @@ declare const fullApi: ApiFromModules<{
   journalImport: typeof journalImport;
   journalSchema: typeof journalSchema;
   journalSearch: typeof journalSearch;
-  journalSettingsMigration: typeof journalSettingsMigration;
   journalSync: typeof journalSync;
   "lib/accountSnapshots": typeof lib_accountSnapshots;
   "lib/homepageOidc": typeof lib_homepageOidc;
