@@ -4,7 +4,7 @@ import { expo } from "@better-auth/expo";
 import { jwt } from "better-auth/plugins/jwt";
 import { mcp } from "better-auth/plugins";
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
-import { components } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
 import { homepageOidc } from "./lib/homepageOidc";
@@ -48,6 +48,8 @@ export const oauthScopes = [
   "signals:write",
   "widgets:read",
   "widgets:write",
+  "journal:read",
+  "journal:sync",
 ] as const;
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
@@ -85,6 +87,8 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
             scopes: [...oauthScopes],
             defaultScope: "openid offline_access tasks:read",
             allowDynamicClientRegistration: true,
+            requirePKCE: true,
+            allowPlainCodeChallengeMethod: false,
             useJWTPlugin: true,
             schema: {
               oauthApplication: {
@@ -96,6 +100,13 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
           },
         }),
         homepageClientId,
+        async (tokenHash, expiresAt) => {
+          if (!("runMutation" in ctx)) return false;
+          return ctx.runMutation(internal.mcpAuth.claimRefresh, {
+            tokenHash,
+            expiresAt,
+          });
+        },
       ),
       ...(process.env.HOMEPAGE_ORIGIN &&
       process.env.HOMEPAGE_OAUTH_CLIENT_SECRET

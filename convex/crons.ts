@@ -13,4 +13,16 @@ crons.daily(
   internal.portfolioSync.dispatchDaily,
   {},
 );
+crons.hourly(
+  "clean MCP refresh claims",
+  { minuteUTC: 40 },
+  internal.mcpAuth.cleanup,
+  {},
+);
+crons.daily(
+  "sync journals",
+  { hourUTC: 9, minuteUTC: 15 },
+  internal.journalImport.dispatch,
+  {},
+);
 export default crons;

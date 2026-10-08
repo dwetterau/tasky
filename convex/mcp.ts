@@ -1,7 +1,9 @@
+import { createJournalToolHandlers, journalToolDescriptors } from "./mcpTools/journal";
+import { withMcpAuth } from "./lib/mcp";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { createAuth, oauthScopes } from "./auth";
-import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata, withMcpAuth } from "better-auth/plugins";
+import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import {
   hasRequiredScope,
   splitScopeString,
@@ -848,7 +850,7 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           jsonrpc: "2.0",
           id: rpcId,
           result: {
-            tools: getToolsList(),
+            tools: [...getToolsList(), ...journalToolDescriptors(parsedScopes)],
           },
         });
       }
@@ -894,7 +896,19 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           publish: (args) =>
             ctx.runMutation(internal.widgetData.publishFromMcp, args),
         });
-        const toolHandlers: Record<string, () => Promise<Response>> = {
+        const journalHandlers = createJournalToolHandlers({
+        search_journal: (args) =>
+          ctx.runAction(internal.journalSearch.search, args),
+        search_journal_text: (args) =>
+          ctx.runQuery(internal.journal.text, args),
+        get_journal_entry: (args) => ctx.runQuery(internal.journal.get, args),
+        list_entries: (args) => ctx.runQuery(internal.journal.list, args),
+        journal_status: ({ userId }) =>
+          ctx.runQuery(internal.journal.status, { userId }),
+        request_journal_sync: ({ userId }) =>
+          ctx.runMutation(internal.journalImport.requestSync, { userId }),
+      });
+      const toolHandlers: Record<string, () => Promise<Response>> = {
           readTasks: () =>
             handleReadTasksTool(
             (args) => ctx.runQuery(internal.tasks.listForMcp, args),
@@ -949,7 +963,7 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
             Object.entries({
               ...signalHandlers,
               ...scorecardHandlers,
-              ...widgetHandlers,
+              ...widgetHandlers, ...journalHandlers,
             }).map(
               ([name, handler]) => [
               name,
