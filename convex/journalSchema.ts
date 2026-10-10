@@ -20,6 +20,9 @@ export const journalTables = {
     lastRequestedAt: v.optional(v.number()),
     searchWindow: v.optional(v.number()),
     searchCount: v.optional(v.number()),
+    lastSourceVersion: v.optional(v.string()),
+    lastSourceModifiedAt: v.optional(v.string()),
+    lastSourceCheck: v.optional(v.number()),
   })
     .index("by_user", ["userId"])
     .index("by_enabled", ["enabled"])
@@ -46,11 +49,13 @@ export const journalTables = {
     lastSeenRun: v.id("journalSyncRuns"),
     missingSinceRun: v.optional(v.id("journalSyncRuns")),
     embeddingError: v.optional(v.string()),
+    needsEmbedding: v.optional(v.boolean()),
     updatedAt: v.number(),
   })
     .index("by_user_source", ["userId", "sourceKey"])
     .index("by_user", ["userId"])
     .index("by_user_active_date", ["userId", "active", "date"])
+    .index("by_user_needs_embedding", ["userId", "needsEmbedding"])
     .searchIndex("search_text_user", {
       searchField: "text",
       filterFields: ["userId", "active"],
@@ -91,5 +96,7 @@ export const journalTables = {
     attempt: v.number(),
     batch: v.number(),
     fullFetchAt: v.optional(v.number()),
+    sourceVersion: v.optional(v.string()),
+    sourceModifiedAt: v.optional(v.string()),
   }).index("by_user", ["userId"]),
 };

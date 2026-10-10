@@ -178,6 +178,64 @@ async function next(
     batch: run.batch + 1,
   });
 }
+
+export const beginSourceFetch = internalMutation({
+  args: {
+    runId: v.id("journalSyncRuns"),
+    batch: v.number(),
+    sourceVersion: v.string(),
+    sourceModifiedAt: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { run, settings } = await current(ctx, args.runId, args.batch);
+    if (run.status !== "fetching" || run.sourceVersion !== undefined)
+      throw new Error("Invalid source check phase");
+    await ctx.db.patch(run._id, {
+      sourceVersion: args.sourceVersion,
+      sourceModifiedAt: args.sourceModifiedAt,
+    });
+    await ctx.db.patch(settings._id, { lastSourceCheck: Date.now() });
+    await next(ctx, run, settings);
+  },
+});
+
+export const completeUnchanged = internalMutation({
+  args: {
+    runId: v.id("journalSyncRuns"),
+    batch: v.number(),
+    sourceVersion: v.string(),
+    sourceModifiedAt: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { run, settings } = await current(ctx, args.runId, args.batch);
+    const canInitializeCheckpoint =
+      settings.lastSourceVersion === undefined &&
+      settings.lastFullFetch !== undefined &&
+      settings.documents === settings.embeddings &&
+      (args.sourceModifiedAt === undefined ||
+        Date.parse(args.sourceModifiedAt) <= settings.lastFullFetch);
+    if (
+      run.status !== "fetching" ||
+      run.sourceVersion !== undefined ||
+      (settings.lastSourceVersion !== args.sourceVersion &&
+        !canInitializeCheckpoint)
+    )
+      throw new Error("Invalid unchanged source");
+    const now = Date.now();
+    await ctx.db.patch(settings._id, {
+      currentRun: undefined,
+      leaseUntil: undefined,
+      lastSourceCheck: now,
+      lastSourceVersion: args.sourceVersion,
+      lastSourceModifiedAt: args.sourceModifiedAt,
+    });
+    await ctx.db.patch(run._id, {
+      status: "complete",
+      finishedAt: now,
+    });
+  },
+});
+
 async function removeVector(ctx: MutationCtx, id: Id<"journalEntries">) {
   const e = await ctx.db
     .query("journalEmbeddings")
@@ -232,14 +290,16 @@ export const ingestPage = internalMutation({
         missingSinceRun: undefined,
       };
       if (old) {
+        const contentChanged = old.contentHash !== hash;
+        const requiresEmbedding = active && (!old.active || contentChanged);
         if (
           old.active !== active ||
-          old.contentHash !== hash ||
+          contentChanged ||
           old.date !== record.date
         ) {
           changed = true;
           documents += Number(active) - Number(old.active);
-          if (!active || old.contentHash !== hash)
+          if (!active || contentChanged || !old.active)
             embeddings -= await removeVector(ctx, old._id);
           else if (old.date !== record.date) {
             const e = await ctx.db
@@ -253,11 +313,16 @@ export const ingestPage = internalMutation({
           ...value,
           updatedAt: Date.now(),
           embeddingError: undefined,
+          needsEmbedding:
+            active && (requiresEmbedding || old.needsEmbedding === true)
+              ? true
+              : undefined,
         });
       } else {
         await ctx.db.insert("journalEntries", {
           ...value,
           updatedAt: Date.now(),
+          needsEmbedding: active ? true : undefined,
         });
         documents += Number(active);
         changed = true;
@@ -311,6 +376,7 @@ export const reconcilePage = internalMutation({
             await ctx.db.patch(d._id, {
               active: false,
               text: "",
+              needsEmbedding: undefined,
               updatedAt: Date.now(),
             });
             continue;
@@ -336,27 +402,19 @@ export const embeddingPage = internalQuery({
   handler: async (ctx, args) => {
     const { run, settings: c } = await current(ctx, args.runId, args.batch);
     if (run.status !== "embedding") throw new Error("Invalid embedding phase");
-    const page = await ctx.db
+    const entries = await ctx.db
       .query("journalEntries")
-      .withIndex("by_user_active_date", (q) =>
-        q.eq("userId", c.userId).eq("active", true),
+      .withIndex("by_user_needs_embedding", (q) =>
+        q.eq("userId", c.userId).eq("needsEmbedding", true),
       )
-      .paginate({ numItems: 32, cursor: run.cursor ?? null });
-    const entries = [];
-    for (const d of page.page) {
-      const e = await ctx.db
-        .query("journalEmbeddings")
-        .withIndex("by_entry", (q) => q.eq("entryId", d._id))
-        .unique();
-      if (
-        !e ||
-        e.userId !== c.userId ||
-        e.profileId !== c.profileId ||
-        e.contentHash !== d.contentHash
-      )
-        entries.push({ id: d._id, hash: d.contentHash, text: d.text });
-    }
-    return { entries, cursor: page.isDone ? null : page.continueCursor };
+      .take(32);
+    return {
+      entries: entries.map((d) => ({
+        id: d._id,
+        hash: d.contentHash,
+        text: d.text,
+      })),
+    };
   },
 });
 export const saveEmbeddingPage = internalMutation({
@@ -370,7 +428,6 @@ export const saveEmbeddingPage = internalMutation({
         vector: v.array(v.number()),
       }),
     ),
-    cursor: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
     const { run, settings: c } = await current(ctx, args.runId, args.batch);
@@ -384,6 +441,7 @@ export const saveEmbeddingPage = internalMutation({
         !d ||
         d.userId !== c.userId ||
         !d.active ||
+        d.needsEmbedding !== true ||
         d.contentHash !== item.hash
       )
         throw new Error("Entry changed while embedding");
@@ -406,17 +464,15 @@ export const saveEmbeddingPage = internalMutation({
         vector: item.vector,
         embeddedAt: Date.now(),
       });
+      await ctx.db.patch(d._id, { needsEmbedding: undefined });
       added++;
     }
     await ctx.db.patch(c._id, {
       embeddings,
       revision: c.revision + Number(added > 0),
     });
-    await ctx.db.patch(run._id, {
-      embedded: run.embedded + added,
-      cursor: args.cursor ?? undefined,
-    });
-    if (args.cursor) {
+    await ctx.db.patch(run._id, { embedded: run.embedded + added });
+    if (args.items.length === 32) {
       await next(ctx, run, c);
       return;
     }
@@ -427,6 +483,13 @@ export const saveEmbeddingPage = internalMutation({
       lastFullIndex: Date.now(),
       leaseUntil: undefined,
       currentRun: undefined,
+      ...(run.sourceVersion !== undefined
+        ? {
+            lastSourceVersion: run.sourceVersion,
+            lastSourceModifiedAt: run.sourceModifiedAt,
+            lastSourceCheck: Date.now(),
+          }
+        : {}),
     });
     await ctx.db.patch(run._id, { status: "complete", finishedAt: Date.now() });
   },
