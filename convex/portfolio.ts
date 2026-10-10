@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import {
   action,
+  internalAction,
   internalMutation,
   internalQuery,
   type ActionCtx,
@@ -504,6 +505,10 @@ async function fetchBarsFromYahoo(
   }
 }
 
+export function supportsMarketPriceLookup(ticker: string): boolean {
+  return /^[A-Z][A-Z0-9.-]*$/.test(ticker);
+}
+
 async function updatePositionValues(
   credentials: PortfolioCredentials,
   positions: Array<{
@@ -552,15 +557,19 @@ async function fetchLatestPrices(
   if (tickers.length === 0) {
     return { prices: new Map(), yahooTickers: [] };
   }
+  const marketTickers = tickers.filter(supportsMarketPriceLookup);
+  if (marketTickers.length === 0) {
+    return { prices: new Map(), yahooTickers: [] };
+  }
   const startDate = subtractDays(endDate, 10);
   const bars = await fetchBarsFromAlpaca(
-    tickers,
+    marketTickers,
     startDate,
     endDate,
     credentials,
   );
   const yahooTickers: string[] = [];
-  for (const ticker of tickers) {
+  for (const ticker of marketTickers) {
     if ((bars[ticker] ?? []).length > 0) continue;
     const yahooBars = await fetchBarsFromYahoo(ticker, startDate, endDate);
     if (yahooBars.length > 0) {
@@ -1296,13 +1305,42 @@ function emptySyncDetails() {
   };
 }
 
-async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
-  const [apiKey, baseId, portfolios, timezone] = await Promise.all([
-    getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
-    getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
-    getPortfolioConfigurations(ctx, userId),
-    ctx.runQuery(getTimezoneInternal, { userId }),
-  ]);
+async function runPortfolioSyncStage<T>(
+  stage: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "portfolio_sync_stage_failed",
+        stage,
+        error:
+          error instanceof Error
+            ? error.message.slice(0, 500)
+            : "Unknown error",
+      }),
+    );
+    throw error;
+  }
+}
+
+async function performPortfolioSnapshotSync(
+  ctx: ActionCtx,
+  userId: string,
+  snapshotDate?: string,
+) {
+  const [apiKey, baseId, portfolios, timezone] = await runPortfolioSyncStage(
+    "load_configuration",
+    async () =>
+      await Promise.all([
+        getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
+        getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
+        getPortfolioConfigurations(ctx, userId),
+        ctx.runQuery(getTimezoneInternal, { userId }),
+      ]),
+  );
   if (!apiKey || !baseId || portfolios.length === 0) {
     return {
       success: false,
@@ -1325,7 +1363,10 @@ async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
   }
 
   const credentials = { apiKey, baseId };
-  const records = await fetchPortfolioPositionRecords(credentials, portfolios);
+  const records = await runPortfolioSyncStage(
+    "read_positions",
+    async () => await fetchPortfolioPositionRecords(credentials, portfolios),
+  );
   if (records.length === 0) {
     return {
       success: true,
@@ -1358,26 +1399,30 @@ async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
       recordsWithAccounts.map(({ holding }) => holding.ticker).filter(Boolean),
     ),
   ];
-  const endDate = getTodayDate(timezone);
-  const { prices, yahooTickers } = await fetchLatestPrices(
-    tickers,
-    endDate,
-    alpacaCredentials,
+  const endDate = snapshotDate ?? getTodayDate(timezone);
+  const { prices, yahooTickers } = await runPortfolioSyncStage(
+    "fetch_prices",
+    async () =>
+      await fetchLatestPrices(tickers, endDate, alpacaCredentials),
   );
-  const positionsUpdated = await updatePositionValues(
-    credentials,
-    recordsWithAccounts.flatMap(({ holding }) => {
-      const latest = prices.get(holding.ticker);
-      return latest
-        ? [
-            {
-              positionRecordId: holding.id,
-              shares: holding.shares,
-              closePrice: latest.close,
-            },
-          ]
-        : [];
-    }),
+  const positionsUpdated = await runPortfolioSyncStage(
+    "update_positions",
+    async () =>
+      await updatePositionValues(
+        credentials,
+        recordsWithAccounts.flatMap(({ holding }) => {
+          const latest = prices.get(holding.ticker);
+          return latest
+            ? [
+                {
+                  positionRecordId: holding.id,
+                  shares: holding.shares,
+                  closePrice: latest.close,
+                },
+              ]
+            : [];
+        }),
+      ),
   );
 
   const positionsByAccount = new Map<string, AccountSnapshotPosition[]>();
@@ -1405,9 +1450,10 @@ async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
     positionsByAccount.set(accountRecordId, positions);
   }
   const accountRecordIds = new Set(positionsByAccount.keys());
-  const accountNames = await getInvestmentAccountNames(
-    credentials,
-    accountRecordIds,
+  const accountNames = await runPortfolioSyncStage(
+    "read_account_names",
+    async () =>
+      await getInvestmentAccountNames(credentials, accountRecordIds),
   );
   const capturedAt = Date.now();
   const payloads = [...positionsByAccount].map(([accountRecordId, positions]) =>
@@ -1419,7 +1465,10 @@ async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
       positions,
     }),
   );
-  const snapshots = await upsertAccountSnapshots(credentials, payloads);
+  const snapshots = await runPortfolioSyncStage(
+    "write_snapshots",
+    async () => await upsertAccountSnapshots(credentials, payloads),
+  );
   const synced = snapshots.created + snapshots.updated;
   return {
     success: true,
@@ -1438,7 +1487,11 @@ async function performPortfolioSnapshotSync(ctx: ActionCtx, userId: string) {
 }
 
 /** Same Airtable/Alpaca sync the app runs. Caller supplies an already-authorized user id. */
-export async function syncPortfolioForUser(ctx: ActionCtx, userId: string) {
+export async function syncPortfolioForUser(
+  ctx: ActionCtx,
+  userId: string,
+  snapshotDate?: string,
+) {
   const leaseId = crypto.randomUUID();
   const startedAt = Date.now();
   const acquired = await ctx.runMutation(
@@ -1454,7 +1507,11 @@ export async function syncPortfolioForUser(ctx: ActionCtx, userId: string) {
     };
   }
   try {
-    const result = await performPortfolioSnapshotSync(ctx, userId);
+    const result = await performPortfolioSnapshotSync(
+      ctx,
+      userId,
+      snapshotDate,
+    );
     if (result.success) {
       await ctx.runMutation(internal.portfolio.recordSyncInternal, {
         userId,
@@ -1479,5 +1536,19 @@ export const syncPortfolio = action({
       throw new Error("Not authenticated");
     }
     return await syncPortfolioForUser(ctx, userId);
+  },
+});
+
+export const backfillSnapshot = internalAction({
+  args: {
+    userId: v.string(),
+    date: v.string(),
+  },
+  returns: portfolioSyncResult,
+  handler: async (ctx, { userId, date }) => {
+    if (!isValidIsoDate(date)) {
+      throw new Error("Backfill date must use YYYY-MM-DD");
+    }
+    return await syncPortfolioForUser(ctx, userId, date);
   },
 });

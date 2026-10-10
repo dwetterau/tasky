@@ -2,7 +2,11 @@ import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
 import schema from "./schema";
 import { internal } from "./_generated/api";
-import { aggregateHoldingsByTicker, calculateHolding } from "./portfolio";
+import {
+  aggregateHoldingsByTicker,
+  calculateHolding,
+  supportsMarketPriceLookup,
+} from "./portfolio";
 import { modules } from "./test.setup";
 
 it("keeps an empty-ticker cash position in portfolio value", () => {
@@ -24,6 +28,14 @@ it("keeps an empty-ticker cash position in portfolio value", () => {
     currentValue: 250,
     gainLoss: 0,
   });
+});
+
+it("skips non-market identifiers when looking up prices", () => {
+  expect(supportsMarketPriceLookup("AAPL")).toBe(true);
+  expect(supportsMarketPriceLookup("VFIAX")).toBe(true);
+  expect(supportsMarketPriceLookup("BRK.B")).toBe(true);
+  expect(supportsMarketPriceLookup("91282CFU0")).toBe(false);
+  expect(supportsMarketPriceLookup("")).toBe(false);
 });
 
 it("combines duplicate tickers and empty cash positions", () => {
