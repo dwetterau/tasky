@@ -56,6 +56,8 @@ export const status = internalQuery({
       last_date: last?.date ?? null,
       last_full_fetch: c.lastFullFetch ?? null,
       last_full_index: c.lastFullIndex ?? null,
+      last_source_check: c.lastSourceCheck ?? null,
+      last_source_modified_at: c.lastSourceModifiedAt ?? null,
       embedding_profile: {
         provider: p.provider,
         model: p.model,

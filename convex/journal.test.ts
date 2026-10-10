@@ -9,6 +9,7 @@ import {
   journalToolDescriptors,
   type JournalExecutors,
 } from "./mcpTools/journal";
+import { sourceCheckpointForRecord } from "./journalSync";
 
 const vector = () => [1, ...Array(DIMENSIONS - 1).fill(0)];
 vi.mock("./journalEmbeddings", () => ({
@@ -249,6 +250,46 @@ describe("private journal retrieval", () => {
 });
 
 describe("journal synchronization", () => {
+  it("uses a stable one-row source checkpoint", () => {
+    expect(sourceCheckpointForRecord()).toEqual({ version: "empty" });
+    expect(
+      sourceCheckpointForRecord({
+        createdTime: "2026-10-01T10:00:00.000Z",
+        fields: {
+          "Entry modified time": "2026-10-02T11:30:00.000Z",
+        },
+      }),
+    ).toEqual({
+      version: "2026-10-02T11:30:00.000Z",
+      modifiedAt: "2026-10-02T11:30:00.000Z",
+    });
+  });
+  it("initializes a current checkpoint without scanning journal entries", async () => {
+    const { t, owners, add } = await fixture();
+    const owner = owners[0];
+    const entry = await add();
+    const sourceModifiedAt = new Date(Date.now() - 1_000).toISOString();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(owner.settingsId, { lastFullFetch: Date.now() });
+    });
+    await t.mutation(internal.journalImport.completeUnchanged, {
+      runId: owner.runId,
+      batch: 0,
+      sourceVersion: "same",
+      sourceModifiedAt,
+    });
+    expect((await t.run((ctx) => ctx.db.get(owner.runId)))?.status).toBe(
+      "complete",
+    );
+    const settings = await t.run((ctx) => ctx.db.get(owner.settingsId));
+    expect(settings?.currentRun).toBeUndefined();
+    expect(settings?.lastSourceVersion).toBe("same");
+    expect(settings?.lastSourceModifiedAt).toBe(sourceModifiedAt);
+    expect(await t.run((ctx) => ctx.db.get(entry.id))).toMatchObject({
+      text: "Garden private user-a",
+      active: true,
+    });
+  });
   it("invalidates edited vectors, preserves unrelated owners and rejects stale workers", async () => {
     const { t, owners, add } = await fixture();
     const a = await add(),
@@ -314,8 +355,9 @@ describe("journal synchronization", () => {
     ).rejects.toThrow("Invalid reconciliation phase");
   });
   it("commits matching embeddings only, and activates only complete coverage", async () => {
-    const { t, owners } = await fixture();
+    const { t, owners, add } = await fixture();
     const owner = owners[0];
+    await add();
     await t.mutation(internal.journalImport.ingestPage, {
       runId: owner.runId,
       batch: 0,
@@ -331,24 +373,26 @@ describe("journal synchronization", () => {
       runId: owner.runId,
       batch: 2,
     });
+    expect(page.entries).toHaveLength(1);
     const e = page.entries[0];
     await expect(
       t.mutation(internal.journalImport.saveEmbeddingPage, {
         runId: owner.runId,
         batch: 2,
         items: [{ id: e.id, hash: "stale", vector: vector() }],
-        cursor: page.cursor,
       }),
     ).rejects.toThrow("Entry changed");
     await t.mutation(internal.journalImport.saveEmbeddingPage, {
       runId: owner.runId,
       batch: 2,
       items: [{ id: e.id, hash: e.hash, vector: vector() }],
-      cursor: page.cursor,
     });
     const status = await t.query(internal.journal.status, {
       userId: owner.userId,
     });
+    expect(
+      (await t.run((ctx) => ctx.db.get(e.id)))?.needsEmbedding,
+    ).toBeUndefined();
     expect(status.pending_embeddings).toBe(0);
     expect(status.last_full_index).not.toBeNull();
     expect(status.recent_syncs[0].status).toBe("complete");

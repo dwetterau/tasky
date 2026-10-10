@@ -54,17 +54,20 @@ has different users and must not receive production journal data.
    Airtable token. Never put its value in a committed file, CLI transcript, or
    MCP arguments. Confirm the gateway's processing terms are acceptable: remote
    embeddings disclose entry text and search queries to that processing chain.
-3. Recheck the verified Better Auth account for `david.wetterau@gmail.com`.
+3. Ensure the Journal table has an `Entry modified time` Last Modified Time
+   field that watches both `Date` and `Entry`. The daily source check sorts this
+   field descending and reads one record; it does not enumerate the table.
+4. Recheck the verified Better Auth account for `david.wetterau@gmail.com`.
    Its production ID at design time was `k5796cc6dv7tvdr88hjcajfeyd7zzfwf`.
    Invoke the internal `journalImport:enroll` mutation with `userId`,
    `expectedEmail`, the exact `baseId` and `table` used by Knit3, and
    `tokenEnv: "JOURNAL_AIRTABLE_TOKEN"`. Enrollment verifies the account, binds
    the source once, and creates an unreadable journal settings row and model profile. It does
    not fetch records. Tables support other users, but enroll only David now.
-4. Invoke `journalImport:requestSync` with that `userId`. The scheduler fetches
+5. Invoke `journalImport:requestSync` with that `userId`. The scheduler fetches
    Airtable pages, reconciles records, and embeds batches of at most 32 entries.
    Poll `journal:status` with that `userId`; this returns metadata, not entries.
-5. Before cutover require `readable: true`, zero `pending_embeddings`, a complete
+6. Before cutover require `readable: true`, zero `pending_embeddings`, a complete
    sync, and appropriate date/count coverage. Inspect owner counts in all five
    journal tables and verify they contain only the enrolled production user.
    Perform an authenticated MCP search/get/list smoke check without logging text.
@@ -74,15 +77,23 @@ verified. Neither enrollment nor deployment deletes or disables the local MCP.
 
 ## Ongoing operation
 
-Enabled journals synchronize daily at 09:15 UTC. Authorized users can also request
-a sync. A transactional lease prevents overlapping workers, and each committed
-page advances a fenced batch number. Transient failures retry five times;
-`journal_status` reports a sanitized phase error if exhausted. A subsequent run
-re-fetches source pages but reuses matching embeddings.
+Enabled journals check for changes daily at 09:15 UTC. Authorized users can also
+request a check. Each run first asks Airtable for only the record with the
+greatest `Entry modified time` and compares that timestamp with the checkpoint
+stored in Convex. An unchanged source completes without reading any journal
+entries or embeddings. A changed source runs the full Airtable fetch and
+reconciliation. A transactional lease prevents overlapping workers, and each
+committed page advances a fenced batch number. Transient failures retry five
+times; `journal_status` reports a sanitized phase error if exhausted.
 
-Text changes invalidate old vectors immediately. Date-only edits reuse vectors.
+Text changes invalidate old vectors immediately. Only new or text-edited entries
+are selected for embedding; the daily path never scans existing vectors.
+Date-only edits reuse vectors.
 Missing source records are deactivated and their text/vectors removed after two
 complete enumerations miss them; partial fetches never trigger reconciliation.
+Hard deletes alone do not advance Airtable's maximum modified timestamp and are
+therefore intentionally outside the daily change detector. A later create/edit
+that triggers a full enumeration can still discover them.
 Initial retrieval stays disabled until all active entries have vectors. Later
 syncs retain available text retrieval while changed entries await embedding.
 Searches/pagination detect concurrent journal changes and require a retry.
