@@ -5,11 +5,10 @@ alwaysApply: true
 
 # Production Convex Deployments
 
-- Never run `npx convex deploy` with local-only changes.
-- Before deploying to Convex production, commit the intended code on `main` and
-  push that commit to `origin/main`.
-- Verify the push succeeds and local `HEAD` matches `origin/main` before the
-  production deployment.
-- Prefer the repository's normal deployment automation when available.
-- If committing and pushing first is impossible, stop and ask the user for an
-  explicit exception instead of deploying.
+- Pushing `main` to `origin` triggers Vercel, which deploys Convex production
+  automatically. This is the normal and required production deployment path.
+- Commit the intended code on `main`, push it to `origin/main`, and verify the
+  push succeeds and local `HEAD` matches `origin/main`.
+- Do not run `npx convex deploy` manually for production.
+- If the normal commit-and-push deployment path is unavailable, stop and ask
+  the user for an explicit exception before attempting a manual deployment.
