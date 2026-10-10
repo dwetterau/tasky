@@ -1092,6 +1092,45 @@ export function freshnessBanner(feed: Feed, now: number) {
 export const browserScript = `
 (() => {
   const portfolioStorageKey = "tasky:selected-portfolio";
+  const portfolioSortStorageKey = "tasky:portfolio-sort";
+  const portfolioSortKeys = ["ticker", "day-dollar", "day-percent", "value", "total-percent"];
+  let portfolioSortKey = "day-dollar";
+  let portfolioSortDirection = "desc";
+  try {
+    const savedSort = (localStorage.getItem(portfolioSortStorageKey) ?? "").split(":");
+    if (
+      portfolioSortKeys.includes(savedSort[0]) &&
+      (savedSort[1] === "asc" || savedSort[1] === "desc")
+    ) {
+      portfolioSortKey = savedSort[0];
+      portfolioSortDirection = savedSort[1];
+    }
+  } catch {}
+  const applyPortfolioSort = (table, key, direction) => {
+    const rows = Array.from(table.tBodies[0].rows);
+    rows.sort((a, b) => {
+      const av = a.getAttribute("data-sort-" + key) ?? "";
+      const bv = b.getAttribute("data-sort-" + key) ?? "";
+      if (!av && !bv) return 0;
+      if (!av) return 1;
+      if (!bv) return -1;
+      const compared =
+        key === "ticker" ? av.localeCompare(bv) : Number(av) - Number(bv);
+      return direction === "asc" ? compared : -compared;
+    });
+    rows.forEach((row) => table.tBodies[0].append(row));
+    table.querySelectorAll("[data-portfolio-sort]").forEach((button) => {
+      const active = button.getAttribute("data-portfolio-sort") === key;
+      button.dataset.direction = active ? direction : "";
+      const arrow = button.querySelector(".sort-arrow");
+      if (arrow)
+        arrow.textContent = active ? (direction === "asc" ? "▲" : "▼") : "";
+      button.closest("th")?.setAttribute(
+        "aria-sort",
+        active ? (direction === "asc" ? "ascending" : "descending") : "none",
+      );
+    });
+  };
   const selectPortfolio = (requestedId) => {
     const tabs = Array.from(document.querySelectorAll("[data-portfolio-tab]"));
     if (!tabs.length) return;
@@ -1109,6 +1148,15 @@ export const browserScript = `
         "hidden",
         panel.getAttribute("data-portfolio-panel") !== selectedId,
       );
+      if (panel.getAttribute("data-portfolio-panel") === selectedId) {
+        const table = panel.querySelector("[data-portfolio-table]");
+        if (table instanceof HTMLTableElement)
+          applyPortfolioSort(
+            table,
+            portfolioSortKey,
+            portfolioSortDirection,
+          );
+      }
     });
     try {
       localStorage.setItem(portfolioStorageKey, selectedId ?? "");
@@ -1168,36 +1216,30 @@ export const browserScript = `
     const table = sort.closest("[data-portfolio-table]");
     if (!(table instanceof HTMLTableElement)) return;
     const key = sort.dataset.portfolioSort;
-    if (!key) return;
-    const direction = sort.dataset.direction
-      ? sort.dataset.direction === "asc"
-        ? "desc"
-        : "asc"
-      : key === "ticker"
-        ? "asc"
-        : "desc";
-    const rows = Array.from(table.tBodies[0].rows);
-    rows.sort((a, b) => {
-      const av = a.getAttribute("data-sort-" + key) ?? "";
-      const bv = b.getAttribute("data-sort-" + key) ?? "";
-      if (!av && !bv) return 0;
-      if (!av) return 1;
-      if (!bv) return -1;
-      const compared =
-        key === "ticker" ? av.localeCompare(bv) : Number(av) - Number(bv);
-      return direction === "asc" ? compared : -compared;
+    if (!key || !portfolioSortKeys.includes(key)) return;
+    portfolioSortDirection =
+      key === portfolioSortKey
+        ? portfolioSortDirection === "asc"
+          ? "desc"
+          : "asc"
+        : key === "ticker"
+          ? "asc"
+          : "desc";
+    portfolioSortKey = key;
+    document.querySelectorAll("[data-portfolio-table]").forEach((candidate) => {
+      if (candidate instanceof HTMLTableElement)
+        applyPortfolioSort(
+          candidate,
+          portfolioSortKey,
+          portfolioSortDirection,
+        );
     });
-    rows.forEach((row) => table.tBodies[0].append(row));
-    table.querySelectorAll("[data-portfolio-sort]").forEach((button) => {
-      const active = button === sort;
-      button.dataset.direction = active ? direction : "";
-      const arrow = button.querySelector(".sort-arrow");
-      if (arrow) arrow.textContent = active ? (direction === "asc" ? "▲" : "▼") : "";
-      button.closest("th")?.setAttribute(
-        "aria-sort",
-        active ? (direction === "asc" ? "ascending" : "descending") : "none",
+    try {
+      localStorage.setItem(
+        portfolioSortStorageKey,
+        portfolioSortKey + ":" + portfolioSortDirection,
       );
-    });
+    } catch {}
   });
   let revision = Number(document.body.dataset.revision);
   let failures = 0;

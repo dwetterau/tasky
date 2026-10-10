@@ -1,0 +1,15 @@
+---
+description: Require production Convex deployments to come from committed and pushed main
+alwaysApply: true
+---
+
+# Production Convex Deployments
+
+- Never run `npx convex deploy` with local-only changes.
+- Before deploying to Convex production, commit the intended code on `main` and
+  push that commit to `origin/main`.
+- Verify the push succeeds and local `HEAD` matches `origin/main` before the
+  production deployment.
+- Prefer the repository's normal deployment automation when available.
+- If committing and pushing first is impossible, stop and ask the user for an
+  explicit exception instead of deploying.
