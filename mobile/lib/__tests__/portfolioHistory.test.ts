@@ -38,6 +38,33 @@ test("keeps exited positions available as historical chart series", () => {
   });
 });
 
+test("sorts series from largest value on the most recent day to smallest", () => {
+  const series = buildHoldingSeries([
+    {
+      holdings: [
+        { ticker: "PEAK", name: "Peaked earlier", value: 500, costBasis: 100 },
+        { ticker: "NOW", name: "Largest now", value: 10, costBasis: 10 },
+        { ticker: "MID", name: "Middle now", value: 40, costBasis: 40 },
+      ],
+    },
+    {
+      holdings: [
+        { ticker: "PEAK", name: "Peaked earlier", value: 20, costBasis: 100 },
+        { ticker: "NOW", name: "Largest now", value: 80, costBasis: 10 },
+        { ticker: "MID", name: "Middle now", value: 40, costBasis: 40 },
+      ],
+    },
+  ]);
+
+  expect(
+    series.map(({ ticker, latestValue }) => ({ ticker, latestValue })),
+  ).toEqual([
+    { ticker: "NOW", latestValue: 80 },
+    { ticker: "MID", latestValue: 40 },
+    { ticker: "PEAK", latestValue: 20 },
+  ]);
+});
+
 test("uses one stable series for cash across snapshots", () => {
   expect(holdingSeriesKey("")).toBe("__tasky_cash__");
   expect(

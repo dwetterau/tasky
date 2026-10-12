@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -118,7 +118,6 @@ export function PortfolioHistoryChart({
   error: string | null;
 }) {
   const colorScheme = useColorScheme();
-  const chipsScrollRef = useRef<ScrollView>(null);
   const dark = colorScheme === "dark";
   const axisColor = dark ? "#3a3a3c" : "#e5e7eb";
   const labelColor = dark ? "#8e8e93" : "#6b7280";
@@ -217,13 +216,9 @@ export function PortfolioHistoryChart({
 
       {holdingKeys.length > 0 ? (
         <ScrollView
-          ref={chipsScrollRef}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chips}
-          onContentSizeChange={() => {
-            chipsScrollRef.current?.scrollToEnd({ animated: false });
-          }}
         >
           {holdingKeys.map((key) => {
             const selected = activeHoldings.has(key);
@@ -399,8 +394,7 @@ const styles = StyleSheet.create({
     color: colors.tertiaryLabel,
   },
   chips: {
-    flexDirection: "row-reverse",
-    flexGrow: 1,
+    flexDirection: "row",
     gap: spacing.sm,
     paddingVertical: 2,
   },
