@@ -714,6 +714,71 @@ async function fetchAccountSnapshotPayloads(
   return { recordCount: records.length, snapshots };
 }
 
+export async function readPortfolioSnapshotHistories(
+  ctx: ActionCtx,
+  userId: string,
+  portfolios: Array<{ key: string; portfolio: PortfolioConfiguration }>,
+  allKey: string | null,
+  maxPoints: number,
+): Promise<
+  Map<string, { startDate: string; values: Array<number | null> }>
+> {
+  const [apiKey, baseId, timezone] = await Promise.all([
+    getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
+    getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
+    ctx.runQuery(getTimezoneInternal, { userId }),
+  ]);
+  if (!apiKey || !baseId) {
+    throw new Error("Portfolio credentials are unavailable");
+  }
+
+  const accountIdsByPortfolio = new Map<string, Set<string>>();
+  const allAccountIds = new Set<string>();
+  for (const { key, portfolio } of portfolios) {
+    const records = await fetchPortfolioPositionRecords(
+      { apiKey, baseId },
+      [portfolio],
+    );
+    const accountIds = new Set(
+      records.flatMap((record) => linkedRecordIds(record.fields.Account)),
+    );
+    accountIdsByPortfolio.set(key, accountIds);
+    for (const accountId of accountIds) allAccountIds.add(accountId);
+  }
+  if (allKey) accountIdsByPortfolio.set(allKey, allAccountIds);
+
+  const safeMaxPoints = Math.max(1, Math.floor(maxPoints));
+  const startDate = subtractDays(getTodayDate(timezone), safeMaxPoints - 1);
+  const { recordCount, snapshots } = await fetchAccountSnapshotPayloads(
+    { apiKey, baseId },
+    startDate,
+  );
+  if (recordCount > 0 && snapshots.length === 0) {
+    throw new Error("Account snapshot rows contain invalid JSON");
+  }
+
+  return new Map(
+    [...accountIdsByPortfolio].map(([key, accountIds]) => {
+      const valuesByDate = new Map(
+        buildPortfolioSnapshotHistory(snapshots, accountIds).map((point) => [
+          point.date,
+          point.totalValue,
+        ]),
+      );
+      return [
+        key,
+        {
+          startDate,
+          values: Array.from({ length: safeMaxPoints }, (_, index) => {
+            const date = subtractDays(startDate, -index);
+            return valuesByDate.get(date) ?? null;
+          }),
+        },
+      ] as const;
+    }),
+  );
+}
+
 async function fetchPortfolioPositionRecords(
   credentials: PortfolioCredentials,
   portfolios: PortfolioConfiguration[],

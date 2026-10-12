@@ -23,6 +23,12 @@ const marketDate = (value: string | null | undefined) =>
         year: "numeric",
       }).format(new Date(`${value}T12:00:00Z`))
     : "—";
+const chartDate = (value: string) =>
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(`${value}T12:00:00Z`));
 
 const columns = [
   ["ticker", "Ticker"],
@@ -33,6 +39,72 @@ const columns = [
 ] as const;
 
 type NamedPortfolio = NonNullable<PortfolioPayload["portfolios"]>[number];
+
+function renderPortfolioHistory(data: NamedPortfolio) {
+  const history = (data.history?.values ?? []).flatMap((value, index) => {
+    if (value === null || !data.history) return [];
+    const date = new Date(`${data.history.startDate}T12:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + index);
+    return [{ date: date.toISOString().slice(0, 10), value }];
+  });
+  if (history.length < 2) return "";
+
+  const width = 640;
+  const height = 144;
+  const timestamps = history.map((point) =>
+    new Date(`${point.date}T12:00:00Z`).getTime(),
+  );
+  const values = history.map((point) => point.value);
+  const firstTimestamp = timestamps[0]!;
+  const lastTimestamp = timestamps[timestamps.length - 1]!;
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const rawRange = maximum - minimum;
+  const padding = rawRange > 0 ? rawRange * 0.08 : Math.max(maximum * 0.02, 1);
+  const yMinimum = minimum - padding;
+  const yMaximum = maximum + padding;
+  const yRange = yMaximum - yMinimum;
+  const xRange = Math.max(lastTimestamp - firstTimestamp, 1);
+  const coordinates = history.map((point, index) => ({
+    x: ((timestamps[index]! - firstTimestamp) / xRange) * width,
+    y: height - ((point.value - yMinimum) / yRange) * height,
+  }));
+  const line = coordinates
+    .map(
+      ({ x, y }, index) =>
+        `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`,
+    )
+    .join(" ");
+  const area = `${line} L${width},${height} L0,${height} Z`;
+  const first = history[0]!;
+  const last = history[history.length - 1]!;
+  const change = last.value - first.value;
+  const changePercent = first.value === 0 ? null : (change / first.value) * 100;
+  const changeLabel = `${signedMoney(change)}${changePercent === null ? "" : ` (${percent(changePercent)})`}`;
+  const toneClass = change < 0 ? "warning" : change > 0 ? "positive" : "";
+  const rangeLabel = `${chartDate(first.date)} to ${chartDate(last.date)}`;
+
+  return /* HTML */ `<figure class="portfolio-history">
+    <figcaption>
+      <span>Value · 90 days</span>
+      <strong class="${toneClass}">${e(changeLabel)}</strong>
+    </figcaption>
+    <svg
+      viewBox="0 0 ${width} ${height}"
+      preserveAspectRatio="none"
+      role="img"
+      aria-label="${e(`${data.name} portfolio value from ${chartDate(first.date)}, ${money(first.value)}, to ${chartDate(last.date)}, ${money(last.value)}`)}"
+    >
+      <path class="portfolio-history-area" d="${area}" aria-hidden="true"></path>
+      <path class="portfolio-history-line" d="${line}" aria-hidden="true"></path>
+      <circle cx="${coordinates.at(-1)!.x.toFixed(1)}" cy="${coordinates.at(-1)!.y.toFixed(1)}" r="4" aria-hidden="true"></circle>
+    </svg>
+    <div class="portfolio-history-dates" aria-label="${e(rangeLabel)}">
+      <time datetime="${e(first.date)}">${e(chartDate(first.date))}</time>
+      <time datetime="${e(last.date)}">${e(chartDate(last.date))}</time>
+    </div>
+  </figure>`;
+}
 
 function renderPortfolio(data: NamedPortfolio) {
   const holdings = [...data.holdings].sort((a, b) => {
@@ -62,6 +134,7 @@ function renderPortfolio(data: NamedPortfolio) {
   return /* HTML */ `<div class="portfolio-value">
       ${e(money(data.totalValue))}
     </div>
+    ${renderPortfolioHistory(data)}
     <div class="holdings-heading">
       <h3 class="section-label">Holdings</h3>
     </div>

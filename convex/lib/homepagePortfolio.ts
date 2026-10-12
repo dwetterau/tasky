@@ -2,6 +2,7 @@ import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import {
   getPortfolioConfigurations,
+  readPortfolioSnapshotHistories,
   readPortfolioSnapshot,
   type PortfolioConfiguration,
 } from "../portfolio";
@@ -78,6 +79,7 @@ function projectPortfolio(
     latestPriceDate: refreshPriceStatus
       ? result.summary.latestPriceDate
       : (cached?.latestPriceDate ?? null),
+    history: cached?.history,
     holdings: [...result.holdings]
       .sort((a, b) => b.currentValue - a.currentValue)
       .slice(0, LIMITS.portfolioHoldings)
@@ -139,6 +141,15 @@ export async function collectHomepagePortfolio(
     );
     const expectedPortfolioCount =
       configurations.length + (configurations.length > 1 ? 1 : 0);
+    const expectedPortfolioKeys = [
+      ...configurations.map(portfolioKey),
+      ...(configurations.length > 1 ? [ALL_PORTFOLIOS_ID] : []),
+    ];
+    const hasHistory =
+      cachedPortfolios.length === expectedPortfolioCount &&
+      expectedPortfolioKeys.every(
+        (key) => cachedById.get(key)?.history !== undefined,
+      );
     const hasDetailedRows =
       cachedPortfolios.length === expectedPortfolioCount &&
       configurations.every((configuration) => {
@@ -157,6 +168,10 @@ export async function collectHomepagePortfolio(
       });
     const refreshPriceStatus =
       !hasDetailedRows ||
+      (syncState?.lastSyncedAt ?? null) !==
+        (cached?.payload.lastSyncedAt ?? null);
+    const refreshHistory =
+      !hasHistory ||
       (syncState?.lastSyncedAt ?? null) !==
         (cached?.payload.lastSyncedAt ?? null);
     const projected: NamedPortfolio[] = [];
@@ -216,6 +231,26 @@ export async function collectHomepagePortfolio(
         if (cachedAll) {
           projected.push(cachedAll);
         }
+      }
+    }
+    if (refreshHistory) {
+      try {
+        const histories = await readPortfolioSnapshotHistories(
+          ctx,
+          userId,
+          configurations.map((portfolio) => ({
+            key: portfolioKey(portfolio),
+            portfolio,
+          })),
+          configurations.length > 1 ? ALL_PORTFOLIOS_ID : null,
+          LIMITS.portfolioHistoryPoints,
+        );
+        for (const portfolio of projected) {
+          const history = histories.get(portfolio.id);
+          if (history) portfolio.history = history;
+        }
+      } catch {
+        // Keep the last successful history while still publishing current values.
       }
     }
     if (freshPortfolioCount === 0) {

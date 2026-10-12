@@ -2,10 +2,15 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { collectHomepagePortfolio } from "./lib/homepagePortfolio";
-import { getPortfolioConfigurations, readPortfolioSnapshot } from "./portfolio";
+import {
+  getPortfolioConfigurations,
+  readPortfolioSnapshot,
+  readPortfolioSnapshotHistories,
+} from "./portfolio";
 
 vi.mock("./portfolio", () => ({
   readPortfolioSnapshot: vi.fn(),
+  readPortfolioSnapshotHistories: vi.fn(),
   getPortfolioConfigurations: vi.fn(),
 }));
 beforeEach(() => {
@@ -19,6 +24,17 @@ beforeEach(() => {
       displayOrder: 0,
     },
   ]);
+  vi.mocked(readPortfolioSnapshotHistories).mockResolvedValue(
+    new Map([
+      [
+        "portfolio-schwab",
+        {
+          startDate: "2026-09-28",
+          values: [150, 161],
+        },
+      ],
+    ]),
+  );
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -70,6 +86,16 @@ it("exports saved holdings for the enrolled user and retains their age on failur
     lastSyncedAt: 123,
     latestPriceDate: "2026-09-29",
   });
+  expect(
+    (
+      fresh.payload as {
+        portfolios: Array<{
+          history?: { startDate: string; values: Array<number | null> };
+        }>;
+      }
+    ).portfolios[0]?.history,
+  ).toEqual({ startDate: "2026-09-28", values: [150, 161] });
+  expect(readPortfolioSnapshotHistories).toHaveBeenCalledOnce();
   const holdings = (
     fresh.payload as {
       holdings: { ticker: string; dayReturn: number | null }[];
@@ -136,6 +162,29 @@ it("exports saved holdings for the enrolled user and retains their age on failur
       }
     ).holdings[0],
   ).toMatchObject({ ticker: "T6", dayReturn: 6 });
+  expect(readPortfolioSnapshotHistories).toHaveBeenCalledOnce();
+
+  runQuery.mockResolvedValue({ lastSyncedAt: 456 });
+  vi.mocked(readPortfolioSnapshotHistories).mockRejectedValue(
+    new Error("Snapshot history unavailable"),
+  );
+  const refreshedWithoutHistory = await collectHomepagePortfolio(
+    ctx,
+    "user-a",
+    JSON.stringify(fresh),
+  );
+  expect(refreshedWithoutHistory.payload).toMatchObject({
+    lastSyncedAt: 456,
+  });
+  expect(
+    (
+      refreshedWithoutHistory.payload as {
+        portfolios: Array<{
+          history?: { startDate: string; values: Array<number | null> };
+        }>;
+      }
+    ).portfolios[0]?.history,
+  ).toEqual({ startDate: "2026-09-28", values: [150, 161] });
 
   read.mockRejectedValue(new Error("Provider down"));
   const cached = await collectHomepagePortfolio(

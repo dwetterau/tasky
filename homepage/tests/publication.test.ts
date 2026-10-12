@@ -407,6 +407,10 @@ describe("durable ingestion and publication", () => {
         holdingsCount: portfolioPayload.holdingsCount,
         lastSyncedAt: portfolioPayload.lastSyncedAt,
         latestPriceDate: portfolioPayload.latestPriceDate,
+        history: {
+          startDate: "2026-09-28",
+          values: [1200, 1250],
+        },
         holdings: portfolioPayload.holdings,
       },
       {
@@ -419,6 +423,7 @@ describe("durable ingestion and publication", () => {
         holdingsCount: 1,
         lastSyncedAt: Date.now(),
         latestPriceDate: "2026-09-29",
+        history: { startDate: "2026-09-28", values: [490, 500] },
         holdings: [
           {
             ticker: "VTI",
@@ -444,6 +449,7 @@ describe("durable ingestion and publication", () => {
       holdingsCount: 7,
       lastSyncedAt: Date.now(),
       latestPriceDate: "2026-09-29",
+      history: { startDate: "2026-09-28", values: [1690, 1750] },
       holdings: [
         ...portfolioPayload.holdings,
         ...portfolioPayload.portfolios[1]!.holdings,
@@ -465,6 +471,11 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Day $");
     expect(edition!.html).toContain("Day %");
     expect(edition!.html).toContain("Total %");
+    expect(edition!.html).toContain("Value · 90 days");
+    expect(edition!.html).toContain('class="portfolio-history-line"');
+    expect(edition!.html).toContain(
+      "portfolio value from Sep 28, $1,690, to Sep 29, $1,750",
+    );
     expect(edition!.html).toContain("Show all 6");
     expect(edition!.html).toContain('data-portfolio-tab="all"');
     expect(edition!.html).toContain(">All</button>");
