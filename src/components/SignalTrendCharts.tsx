@@ -17,6 +17,8 @@ import {
   type SignalEntry,
 } from "@/lib/signalDisplay";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 type TrendPoint = {
   timestamp: number;
   value: number;
@@ -204,6 +206,7 @@ function activityTrends(entries: SignalEntry[]): TrendSeries[] {
 function inventoryTrends(
   signal: SignalDashboardItem,
   entries: SignalEntry[],
+  now: number,
 ): TrendSeries[] {
   if (signal.model.kind !== "inventory") return [];
   const points = sorted(
@@ -227,6 +230,28 @@ function inventoryTrends(
       return [];
     }),
   );
+
+  const { confirmedAt, confirmedQuantity, flow, nextFlowAt } = signal.model;
+  if (!points.some((point) => point.timestamp === confirmedAt)) {
+    points.push({ timestamp: confirmedAt, value: confirmedQuantity });
+  }
+
+  if (flow && nextFlowAt !== undefined) {
+    const interval = flow.everyDays * DAY_MS;
+    if (Number.isFinite(interval) && interval > 0 && nextFlowAt <= now) {
+      const completedSteps = Math.floor((now - nextFlowAt) / interval) + 1;
+      for (let step = 1; step <= completedSteps; step += 1) {
+        const value = Math.max(0, confirmedQuantity + step * flow.amount);
+        points.push({
+          timestamp: nextFlowAt + (step - 1) * interval,
+          value,
+        });
+        if (value === 0 && flow.amount < 0) break;
+      }
+    }
+  }
+
+  sorted(points);
   return points.length === 0
     ? []
     : [
@@ -363,13 +388,15 @@ function TrendChart({ series }: { series: TrendSeries }) {
 export function SignalTrendCharts({
   signal,
   entries,
+  now,
 }: {
   signal: SignalDashboardItem;
   entries: SignalEntry[];
+  now: number;
 }) {
   const series =
     signal.model.kind === "inventory"
-      ? inventoryTrends(signal, entries)
+      ? inventoryTrends(signal, entries, now)
       : activityTrends(entries);
   if (series.length === 0) return null;
 
@@ -378,9 +405,13 @@ export function SignalTrendCharts({
       <div className="mb-4">
         <h3 className="font-semibold">Trends</h3>
         <p className="mt-0.5 text-xs text-(--muted)">
-          {`Based on the ${entries.length} most recently loaded ${
-            entries.length === 1 ? "entry" : "entries"
-          }`}
+          {signal.model.kind === "inventory" && signal.model.flow
+            ? `Recorded changes and automatic flow through ${new Date(
+                now,
+              ).toLocaleDateString()}`
+            : `Based on the ${entries.length} most recently loaded ${
+                entries.length === 1 ? "entry" : "entries"
+              }`}
         </p>
       </div>
       <div

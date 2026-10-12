@@ -157,13 +157,15 @@ function TrendChart({ series }: { series: SignalTrendSeries }) {
 export function SignalTrendCharts({
   signal,
   entries,
+  now,
 }: {
   signal: SignalDashboardItem;
   entries: SignalEntry[];
+  now: number;
 }) {
   const series = useMemo(
-    () => buildSignalTrendSeries(signal, entries),
-    [entries, signal],
+    () => buildSignalTrendSeries(signal, entries, now),
+    [entries, now, signal],
   );
   if (series.length === 0) return null;
 
@@ -172,8 +174,13 @@ export function SignalTrendCharts({
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Trends</Text>
         <Text style={styles.sectionHint}>
-          Based on the {entries.length} most recently loaded{" "}
-          {entries.length === 1 ? "entry" : "entries"}
+          {signal.model.kind === "inventory" && signal.model.flow
+            ? `Recorded changes and automatic flow through ${new Date(
+                now,
+              ).toLocaleDateString()}`
+            : `Based on the ${entries.length} most recently loaded ${
+                entries.length === 1 ? "entry" : "entries"
+              }`}
         </Text>
       </View>
       {series.map((item) => (
