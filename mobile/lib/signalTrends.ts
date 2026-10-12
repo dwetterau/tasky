@@ -1,5 +1,7 @@
 import type { SignalDashboardItem, SignalEntry } from "./signals";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export type SignalTrendPoint = {
   timestamp: number;
   value: number;
@@ -187,6 +189,7 @@ function activityTrends(entries: SignalEntry[]): SignalTrendSeries[] {
 function inventoryTrends(
   signal: SignalDashboardItem,
   entries: SignalEntry[],
+  now: number,
 ): SignalTrendSeries[] {
   if (signal.model.kind !== "inventory") return [];
   const points = sorted(
@@ -210,6 +213,28 @@ function inventoryTrends(
       return [];
     }),
   );
+
+  const { confirmedAt, confirmedQuantity, flow, nextFlowAt } = signal.model;
+  if (!points.some((point) => point.timestamp === confirmedAt)) {
+    points.push({ timestamp: confirmedAt, value: confirmedQuantity });
+  }
+
+  if (flow && nextFlowAt !== undefined) {
+    const interval = flow.everyDays * DAY_MS;
+    if (Number.isFinite(interval) && interval > 0 && nextFlowAt <= now) {
+      const completedSteps = Math.floor((now - nextFlowAt) / interval) + 1;
+      for (let step = 1; step <= completedSteps; step += 1) {
+        const value = Math.max(0, confirmedQuantity + step * flow.amount);
+        points.push({
+          timestamp: nextFlowAt + (step - 1) * interval,
+          value,
+        });
+        if (value === 0 && flow.amount < 0) break;
+      }
+    }
+  }
+
+  sorted(points);
   return points.length === 0
     ? []
     : [
@@ -227,8 +252,9 @@ function inventoryTrends(
 export function buildSignalTrendSeries(
   signal: SignalDashboardItem,
   entries: SignalEntry[],
+  now: number,
 ): SignalTrendSeries[] {
   return signal.model.kind === "inventory"
-    ? inventoryTrends(signal, entries)
+    ? inventoryTrends(signal, entries, now)
     : activityTrends(entries);
 }

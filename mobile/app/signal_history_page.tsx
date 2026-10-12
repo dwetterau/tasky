@@ -602,10 +602,12 @@ export default function SignalHistoryPage() {
             </Text>
           ) : null}
 
-          {(history.data?.page.length ?? 0) > 0 ? (
+          {signal.data.model.kind === "inventory" ||
+          (history.data?.page.length ?? 0) > 0 ? (
             <SignalTrendCharts
               signal={signal.data}
               entries={history.data?.page ?? []}
+              now={now}
             />
           ) : null}
 

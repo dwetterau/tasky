@@ -314,8 +314,8 @@ export function SignalInspectorModal({
             ) : null}
           </section>
 
-          {entries.length > 0 ? (
-            <SignalTrendCharts signal={signal} entries={entries} />
+          {signal.model.kind === "inventory" || entries.length > 0 ? (
+            <SignalTrendCharts signal={signal} entries={entries} now={now} />
           ) : null}
 
           <section className="px-6 py-5">
