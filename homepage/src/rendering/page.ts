@@ -773,6 +773,55 @@ summary {
   margin: 0 0 4px;
   overflow-wrap: anywhere;
 }
+.portfolio-history {
+  margin: 18px 0 0;
+}
+.portfolio-history figcaption,
+.portfolio-history-dates {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font:
+    10px system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.portfolio-history figcaption {
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.portfolio-history figcaption strong {
+  letter-spacing: 0;
+  text-transform: none;
+}
+.portfolio-history svg {
+  display: block;
+  width: 100%;
+  height: 132px;
+  margin-top: 8px;
+  overflow: visible;
+}
+.portfolio-history-area {
+  fill: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.portfolio-history-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.portfolio-history circle {
+  fill: var(--paper);
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.portfolio-history-dates {
+  margin-top: 5px;
+  color: var(--muted);
+}
 .portfolio-market-time {
   margin-top: 8px;
 }

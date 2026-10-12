@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -9,8 +9,13 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-import { matchFont } from "@shopify/react-native-skia";
-import { CartesianChart, StackedArea } from "victory-native";
+import { matchFont, Rect } from "@shopify/react-native-skia";
+import {
+  CartesianChart,
+  StackedArea,
+  useChartPressState,
+} from "victory-native";
+import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
 import {
   colors,
   fontSize,
@@ -98,12 +103,12 @@ type SnapshotHistoryPoint = {
   date: string;
   totalValue: number;
   totalCostBasis: number;
-  holdings: Array<{
+  holdings: {
     ticker: string;
     name: string;
     value: number;
     costBasis: number;
-  }>;
+  }[];
 };
 
 export function PortfolioHistoryChart({
@@ -183,6 +188,34 @@ export function PortfolioHistoryChart({
       }),
     [chartPoints, stackedHoldings],
   );
+  const pressInitialValues = useMemo(
+    () => ({
+      x: chartData[chartData.length - 1]?.timestamp ?? 0,
+      y: Object.fromEntries(
+        stackedHoldings.map((key) => [key, 0]),
+      ) as Record<string, number>,
+    }),
+    [chartData, stackedHoldings],
+  );
+  const { state: pressState, isActive: isPressActive } =
+    useChartPressState(pressInitialValues);
+  const [inspection, setInspection] = useState<{
+    index: number;
+    chartData: ChartRow[];
+  } | null>(null);
+  const recordInspection = useCallback(
+    (index: number) => setInspection({ index, chartData }),
+    [chartData],
+  );
+  useAnimatedReaction(
+    () => pressState.matchedIndex.value,
+    (index, previousIndex) => {
+      if (index >= 0 && index !== previousIndex) {
+        runOnJS(recordInspection)(index);
+      }
+    },
+    [pressState, recordInspection],
+  );
   const font = useMemo(
     () =>
       matchFont({
@@ -202,6 +235,10 @@ export function PortfolioHistoryChart({
     (max, point) => Math.max(max, point.totalValue),
     0,
   );
+  const inspectedIndex =
+    inspection?.chartData === chartData ? inspection.index : null;
+  const inspectedPoint =
+    inspectedIndex === null ? null : (chartPoints[inspectedIndex] ?? null);
 
   return (
     <View style={styles.card}>
@@ -275,51 +312,82 @@ export function PortfolioHistoryChart({
           snapshot.
         </Text>
       ) : (
-        <View style={styles.chart}>
-          <CartesianChart
-            data={chartData}
-            xKey="timestamp"
-            yKeys={stackedHoldings}
-            padding={{ left: 8, right: 8, top: 12, bottom: 4 }}
-            domainPadding={{ top: 12 }}
-            domain={{ y: [0, Math.max(yMax, 1)] }}
-            xAxis={{
-              font,
-              tickCount: 3,
-              lineColor: axisColor,
-              lineWidth: 0,
-              labelColor,
-              formatXLabel: (value) =>
-                new Date(value).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                }),
-            }}
-            yAxis={[
-              {
-                font,
-                tickCount: 4,
-                lineColor: axisColor,
-                labelColor,
-                formatYLabel: (value) =>
-                  value >= 1000
-                    ? `$${(value / 1000).toFixed(0)}k`
-                    : `$${value.toFixed(0)}`,
-              },
-            ]}
+        <>
+          <View
+            style={styles.inspection}
+            accessible
+            accessibilityLiveRegion="polite"
           >
-            {({ points: seriesPoints, chartBounds }) => (
-              <StackedArea
-                points={stackedHoldings.map((key) => seriesPoints[key])}
-                y0={chartBounds.bottom}
-                colors={stackedHoldings.map((key) =>
-                  colorForHolding(key, holdingKeys),
-                )}
-                curveType="linear"
-              />
-            )}
-          </CartesianChart>
-        </View>
+            <Text style={styles.inspectionDate}>
+              {inspectedPoint
+                ? formatShortDate(inspectedPoint.date)
+                : "Touch and drag across the chart"}
+            </Text>
+            <Text style={styles.inspectionValue}>
+              {inspectedPoint
+                ? `${formatCurrency(inspectedPoint.totalValue)} · ${formatCurrency(inspectedPoint.totalCostBasis)} cost basis`
+                : "Inspect an older daily value"}
+            </Text>
+          </View>
+          <View style={styles.chart}>
+            <CartesianChart
+              data={chartData}
+              xKey="timestamp"
+              yKeys={stackedHoldings}
+              chartPressState={pressState}
+              padding={{ left: 8, right: 8, top: 12, bottom: 4 }}
+              domainPadding={{ top: 12 }}
+              domain={{ y: [0, Math.max(yMax, 1)] }}
+              xAxis={{
+                font,
+                tickCount: 3,
+                lineColor: axisColor,
+                lineWidth: 0,
+                labelColor,
+                formatXLabel: (value) =>
+                  new Date(value).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  }),
+              }}
+              yAxis={[
+                {
+                  font,
+                  tickCount: 4,
+                  lineColor: axisColor,
+                  labelColor,
+                  formatYLabel: (value) =>
+                    value >= 1000
+                      ? `$${(value / 1000).toFixed(0)}k`
+                      : `$${value.toFixed(0)}`,
+                },
+              ]}
+            >
+              {({ points: seriesPoints, chartBounds }) => (
+                <>
+                  <StackedArea
+                    points={stackedHoldings.map((key) => seriesPoints[key])}
+                    y0={chartBounds.bottom}
+                    colors={stackedHoldings.map((key) =>
+                      colorForHolding(key, holdingKeys),
+                    )}
+                    curveType="linear"
+                  />
+                  {isPressActive || inspectedPoint ? (
+                    <Rect
+                      x={pressState.x.position}
+                      y={chartBounds.top}
+                      width={1}
+                      height={chartBounds.bottom - chartBounds.top}
+                      color={labelColor}
+                      opacity={0.65}
+                    />
+                  ) : null}
+                </>
+              )}
+            </CartesianChart>
+          </View>
+        </>
       )}
 
       {chartPoints.length > 0 ? (
@@ -416,6 +484,21 @@ const styles = StyleSheet.create({
   },
   chart: {
     height: 220,
+  },
+  inspection: {
+    minHeight: 42,
+    gap: 2,
+  },
+  inspectionDate: {
+    fontSize: fontSize.caption,
+    color: colors.secondaryLabel,
+    fontWeight: "600",
+  },
+  inspectionValue: {
+    fontSize: fontSize.small,
+    color: colors.label,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
   },
   stats: {
     flexDirection: "row",

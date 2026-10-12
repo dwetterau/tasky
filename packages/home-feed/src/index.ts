@@ -11,6 +11,7 @@ export const LIMITS = {
   signals: 12,
   scorecards: 8,
   portfolioHoldings: 20,
+  portfolioHistoryPoints: 90,
   text: 240,
   bytes: 96_000,
 } as const;
@@ -111,6 +112,14 @@ const portfolioHoldingSchema = z
     gainLossPercent: z.number().optional(),
   })
   .strict();
+const portfolioHistorySchema = z
+  .object({
+    startDate: localDateSchema,
+    values: z
+      .array(z.number().nullable())
+      .max(LIMITS.portfolioHistoryPoints),
+  })
+  .strict();
 const portfolioDataFields = {
   currency: z.literal("USD"),
   totalValue: z.number(),
@@ -126,6 +135,7 @@ export const namedPortfolioSchema = z
     id,
     name: z.string().min(1).max(80),
     ...portfolioDataFields,
+    history: portfolioHistorySchema.optional(),
   })
   .strict();
 export const portfolioPayloadSchema = z

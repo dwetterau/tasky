@@ -112,6 +112,10 @@ largest positions initially, with up to 20 holdings embedded for expansion and
 client-side sorting. The page switches between portfolios locally and remembers
 the selection; page loads make no provider requests. Every export refreshes
 current values and cost basis from each Positions view.
+Each portfolio also embeds up to 90 days of complete account snapshot totals
+and renders its value chart directly into the published HTML. History is
+refetched only after a successful combined portfolio sync (or when the cached
+series is missing), so the browser loads no chart library or additional data.
 Recent day-return data is derived from the two latest complete account snapshot
 days after a successful combined portfolio sync, then retained in the saved
 homepage snapshot between exports.
