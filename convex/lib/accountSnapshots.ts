@@ -156,8 +156,15 @@ export function buildCompleteAccountSnapshotDays(
   const selectedAccountSet = new Set(selectedAccounts);
 
   const byDate = new Map<string, Map<string, AccountSnapshotPayload>>();
+  const firstSnapshotDateByAccount = new Map<string, string>();
   for (const snapshot of snapshots) {
     if (!selectedAccountSet.has(snapshot.accountRecordId)) continue;
+    const firstSnapshotDate = firstSnapshotDateByAccount.get(
+      snapshot.accountRecordId,
+    );
+    if (!firstSnapshotDate || snapshot.date < firstSnapshotDate) {
+      firstSnapshotDateByAccount.set(snapshot.accountRecordId, snapshot.date);
+    }
     const accounts = byDate.get(snapshot.date) ?? new Map();
     const existing = accounts.get(snapshot.accountRecordId);
     if (!existing || snapshot.capturedAt >= existing.capturedAt) {
@@ -169,8 +176,13 @@ export function buildCompleteAccountSnapshotDays(
   const days: CompleteAccountSnapshotDay[] = [];
   for (const date of [...byDate.keys()].sort()) {
     const snapshotsByAccount = byDate.get(date)!;
+    const activeAccounts = selectedAccounts.filter((accountRecordId) => {
+      const firstSnapshotDate =
+        firstSnapshotDateByAccount.get(accountRecordId);
+      return firstSnapshotDate !== undefined && firstSnapshotDate <= date;
+    });
     if (
-      selectedAccounts.some(
+      activeAccounts.some(
         (accountRecordId) => !snapshotsByAccount.has(accountRecordId),
       )
     ) {
@@ -178,7 +190,7 @@ export function buildCompleteAccountSnapshotDays(
     }
     days.push({
       date,
-      snapshots: selectedAccounts.map(
+      snapshots: activeAccounts.map(
         (accountRecordId) => snapshotsByAccount.get(accountRecordId)!,
       ),
     });

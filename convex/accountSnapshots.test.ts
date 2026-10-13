@@ -115,3 +115,53 @@ it("builds only complete portfolio days and keeps the newest duplicate", () => {
     },
   ]);
 });
+
+it("does not require an account before its first snapshot", () => {
+  const snapshot = (
+    accountRecordId: string,
+    date: string,
+    value: number,
+  ) =>
+    createAccountSnapshotPayload({
+      accountRecordId,
+      accountName: accountRecordId,
+      date,
+      capturedAt: 100,
+      positions: [position(`${accountRecordId}-${date}`, value, value)],
+    });
+
+  const history = buildPortfolioSnapshotHistory(
+    [
+      snapshot("existing-account", "2026-10-07", 600),
+      snapshot("existing-account", "2026-10-08", 610),
+      snapshot("new-account", "2026-10-08", 160),
+      snapshot("existing-account", "2026-10-09", 620),
+      snapshot("new-account", "2026-10-09", 165),
+    ],
+    ["existing-account", "new-account", "never-snapshotted-account"],
+  );
+
+  expect(
+    history.map(({ date, totalValue, accounts }) => ({
+      date,
+      totalValue,
+      accountIds: accounts.map((account) => account.accountRecordId),
+    })),
+  ).toEqual([
+    {
+      date: "2026-10-07",
+      totalValue: 600,
+      accountIds: ["existing-account"],
+    },
+    {
+      date: "2026-10-08",
+      totalValue: 770,
+      accountIds: ["existing-account", "new-account"],
+    },
+    {
+      date: "2026-10-09",
+      totalValue: 785,
+      accountIds: ["existing-account", "new-account"],
+    },
+  ]);
+});
