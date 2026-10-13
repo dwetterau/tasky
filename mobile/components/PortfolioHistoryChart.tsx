@@ -239,6 +239,16 @@ export function PortfolioHistoryChart({
     inspection?.chartData === chartData ? inspection.index : null;
   const inspectedPoint =
     inspectedIndex === null ? null : (chartPoints[inspectedIndex] ?? null);
+  const previousInspectedPoint =
+    inspectedIndex === null || inspectedIndex === 0
+      ? null
+      : (chartPoints[inspectedIndex - 1] ?? null);
+  const inspectedDayPercent =
+    inspectedPoint && previousInspectedPoint?.totalValue
+      ? ((inspectedPoint.totalValue - previousInspectedPoint.totalValue) /
+          previousInspectedPoint.totalValue) *
+        100
+      : null;
 
   return (
     <View style={styles.card}>
@@ -312,24 +322,26 @@ export function PortfolioHistoryChart({
           snapshot.
         </Text>
       ) : (
-        <>
-          <View
-            style={styles.inspection}
-            accessible
-            accessibilityLiveRegion="polite"
-          >
-            <Text style={styles.inspectionDate}>
-              {inspectedPoint
-                ? formatShortDate(inspectedPoint.date)
-                : "Touch and drag across the chart"}
-            </Text>
-            <Text style={styles.inspectionValue}>
-              {inspectedPoint
-                ? `${formatCurrency(inspectedPoint.totalValue)} · ${formatCurrency(inspectedPoint.totalCostBasis)} cost basis`
-                : "Inspect an older daily value"}
-            </Text>
-          </View>
-          <View style={styles.chart}>
+        <View style={styles.chart}>
+          {inspectedPoint ? (
+            <View
+              pointerEvents="none"
+              style={styles.inspection}
+              accessible
+              accessibilityLiveRegion="polite"
+            >
+              <Text style={styles.inspectionDate}>
+                {formatShortDate(inspectedPoint.date)}
+              </Text>
+              <Text style={styles.inspectionValue}>
+                {formatCurrency(inspectedPoint.totalValue)}
+                {" · "}
+                {inspectedDayPercent === null
+                  ? "No prior day"
+                  : `${formatPercent(inspectedDayPercent)} day`}
+              </Text>
+            </View>
+          ) : null}
             <CartesianChart
               data={chartData}
               xKey="timestamp"
@@ -386,8 +398,7 @@ export function PortfolioHistoryChart({
                 </>
               )}
             </CartesianChart>
-          </View>
-        </>
+        </View>
       )}
 
       {chartPoints.length > 0 ? (
@@ -486,7 +497,15 @@ const styles = StyleSheet.create({
     height: 220,
   },
   inspection: {
-    minHeight: 42,
+    position: "absolute",
+    top: spacing.xs,
+    right: spacing.sm,
+    zIndex: 1,
+    alignItems: "flex-end",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.secondarySystemGroupedBackground,
     gap: 2,
   },
   inspectionDate: {
