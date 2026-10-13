@@ -239,6 +239,14 @@ export function PortfolioHistoryChart({
     inspection?.chartData === chartData ? inspection.index : null;
   const inspectedPoint =
     inspectedIndex === null ? null : (chartPoints[inspectedIndex] ?? null);
+  const inspectedTimestamp =
+    inspectedIndex === null ? null : (chartData[inspectedIndex]?.timestamp ?? null);
+  const chartMidpoint =
+    ((chartData[0]?.timestamp ?? 0) +
+      (chartData[chartData.length - 1]?.timestamp ?? 0)) /
+    2;
+  const inspectionOnLeft =
+    inspectedTimestamp !== null && inspectedTimestamp >= chartMidpoint;
   const previousInspectedPoint =
     inspectedIndex === null || inspectedIndex === 0
       ? null
@@ -326,7 +334,12 @@ export function PortfolioHistoryChart({
           {inspectedPoint ? (
             <View
               pointerEvents="none"
-              style={styles.inspection}
+              style={[
+                styles.inspection,
+                inspectionOnLeft
+                  ? styles.inspectionLeft
+                  : styles.inspectionRight,
+              ]}
               accessible
               accessibilityLiveRegion="polite"
             >
@@ -499,7 +512,6 @@ const styles = StyleSheet.create({
   inspection: {
     position: "absolute",
     top: spacing.xs,
-    right: spacing.sm,
     zIndex: 1,
     alignItems: "flex-end",
     paddingHorizontal: spacing.sm,
@@ -507,6 +519,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     backgroundColor: colors.secondarySystemGroupedBackground,
     gap: 2,
+  },
+  inspectionLeft: {
+    left: spacing.sm,
+  },
+  inspectionRight: {
+    right: spacing.sm,
   },
   inspectionDate: {
     fontSize: fontSize.caption,
