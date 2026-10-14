@@ -244,6 +244,56 @@ describe("homepage projection and durable outbox", () => {
     );
     expect(result.signals.map((signal) => signal.name)).toEqual(["Due signal"]);
   });
+  it("exports distinct activity signals completed yesterday in the user's timezone", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.parse("2026-09-16T14:00:00Z");
+    await t.run(async (ctx) => {
+      const tagId = await ctx.db.insert("tags", {
+        userId: "a",
+        name: "Health",
+        parentId: null,
+      });
+      const completedId = await ctx.db.insert("signals", {
+        userId: "a",
+        name: "Run",
+        tagIds: [tagId],
+        model: { kind: "activity", lastOccurredAt: now },
+        createdAt: now,
+        updatedAt: now,
+      });
+      const todayId = await ctx.db.insert("signals", {
+        userId: "a",
+        name: "Walk",
+        tagIds: [],
+        model: { kind: "activity", lastOccurredAt: now },
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (const [signalId, effectiveAt, idempotencyKey] of [
+        [completedId, Date.parse("2026-09-15T16:00:00Z"), "run-1"],
+        [completedId, Date.parse("2026-09-15T20:00:00Z"), "run-2"],
+        [todayId, Date.parse("2026-09-16T16:00:00Z"), "walk-1"],
+      ] as const) {
+        await ctx.db.insert("signalEntries", {
+          userId: "a",
+          signalId,
+          effectiveAt,
+          recordedAt: effectiveAt,
+          source: "mobile",
+          idempotencyKey,
+          operation: { type: "activity.occurred" },
+        });
+      }
+    });
+
+    const result = await t.run((ctx) =>
+      projectHomepage(ctx, "a", "America/New_York", now),
+    );
+
+    expect(result.doneYesterday).toEqual([
+      expect.objectContaining({ name: "Run", labels: ["Health"] }),
+    ]);
+  });
   it("uses local calendar boundaries across daylight-saving changes", () => {
     const spring = calendar(
       Date.parse("2026-03-08T15:00:00Z"),

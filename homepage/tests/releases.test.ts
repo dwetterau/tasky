@@ -27,8 +27,14 @@ describe("upcoming releases homepage module", () => {
           {
             kind: "tv",
             title: "Apothecary Diaries",
-            detail: "Season 3",
+            detail: "Season 3, episode 1",
             releaseDate: "2026-10-04",
+          },
+          {
+            kind: "tv",
+            title: "Apothecary Diaries",
+            detail: "Season 3, episode 2",
+            releaseDate: "2026-10-11",
           },
           {
             kind: "movie",
@@ -54,7 +60,8 @@ describe("upcoming releases homepage module", () => {
     expect(html).toContain("Upcoming releases");
     expect(html).not.toContain("Expired show");
     expect(html).toContain("Apothecary Diaries");
-    expect(html).toContain("Season 3");
+    expect(html).toContain("Season 3, episode 1");
+    expect(html).not.toContain("Season 3, episode 2");
     expect(html).toContain(">Today (Sun)</time>");
     expect(html).toContain("The Deceased Empress&#39; Treasure");
     expect(html).toContain(">Fri, Dec 11</time>");

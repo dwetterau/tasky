@@ -46,6 +46,7 @@ export const taskyModule: HomeModule<TaskyPayload> = {
       </section>
       <section class="tasky-section">
         <h3 class="section-label">Signals</h3>
+        <h4 class="signal-group-label">Due today</h4>
         <ul class="signal-list">
           ${dueSignals
             .map(
@@ -54,6 +55,16 @@ export const taskyModule: HomeModule<TaskyPayload> = {
             <div><div class="signal-heading"><strong>${e(signal.name)}</strong>${signal.labels.length ? `<span class="signal-tags">${signal.labels.map(e).join(" · ")}</span>` : ""}</div><p>${e(signal.reason)}</p></div></li>`,
             )
             .join("") || '<li class="empty">All on track.</li>'}
+        </ul>
+        <h4 class="signal-group-label">Done yesterday</h4>
+        <ul class="signal-list">
+          ${data.doneYesterday
+            .map(
+              (signal) => `
+          <li><span class="signal-dot done" aria-hidden="true"></span>
+            <div><div class="signal-heading"><strong>${e(signal.name)}</strong>${signal.labels.length ? `<span class="signal-tags">${signal.labels.map(e).join(" · ")}</span>` : ""}</div></div></li>`,
+            )
+            .join("") || '<li class="empty">Nothing recorded.</li>'}
         </ul>
       </section>
       ${dueTasks.length

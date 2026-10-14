@@ -69,6 +69,13 @@ export const signalSchema = z
     labels: z.array(z.string().max(60)).max(3).default([]),
   })
   .strict();
+export const completedSignalSchema = z
+  .object({
+    id,
+    name: text,
+    labels: z.array(z.string().max(60)).max(3).default([]),
+  })
+  .strict();
 export const scorecardSchema = z
   .object({
     id,
@@ -87,6 +94,10 @@ export const taskyPayloadSchema = z
       .array(z.object({ id, text, createdAt: timestamp }).strict())
       .max(LIMITS.captures),
     signals: z.array(signalSchema).max(LIMITS.signals),
+    doneYesterday: z
+      .array(completedSignalSchema)
+      .max(LIMITS.signals)
+      .default([]),
     scorecards: z.array(scorecardSchema).max(LIMITS.scorecards),
     counts: z
       .object({
@@ -166,6 +177,7 @@ export const weatherPayloadSchema = z
         z
           .object({
             date: z.string().datetime({ offset: true }),
+            location: z.string().trim().min(1).max(120).optional(),
             high: z.number(),
             low: z.number(),
             description: text,

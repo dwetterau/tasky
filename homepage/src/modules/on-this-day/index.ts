@@ -1,5 +1,6 @@
 import {
   formatOnThisDayDate,
+  localDateAt,
   onThisDayPayloadSchema,
   widgetDefinitions,
   type OnThisDayPayload,
@@ -16,9 +17,13 @@ export const onThisDayModule: HomeModule<OnThisDayPayload> = {
   freshForMs: widgetDefinitions["on-this-day"].freshForMs,
   maxAgeMs: widgetDefinitions["on-this-day"].maxAgeMs,
   parse: (value) => onThisDayPayloadSchema.parse(value),
-  render(data) {
+  render(data, context) {
+    const date =
+      data.date === localDateAt(context.now, context.timezone)
+        ? ""
+        : `<time class="widget-date" datetime="${e(data.date)}">${e(formatOnThisDayDate(data.date))}</time>`;
     return `<div class="on-this-day">
-      <time class="widget-date" datetime="${e(data.date)}">${e(formatOnThisDayDate(data.date))}</time>
+      ${date}
       <div class="briefing-markdown">${micromark(data.markdown)}</div>
     </div>`;
   },

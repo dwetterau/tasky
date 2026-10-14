@@ -67,6 +67,59 @@ describe("releases widget", () => {
     ).toEqual([]);
   });
 
+  it("shows only the first upcoming numbered episode for each TV show", () => {
+    const weekly: ReleasesPayload = {
+      asOf: "2026-10-12",
+      releases: [
+        {
+          kind: "tv",
+          title: "The Apothecary Diaries",
+          detail: "Season 3, episode 2",
+          releaseDate: "2026-10-09",
+        },
+        {
+          kind: "tv",
+          title: "The Apothecary Diaries",
+          detail: "Season 3, episode 3",
+          releaseDate: "2026-10-16",
+        },
+        {
+          kind: "tv",
+          title: "The Apothecary Diaries",
+          detail: "Season 3, episode 4",
+          releaseDate: "2026-10-23",
+        },
+        {
+          kind: "movie",
+          title: "One-night release",
+          releaseDate: "2026-10-16",
+        },
+      ],
+    };
+
+    expect(getUpcomingReleases(weekly, "2026-10-14")).toEqual([
+      {
+        kind: "movie",
+        title: "One-night release",
+        releaseDate: "2026-10-16",
+      },
+      {
+        kind: "tv",
+        title: "The Apothecary Diaries",
+        detail: "Season 3, episode 3",
+        releaseDate: "2026-10-16",
+      },
+    ]);
+    expect(getUpcomingReleases(weekly, "2026-10-17")).toEqual([
+      {
+        kind: "tv",
+        title: "The Apothecary Diaries",
+        detail: "Season 3, episode 4",
+        releaseDate: "2026-10-23",
+      },
+    ]);
+  });
+
   it("formats relative and month-precision dates", () => {
     expect(formatReleaseDate("2026-10-04", "2026-10-04")).toBe("Today (Sun)");
     expect(formatReleaseDate("2026-10-05", "2026-10-04")).toBe(
