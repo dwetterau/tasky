@@ -19,6 +19,13 @@ import {
   onThisDayPayloadSchema,
   type OnThisDayPayload,
 } from "./widgets/on-this-day";
+import {
+  WEATHER_FRESH_FOR_MS,
+  WEATHER_MAX_AGE_MS,
+  WEATHER_SCHEMA_VERSION,
+  weatherPayloadSchema,
+  type WeatherPayload,
+} from "./widgets/weather";
 
 export {
   formatStravaDistance,
@@ -68,9 +75,18 @@ export {
   onThisDayPayloadSchema,
   type OnThisDayPayload,
 } from "./widgets/on-this-day";
+export {
+  WEATHER_FRESH_FOR_MS,
+  WEATHER_MAX_AGE_MS,
+  WEATHER_SCHEMA_VERSION,
+  weatherForecastLocation,
+  weatherPayloadSchema,
+  type WeatherPayload,
+} from "./widgets/weather";
 
 export const WIDGET_KINDS = [
   "briefing",
+  "weather",
   "on-this-day",
   "strava",
   "releases",
@@ -132,6 +148,12 @@ export const widgetDefinitions = {
     freshForMs: 18 * 60 * 60_000,
     maxAgeMs: 7 * 24 * 60 * 60_000,
   },
+  weather: {
+    schemaVersion: WEATHER_SCHEMA_VERSION,
+    payloadSchema: weatherPayloadSchema,
+    freshForMs: WEATHER_FRESH_FOR_MS,
+    maxAgeMs: WEATHER_MAX_AGE_MS,
+  },
   "on-this-day": {
     schemaVersion: ON_THIS_DAY_SCHEMA_VERSION,
     payloadSchema: onThisDayPayloadSchema,
@@ -183,6 +205,26 @@ export const widgetDataInputSchema = z.discriminatedUnion("kind", [
         .max(160, "idempotencyKey cannot exceed 160 characters")
         .describe(
           "Optional retry key, for example briefing:2026-09-30:morning. Reusing it with different data is rejected.",
+        )
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z
+        .literal("weather")
+        .describe("Current conditions and a location-aware weather forecast."),
+      schemaVersion: z
+        .literal(WEATHER_SCHEMA_VERSION)
+        .describe("The payload schema version expected by clients."),
+      data: weatherPayloadSchema,
+      idempotencyKey: z
+        .string()
+        .trim()
+        .min(1, "idempotencyKey cannot be empty")
+        .max(160, "idempotencyKey cannot exceed 160 characters")
+        .describe(
+          "Optional retry key, for example weather:2026-10-14T16:00Z. Reusing it with different data is rejected.",
         )
         .optional(),
     })
@@ -281,6 +323,7 @@ export type WidgetDataInput = z.infer<typeof widgetDataInputSchema>;
 export type WidgetPayload =
   | BriefingPayload
   | LegacyBriefingPayload
+  | WeatherPayload
   | OnThisDayPayload
   | StravaPayload
   | ReleasesPayload

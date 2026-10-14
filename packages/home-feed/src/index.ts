@@ -157,55 +157,6 @@ export const portfolioPayloadSchema = z
   .strict();
 export type PortfolioPayload = z.infer<typeof portfolioPayloadSchema>;
 
-export const weatherPayloadSchema = z
-  .object({
-    location: z.string().max(120),
-    units: z.enum(["F", "C"]),
-    current: z
-      .object({
-        temperature: z.number(),
-        realFeelTemperature: z.number().nullable().optional(),
-        relativeHumidity: z.number().min(0).max(100).nullable().optional(),
-        description: text,
-        observedAt: timestamp,
-        isDay: z.boolean().optional(),
-      })
-      .strict()
-      .nullable(),
-    forecast: z
-      .array(
-        z
-          .object({
-            date: z.string().datetime({ offset: true }),
-            location: z.string().trim().min(1).max(120).optional(),
-            high: z.number(),
-            low: z.number(),
-            description: text,
-            rainProbability: z.number().min(0).max(100).nullable().optional(),
-          })
-          .strict(),
-      )
-      .max(5),
-    forecastObservedAt: timestamp.nullable(),
-    forecastFetchedAt: timestamp.nullable().optional(),
-    hourly: z
-      .array(
-        z
-          .object({
-            at: timestamp,
-            rainProbability: z.number().min(0).max(100).nullable(),
-          })
-          .strict(),
-      )
-      .max(24)
-      .optional(),
-    hourlyFetchedAt: timestamp.nullable().optional(),
-    attributionUrl: z
-      .url()
-      .refine((value) => new URL(value).protocol === "https:"),
-  })
-  .strict();
-
 export const moduleSchema = z
   .object({
     id: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/),
@@ -277,7 +228,6 @@ export const editionSchema = z
   })
   .strict();
 export type TaskyPayload = z.infer<typeof taskyPayloadSchema>;
-export type WeatherPayload = z.infer<typeof weatherPayloadSchema>;
 export type TaskyExport = z.infer<typeof exportSchema>;
 export type ModuleSnapshot = z.infer<typeof moduleSchema>;
 export type Feed = z.infer<typeof feedSchema>;

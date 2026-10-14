@@ -4,7 +4,6 @@ import {
   exportSchema,
   feedSchema,
   identitySchema,
-  moduleSchema,
   timezoneSchema,
   withFreshness,
   type Feed,
@@ -15,7 +14,6 @@ import { SerialQueue } from "../serial";
 import { digest } from "../transport";
 import { taskyService } from "../ingestion/tasky-service";
 import { ingestTasky, taskyModule } from "../modules/tasky";
-import { weatherModule } from "../modules/weather";
 import { missingModule } from "../modules/contract";
 import { compareModules, validateModule } from "../modules/registry";
 import { renderEdition } from "../rendering/page";
@@ -63,10 +61,7 @@ export class UserPublisher extends DurableObject<Env> {
               enrolledAt: Date.now(),
               provisioned: false,
               provisionAfter: 0,
-              modules: [
-                missingModule(taskyModule),
-                missingModule(weatherModule, !this.env.WEATHER_CONFIG),
-              ],
+              modules: [missingModule(taskyModule)],
               sourceRevision: 0,
               editionRevision: 0,
               dirty: true,
@@ -153,34 +148,6 @@ export class UserPublisher extends DurableObject<Env> {
             );
             await transaction.put("state", state!);
           });
-          return Response.json({ accepted: true });
-        }
-        if (path === "/accept-module") {
-          const { userId, snapshot } = await request.json<{
-            userId: string;
-            snapshot: ModuleSnapshot;
-          }>();
-          if (userId !== state.userId || snapshot.id === "tasky")
-            throw new HttpError(403, "Wrong module");
-          const validated = validateModule(moduleSchema.parse(snapshot));
-          const previous = state.modules.find((m) => m.id === snapshot.id);
-          if (
-            previous?.collectedAt &&
-            validated.collectedAt &&
-            previous.collectedAt > validated.collectedAt
-          )
-            return Response.json({ older: true });
-          if (JSON.stringify(previous) !== JSON.stringify(validated)) {
-            state.modules = [
-              ...state.modules.filter((m) => m.id !== snapshot.id),
-              validated,
-            ];
-            state.dirty = true;
-            await this.ctx.storage.setAlarm(
-              Math.max(Date.now() + 1000, state.lastPublishedAt + 1100),
-            );
-            await this.ctx.storage.put("state", state);
-          }
           return Response.json({ accepted: true });
         }
         if (path === "/status") {

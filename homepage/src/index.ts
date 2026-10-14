@@ -38,7 +38,6 @@ import { taskyService } from "./ingestion/tasky-service";
 
 export { UserPublisher } from "./publishing/publisher";
 export { HomepageSession } from "./auth/session-object";
-export { Coordinator } from "./ingestion/coordinator";
 
 function privateResponse(
   body: BodyInit | null,
@@ -195,9 +194,6 @@ export async function handleRequest(
       displayName: identity.displayName,
       timezone: env.DEFAULT_TIMEZONE,
     });
-    await objectCall(env.COORDINATOR, "users", "/enroll", {
-      userId: identity.userId,
-    });
     const { token } = await objectCall<{ token: string }>(
       env.SESSIONS,
       sid,
@@ -283,23 +279,6 @@ export async function handleRequest(
       cookie(LOGIN_COOKIE, "", 0),
     ]);
   }
-  if (request.method === "POST" && url.pathname === "/api/refresh") {
-    csrf(request, env);
-    const session = await verifySession(
-      env,
-      readCookie(request, SESSION_COOKIE),
-    );
-    if (!session)
-      return request.headers.get("accept") === "application/json"
-        ? json({ error: "Sign in required" }, 401)
-        : redirect("/auth/sign-in");
-    await objectCall(env.COORDINATOR, "users", "/collect", {
-      userId: session.userId,
-    });
-    if (request.headers.get("accept") === "application/json")
-      return json({ ok: true });
-    return redirect("/");
-  }
   if (request.method === "POST" && url.pathname === "/api/sync-prices") {
     csrf(request, env);
     const session = await verifySession(
@@ -344,13 +323,7 @@ export async function handleRequest(
       "/status",
       {},
     );
-    const collector = await objectCall(
-      env.COORDINATOR,
-      "users",
-      "/status",
-      { userId: session.userId },
-    );
-    return json({ ...publication, collector });
+    return json(publication);
   }
   const kvStart = performance.now();
   const raw = await env.EDITIONS.get(`edition:${session.userId}`, "json");
@@ -453,16 +426,5 @@ export default {
         status,
       );
     }
-  },
-  async scheduled(
-    _controller: ScheduledController,
-    env: Env,
-    ctx: ExecutionContext,
-  ) {
-    ctx.waitUntil(
-      objectCall(env.COORDINATOR, "users", "/tick", {}).catch(() => {
-        console.warn(JSON.stringify({ event: "homepage_schedule_retry" }));
-      }),
-    );
   },
 } satisfies ExportedHandler<Env>;

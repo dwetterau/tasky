@@ -142,12 +142,14 @@ export function fixtureWeather(now = Date.now()): ModuleSnapshot {
         },
         {
           date: "2026-09-16T07:00:00-04:00",
+          location: "Boston, MA",
           high: 75,
           low: 63,
           description: "A few showers",
         },
         {
           date: "2026-09-17T07:00:00-04:00",
+          location: "Philadelphia, PA",
           high: 74,
           low: 62,
           description: "Mostly sunny",

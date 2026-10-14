@@ -2,7 +2,7 @@
 
 A private, pre-rendered homepage at `https://home.davidw.tech`, backed by a
 Cloudflare Worker. Signed-in page loads verify a local session and read one
-user-specific KV entry; they do not call Convex or weather providers.
+user-specific KV entry; they do not call Convex or external data providers.
 
 ## Development
 
@@ -21,19 +21,18 @@ bindings and fictional data from `tests/fixtures.ts`.
 
 - `../packages/home-feed`: versioned feed schemas, timezone calculations and text
   normalization shared with Convex.
-- `../convex/homepage.ts`: enrollment, Tasky exports, delivery retries and access
-  to the enrolled user's weather key.
+- `../convex/homepage.ts`: enrollment, Tasky exports, and delivery retries.
 - `src/auth`: OAuth login, signed sessions and encrypted refresh credentials.
 - `src/publishing`: a Durable Object per user assembles HTML and JSON into one KV
   entry, preserving the last successful edition when updates fail.
-- `src/modules`: source collectors, validation, rendering and freshness policies.
-- `src/ingestion`: Tasky delivery and background scheduling.
+- `src/modules`: validation, rendering and freshness policies.
+- `src/ingestion`: signed Tasky service requests.
 - `gateway`: Cloudflare Pages forwards the custom hostname to the private Worker
   through a service binding. DNS remains at Squarespace.
 
-To add sports or another source, define its payload in `packages/home-feed`, add
-its renderer to `src/modules/registry.ts`, and register any polling collector in
-`src/modules/background.ts`. Authentication and page delivery stay shared.
+To add sports or another source, define its payload in `packages/home-feed` and
+add its renderer to `src/modules/registry.ts`. Authentication and page delivery
+stay shared.
 
 ## Tasky updates
 
@@ -62,7 +61,8 @@ increments per publication so automatic updates work throughout the day.
 
 MCP agents publish strongly validated, immutable widget rows to Convex. The
 registered kinds are `briefing@2` (a structured report date plus bounded
-Markdown body), `on-this-day@1` (a dated
+Markdown body), `weather@1` (current conditions plus hourly and location-aware
+daily forecasts), `on-this-day@1` (a dated
 Markdown list of journal facts from prior years), `strava@1` (normalized
 latest-run and latest-ride summaries), `releases@1` (dated upcoming TV and
 movie releases), and `recurring-expenses@1` (payments due within seven days and
@@ -125,7 +125,7 @@ hide the module.
 
 **Sync prices** posts to `/api/sync-prices`. The Worker checks the homepage
 session and calls Convex `POST /api/homepage/sync-prices` with the same
-provisioning signature as the weather-key route. Convex runs the app's price
+provisioning signature as the enrollment route. Convex runs the app's price
 and account snapshot sync for that enrolled user only, then exports a new
 edition. A click while a
 sync is already running does nothing. One run reads all configured portfolio
@@ -166,32 +166,18 @@ logout and homepage logout are separate.
 
 ## Weather
 
-Save an **AccuWeather (personal homepage)** key in Tasky Settings. The background
-Worker calls the signed `/api/homepage/weather-key` service route to retrieve
-only that enrolled user's AccuWeather key from Tasky's encrypted key store.
-The route accepts no arbitrary key type. Keys never enter the browser, feed,
-KV edition or collector state. This keeps Tasky as the credential store while
-the Worker owns weather collection.
+Weather is an agent-published `weather@1` widget. The shared strict schema is
+used by MCP publication, homepage rendering, and the mobile card. Publishing a
+new row requests a fresh homepage export; clients reactively select the newest
+row. Weather data becomes stale after seven hours and unavailable after twelve.
 
-Defaults are New York (`349727`), Fahrenheit and English. Current conditions
-update every two hours; the five-day and 12-hour forecasts every six hours.
-The hourly rain chart shows the upcoming hours from the 12-hour forecast, including hours after midnight.
-The collector allows at most 20 provider calls per rolling 24 hours, with
-persisted accounting and rate-limit backoff. A missing key is rechecked every
-30 minutes. Weather failures do not block Tasky updates. Weather data becomes
-stale after seven hours and is removed after twelve.
-
-Daily rain percentages use AccuWeather's daytime `RainProbability` from detailed
-forecasts; missing values show a dash. A daily forecast may override the
-top-level location so an agent can publish an itinerary spanning multiple
-cities; every daily row displays its effective location. The weather header's
-info control reveals collection time, observation time, and separate
-daily/hourly forecast download times. The provider's `Last-Modified`/`Date`
-still informs daily forecast freshness internally; it is not displayed as a
-forecast creation time. The hourly chart uses `PrecipitationProbability` from
-the standard 12-hour forecast (not the
-details-only `RainProbability` field) and renders as HTML/CSS, with a fixed
-0–100% scale and no charting library.
+Daily rain percentages are the daytime chance of rain; missing values show a
+dash. A daily forecast may override the top-level location so an agent can
+publish an itinerary spanning multiple cities; every daily row displays its
+effective location. The weather header's info control reveals publication,
+observation, and optional forecast update times. The hourly rain chart renders
+the supplied hourly probabilities as HTML/CSS, with a fixed 0–100% scale and no
+charting library.
 
 ## Page loading
 
@@ -205,18 +191,12 @@ The Worker, KV, Durable Objects, Pages gateway and production Convex endpoints
 are already provisioned. Ordinary releases reuse the IDs in `wrangler.jsonc`.
 
 ```sh
-# Repository root: deploy Convex changes
-npx convex deploy
-
-# Homepage Worker
-cd homepage
-npm run deploy
-
-# Only when gateway routing changes
-npm run deploy:gateway
+git push origin main
 ```
 
-Next.js changes deploy through the repository's existing main → Vercel flow.
+Pushing `main` deploys Next.js and Convex through Vercel and the homepage Worker
+through its GitHub workflow. Do not manually deploy Convex for ordinary
+production releases.
 The production issuer is `https://pleasant-nightingale-894.convex.site`, and
 Tasky is `https://tasky.davidw.tech`.
 
@@ -239,18 +219,13 @@ aliases are rejected.
 
 ## Troubleshooting
 
-- `/api/setup` shows authenticated enrollment, publication status, and weather
-  collector counters (budget used, next fetch times, last error). It does not
-  include provider keys or forecast payloads.
+- `/api/setup` shows authenticated enrollment and publication status. It does
+  not include widget payloads.
 - Missing Tasky updates: inspect `homepageEnrollments` for the next run and coarse
   error code, then check scheduling and matching ingestion secrets. Avoid logging
   the pending export body.
-- Missing weather: check the key in Tasky Settings and allow for the retry
-  interval. The Weather **Refresh** control (or `POST /api/refresh`) collects
-  immediately, then publishes a **new** edition from the current snapshots. It
-  does not edit the frozen KV HTML. A Refresh click is allowed to call AccuWeather
-  even if the rolling daily budget is already spent (at most current, 5-day, and
-  12-hour). Do not click it repeatedly.
+- Missing weather: use `readWidgetData` for `weather` to confirm a current row,
+  then publish a schema-valid replacement through `publishWidgetData`.
 - After auth changes, check sign-in, renewal and logout with the real account.
   Local integration tests do not establish live provider/account behavior.
 - Keep Durable Object namespaces during deployments: they store enrollment,

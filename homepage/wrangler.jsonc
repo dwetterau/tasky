@@ -14,7 +14,6 @@
     "bindings": [
       { "name": "PUBLISHERS", "class_name": "UserPublisher" },
       { "name": "SESSIONS", "class_name": "HomepageSession" },
-      { "name": "COORDINATOR", "class_name": "Coordinator" },
     ],
   },
   "migrations": [
@@ -22,8 +21,11 @@
       "tag": "v1",
       "new_sqlite_classes": ["UserPublisher", "HomepageSession", "Coordinator"],
     },
+    {
+      "tag": "v2",
+      "deleted_classes": ["Coordinator"],
+    },
   ],
-  "triggers": { "crons": ["* * * * *"] },
   "vars": {
     "HOME_ORIGIN": "https://home.davidw.tech",
     "TASKY_ORIGIN": "https://tasky.davidw.tech",
@@ -32,7 +34,6 @@
     "DEFAULT_TIMEZONE": "UTC",
     "SESSION_TTL_SECONDS": "604800",
     "ALLOWED_USER_IDS": "",
-    "WEATHER_CONFIG": "{\"locationKey\":\"000000\",\"locationName\":\"Example city\",\"units\":\"F\",\"language\":\"en-us\",\"currentIntervalMinutes\":120,\"forecastIntervalMinutes\":360,\"dailyRequestBudget\":20}",
   },
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
 }

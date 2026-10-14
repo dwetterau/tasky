@@ -173,7 +173,7 @@ describe("homepage projection and durable outbox", () => {
       (await t.query(internal.homepage.pending, { id }))!.pendingExportId,
     ).toBe(next!.pendingExportId);
   });
-  it("bounds output text and reads, and keeps other users' weather credentials inaccessible", async () => {
+  it("bounds output text and reads", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       for (let i = 0; i < 205; i++)
@@ -192,15 +192,6 @@ describe("homepage projection and durable outbox", () => {
         nextRunAt: 0,
         attempt: 0,
       });
-      await ctx.db.insert("apiKeys", {
-        userId: "b",
-        name: "Weather B",
-        type: "accuweather",
-        encryptedValue: "private",
-        iv: "iv",
-        keyVersion: 1,
-        updatedAt: 0,
-      });
     });
     const result = await t.run((ctx) =>
       projectHomepage(ctx, "a", "UTC", Date.now()),
@@ -208,12 +199,6 @@ describe("homepage projection and durable outbox", () => {
     expect(result.truncated).toBe(true);
     expect(result.tasks).toEqual([]);
     expect(result.counts.active).toBe(200);
-    expect(
-      await t.query(internal.homepage.weatherKey, { userId: "a" }),
-    ).toBeNull();
-    await expect(
-      t.query(internal.homepage.weatherKey, { userId: "b" }),
-    ).rejects.toThrow("Not enrolled");
   });
   it("exports only due signals and skips Weight", async () => {
     const t = convexTest(schema, modules);

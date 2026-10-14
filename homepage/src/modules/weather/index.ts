@@ -1,4 +1,10 @@
-import { weatherPayloadSchema, type WeatherPayload } from "@tasky/home-feed";
+import {
+  WEATHER_FRESH_FOR_MS,
+  WEATHER_MAX_AGE_MS,
+  weatherForecastLocation,
+  weatherPayloadSchema,
+  type WeatherPayload,
+} from "@tasky/home-feed";
 import type { HomeModule, RenderContext } from "../contract";
 import { escapeHtml as e, safeLink, sourceTime } from "../../rendering/html";
 
@@ -91,8 +97,8 @@ export const weatherModule: HomeModule<WeatherPayload> = {
   title: "Weather",
   placement: "supporting",
   schemaVersion: 1,
-  freshForMs: 7 * 3600_000,
-  maxAgeMs: 12 * 3600_000,
+  freshForMs: WEATHER_FRESH_FOR_MS,
+  maxAgeMs: WEATHER_MAX_AGE_MS,
   parse: (value) => weatherPayloadSchema.parse(value),
   renderHeader(snapshot, context) {
     const data =
@@ -113,35 +119,31 @@ export const weatherModule: HomeModule<WeatherPayload> = {
             </button>
             <span class="info-tooltip" id="weather-info" role="tooltip">
               <span
-                ><strong>Updated</strong> ${sourceTime(
-                  snapshot.collectedAt,
+                ><strong>Published</strong> ${sourceTime(
+                  snapshot.sourceDataAt,
                   context.timezone,
                 )}<br />
-                The homepage's last successful weather fetch.</span
+                When this weather widget was published to Tasky.</span
               >
               ${data?.current
                 ? `<span><strong>Current conditions observed</strong> ${sourceTime(data.current.observedAt, context.timezone)}<br />When AccuWeather recorded the conditions.</span>`
                 : ""}
               <span
-                ><strong>Forecast fetched</strong> ${data?.forecastFetchedAt ==
+                ><strong>Forecast updated</strong> ${data?.forecastFetchedAt ==
                 null
-                  ? "Awaiting the next forecast refresh"
+                  ? "Not supplied"
                   : sourceTime(data.forecastFetchedAt, context.timezone)}<br />
-                When the homepage downloaded this forecast from
-                AccuWeather.</span
+                When the widget's forecast data was last updated.</span
               >
               <span
                 >Rain percentages are the chance of rain during the daytime in
                 the daily list, and during each hour in the chart.</span
               >
               ${data?.hourlyFetchedAt
-                ? `<span><strong>Hourly forecast fetched</strong> ${sourceTime(data.hourlyFetchedAt, context.timezone)}<br />When the homepage downloaded the hourly rain outlook.</span>`
+                ? `<span><strong>Hourly forecast updated</strong> ${sourceTime(data.hourlyFetchedAt, context.timezone)}<br />When the widget's hourly rain outlook was last updated.</span>`
                 : ""}
             </span>
           </span>
-          <form class="module-refresh" action="/api/refresh" method="post">
-            <button type="submit">Refresh</button>
-          </form>
           ${data
             ? `<a class="module-open" href="${safeLink(data.attributionUrl)}" aria-label="Open weather on AccuWeather" rel="noreferrer">Open ↗</a>`
             : ""}
@@ -157,7 +159,7 @@ export const weatherModule: HomeModule<WeatherPayload> = {
         ${data.forecast
           .map(
             (day) => `
-        <div class="forecast-day"><strong>${e(new Intl.DateTimeFormat("en-US", { timeZone: context.timezone, weekday: "short" }).format(new Date(day.date)))}</strong><span class="forecast-summary"><span class="forecast-location">${e(day.location ?? data.location)}</span><span class="forecast-description"><span aria-hidden="true">${weatherEmoji(day.description)}</span> ${e(day.description)}</span></span><span class="forecast-values"><b>${Math.round(day.high)}° <span class="muted">${Math.round(day.low)}°</span></b><span class="rain-chance" title="Daytime rain chance" aria-label="Daytime rain chance: ${day.rainProbability == null ? "unavailable" : `${Math.round(day.rainProbability)} percent`}"><span aria-hidden="true">💧</span> ${day.rainProbability == null ? "—" : `${Math.round(day.rainProbability)}%`}</span></span></div>`,
+        <div class="forecast-day"><strong>${e(new Intl.DateTimeFormat("en-US", { timeZone: context.timezone, weekday: "short" }).format(new Date(day.date)))}</strong><span class="forecast-summary"><span class="forecast-location">${e(weatherForecastLocation(day, data.location))}</span><span class="forecast-description"><span aria-hidden="true">${weatherEmoji(day.description)}</span> ${e(day.description)}</span></span><span class="forecast-values"><b>${Math.round(day.high)}° <span class="muted">${Math.round(day.low)}°</span></b><span class="rain-chance" title="Daytime rain chance" aria-label="Daytime rain chance: ${day.rainProbability == null ? "unavailable" : `${Math.round(day.rainProbability)} percent`}"><span aria-hidden="true">💧</span> ${day.rainProbability == null ? "—" : `${Math.round(day.rainProbability)}%`}</span></span></div>`,
           )
           .join("")}
       </div> `;

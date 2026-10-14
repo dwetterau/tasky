@@ -2,7 +2,6 @@ export interface Env {
   EDITIONS: KVNamespace;
   PUBLISHERS: DurableObjectNamespace;
   SESSIONS: DurableObjectNamespace;
-  COORDINATOR: DurableObjectNamespace;
   HOME_ORIGIN: string;
   TASKY_ORIGIN: string;
   TASKY_ISSUER: string;
@@ -17,7 +16,6 @@ export interface Env {
   ALLOWED_EMAILS: string;
   DEFAULT_TIMEZONE: string;
   SESSION_TTL_SECONDS?: string;
-  WEATHER_CONFIG?: string;
 }
 
 export const DEFAULT_SESSION_TTL_SECONDS = 7 * 86400;

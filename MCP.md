@@ -297,6 +297,7 @@ generates the row ID, and homepage/mobile clients select the newest row by
 authenticated user and kind. Registered contracts:
 
 - `briefing@2`: `{ data: { date, markdown } }`
+- `weather@1`: `{ data: { location, units, current, forecast, forecastObservedAt, forecastFetchedAt?, hourly?, hourlyFetchedAt?, attributionUrl } }`
 - `on-this-day@1`: `{ data: { date, markdown } }`
 - `strava@1`: `{ data: { latestRun, latestRide } }`
 - `releases@1`: `{ data: { asOf, releases } }`
@@ -320,6 +321,42 @@ The briefing payload is:
 date out of `markdown`; homepage and mobile clients render the structured date.
 Stored `briefing@1` rows remain readable, but new publications must use version
 2.
+
+The weather payload supports a different location on each forecast day:
+
+```json
+{
+  "kind": "weather",
+  "schemaVersion": 1,
+  "data": {
+    "location": "New York, NY",
+    "units": "F",
+    "current": {
+      "temperature": 68,
+      "description": "Partly sunny",
+      "observedAt": 1791993600000,
+      "isDay": true
+    },
+    "forecast": [
+      {
+        "date": "2026-10-15T07:00:00-04:00",
+        "location": "Boston, MA",
+        "high": 64,
+        "low": 49,
+        "description": "Cloudy",
+        "rainProbability": 25
+      }
+    ],
+    "forecastObservedAt": 1791993600000,
+    "forecastFetchedAt": 1791993600000,
+    "attributionUrl": "https://www.accuweather.com/"
+  },
+  "idempotencyKey": "weather:2026-10-14T16:00Z"
+}
+```
+
+Each forecast day's `location` is optional. Web and mobile display it when
+present and otherwise fall back to the top-level `location`.
 
 The on-this-day payload is:
 

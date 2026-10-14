@@ -10,7 +10,6 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { authComponent } from "./auth";
-import { decryptApiKey } from "./apiKeys";
 import {
   exportSchema,
   identitySchema,
@@ -272,24 +271,6 @@ export const deliver = internalAction({
   },
 });
 
-export const weatherKey = internalQuery({
-  args: { userId: v.string() },
-  handler: async (ctx, args) => {
-    const enrollment = await ctx.db
-      .query("homepageEnrollments")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .unique();
-    if (!enrollment?.enabled) throw new Error("Not enrolled");
-    return ctx.db
-      .query("apiKeys")
-      .withIndex("by_user_type", (q) =>
-        q.eq("userId", args.userId).eq("type", "accuweather"),
-      )
-      .order("desc")
-      .first();
-  },
-});
-
 async function enrolledHomepageUser(
   ctx: QueryCtx | MutationCtx,
   userId: string,
@@ -429,20 +410,6 @@ export async function handleHomepageService(
         timezone,
       });
       return new Response(JSON.stringify(result), { headers });
-    }
-    if (path === "/api/homepage/weather-key") {
-      const row = await ctx.runQuery(internal.homepage.weatherKey, { userId });
-      return new Response(
-        JSON.stringify(
-          row
-            ? {
-                keyId: row._id,
-                apiKey: await decryptApiKey(row.encryptedValue, row.iv),
-              }
-            : { apiKey: null },
-        ),
-        { headers },
-      );
     }
     if (path === "/api/homepage/sync-prices") {
       const result = await ctx.runMutation(internal.homepage.beginPriceSync, {
