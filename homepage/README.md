@@ -116,6 +116,8 @@ Each portfolio also embeds up to 90 days of complete account snapshot totals
 and renders its value chart directly into the published HTML. History is
 refetched only after a successful combined portfolio sync (or when the cached
 series is missing), so the browser loads no chart library or additional data.
+The embedded series also supports pointer, touch and keyboard inspection of
+past values and daily percentage changes without making a network request.
 Recent day-return data is derived from the two latest complete account snapshot
 days after a successful combined portfolio sync, then retained in the saved
 homepage snapshot between exports.

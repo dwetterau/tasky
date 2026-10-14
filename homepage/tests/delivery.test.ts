@@ -39,6 +39,10 @@ describe("private delivery", () => {
       "public, max-age=31536000, immutable",
     );
     expect(response.headers.has("set-cookie")).toBe(false);
+    const script = await response.text();
+    expect(script).toContain('addEventListener("pointermove"');
+    expect(script).toContain('"ArrowLeft", "ArrowRight", "Home", "End"');
+    expect(script).toContain("data-history-tooltip-change");
     const legacy = await handleRequest(request("/assets/home.js?v=old"), env);
     expect(legacy.headers.get("cache-control")).toBe(
       "public, max-age=0, must-revalidate",
