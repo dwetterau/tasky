@@ -497,6 +497,13 @@ progress::-moz-progress-bar {
   color: var(--muted);
   margin-top: 2px;
 }
+.signal-group-label {
+  margin-top: 10px;
+  color: var(--muted);
+  font:
+    10px system-ui,
+    sans-serif;
+}
 .signal-dot {
   width: 6px;
   height: 6px;
@@ -510,6 +517,9 @@ progress::-moz-progress-bar {
 }
 .signal-dot.soon {
   background: #a88138;
+}
+.signal-dot.done {
+  background: var(--accent);
 }
 .due-tasks {
   margin-top: 8px;
@@ -699,12 +709,23 @@ progress::-moz-progress-bar {
 }
 .forecast-day {
   display: grid;
-  grid-template-columns: 30px 1fr auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 10px 0;
   border-bottom: 1px solid var(--rule);
   font-size: 12px;
+}
+.forecast-summary {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.forecast-location {
+  font:
+    600 11px/1.35 system-ui,
+    sans-serif;
+  overflow-wrap: anywhere;
 }
 .forecast-description {
   font:

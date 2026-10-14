@@ -59,13 +59,15 @@ function releaseSortDate(releaseDate: string): string {
   return releaseDate.length === 7 ? `${releaseDate}-01` : releaseDate;
 }
 
+const EPISODE_NUMBER = /\bepisode\s+(\d+)\b/i;
+
 export function getUpcomingReleases(
   payload: ReleasesPayload,
   today: string,
   limit = 8,
 ): UpcomingRelease[] {
   const currentMonth = today.slice(0, 7);
-  return payload.releases
+  const upcoming = payload.releases
     .filter((release) =>
       release.releaseDate.length === 7
         ? release.releaseDate >= currentMonth
@@ -78,7 +80,22 @@ export function getUpcomingReleases(
         ) ||
         a.title.localeCompare(b.title) ||
         (a.detail ?? "").localeCompare(b.detail ?? ""),
-    )
+    );
+  const episodicShows = new Set<string>();
+  return upcoming
+    .filter((release) => {
+      if (
+        release.kind !== "tv" ||
+        !release.detail ||
+        !EPISODE_NUMBER.test(release.detail)
+      ) {
+        return true;
+      }
+      const showKey = release.title.trim().toLocaleLowerCase("en-US");
+      if (episodicShows.has(showKey)) return false;
+      episodicShows.add(showKey);
+      return true;
+    })
     .slice(0, Math.max(0, limit));
 }
 

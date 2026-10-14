@@ -157,7 +157,7 @@ export const weatherModule: HomeModule<WeatherPayload> = {
         ${data.forecast
           .map(
             (day) => `
-        <div class="forecast-day"><strong>${e(new Intl.DateTimeFormat("en-US", { timeZone: context.timezone, weekday: "short" }).format(new Date(day.date)))}</strong><span class="forecast-description"><span aria-hidden="true">${weatherEmoji(day.description)}</span> ${e(day.description)}</span><span class="forecast-values"><b>${Math.round(day.high)}° <span class="muted">${Math.round(day.low)}°</span></b><span class="rain-chance" title="Daytime rain chance" aria-label="Daytime rain chance: ${day.rainProbability == null ? "unavailable" : `${Math.round(day.rainProbability)} percent`}"><span aria-hidden="true">💧</span> ${day.rainProbability == null ? "—" : `${Math.round(day.rainProbability)}%`}</span></span></div>`,
+        <div class="forecast-day"><strong>${e(new Intl.DateTimeFormat("en-US", { timeZone: context.timezone, weekday: "short" }).format(new Date(day.date)))}</strong><span class="forecast-summary"><span class="forecast-location">${e(day.location ?? data.location)}</span><span class="forecast-description"><span aria-hidden="true">${weatherEmoji(day.description)}</span> ${e(day.description)}</span></span><span class="forecast-values"><b>${Math.round(day.high)}° <span class="muted">${Math.round(day.low)}°</span></b><span class="rain-chance" title="Daytime rain chance" aria-label="Daytime rain chance: ${day.rainProbability == null ? "unavailable" : `${Math.round(day.rainProbability)} percent`}"><span aria-hidden="true">💧</span> ${day.rainProbability == null ? "—" : `${Math.round(day.rainProbability)}%`}</span></span></div>`,
           )
           .join("")}
       </div> `;

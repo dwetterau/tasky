@@ -231,6 +231,30 @@ it("shows real feel and humidity in one compact line when available", () => {
     '<p class="current-details" aria-label="Feels like 75 degrees Fahrenheit; Relative humidity 61 percent">Feels 75° · 61% RH</p>',
   );
 });
+it("shows each forecast day's city and falls back to the current location", () => {
+  const edition = fixtureEdition();
+  const weather = edition.feed.modules.find((module) => module.id === "weather")!;
+  const data = weatherPayloadSchema.parse(weather.payload);
+  data.forecast = data.forecast.map((day, index) =>
+    index === 0
+      ? { ...day, location: "Boston, MA" }
+      : index === 1
+        ? { ...day, location: "Philadelphia, PA" }
+        : day,
+  );
+  weather.payload = data;
+
+  const html = renderEdition(edition.feed, env.TASKY_ORIGIN);
+  expect(html).toContain(
+    '<span class="forecast-location">Boston, MA</span>',
+  );
+  expect(html).toContain(
+    '<span class="forecast-location">Philadelphia, PA</span>',
+  );
+  expect(html).toContain(
+    '<span class="forecast-location">New York, NY · fixture</span>',
+  );
+});
 it("counts attempts in a rolling 24-hour window across restarts and location changes", async () => {
   const now = Date.now();
   const smallBudget = { ...config, dailyRequestBudget: 2 };

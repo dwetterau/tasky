@@ -31,7 +31,15 @@ export async function projectHomepage(
   now: number,
 ): Promise<TaskyPayload> {
   const dates = calendar(now, timezone);
-  const [taskGroups, dueTaskGroups, captures, signals, scorecards] =
+  const yesterday = calendar(dates.day.startAt - 1, timezone);
+  const [
+    taskGroups,
+    dueTaskGroups,
+    captures,
+    signals,
+    scorecards,
+    yesterdayEntries,
+  ] =
     await Promise.all([
       Promise.all(
         statuses.map((status) =>
@@ -74,13 +82,23 @@ export async function projectHomepage(
           q.eq("userId", userId).eq("archivedAt", undefined),
         )
         .take(31),
+      ctx.db
+        .query("signalEntries")
+        .withIndex("by_user_effective_at", (q) =>
+          q
+            .eq("userId", userId)
+            .gte("effectiveAt", yesterday.day.startAt)
+            .lt("effectiveAt", yesterday.day.endAt),
+        )
+        .take(201),
     ]);
   let truncated =
     taskGroups.some((group) => group.length > 200) ||
     dueTaskGroups.some((group) => group.length > 200) ||
     captures.length > 200 ||
     signals.length > 60 ||
-    scorecards.length > 30;
+    scorecards.length > 30 ||
+    yesterdayEntries.length > 200;
   const activeTasks = taskGroups
     .flatMap((group) => group.slice(0, 200))
     .map((task) => ({
@@ -203,8 +221,26 @@ export async function projectHomepage(
         a.signal.name.localeCompare(b.signal.name),
     )
     .slice(0, 3);
+  const completedYesterdayIds = new Set(
+    yesterdayEntries
+      .slice(0, 200)
+      .filter((entry) => entry.operation.type === "activity.occurred")
+      .map((entry) => String(entry.signalId)),
+  );
+  const doneYesterday = evaluated
+    .filter(
+      ({ signal }) =>
+        signal.model.kind === "activity" &&
+        completedYesterdayIds.has(String(signal._id)),
+    )
+    .sort((a, b) => a.signal.name.localeCompare(b.signal.name))
+    .slice(0, LIMITS.signals);
   const tagIds = [
-    ...new Set(dueSignals.flatMap(({ signal }) => signal.tagIds.slice(0, 3))),
+    ...new Set(
+      [...dueSignals, ...doneYesterday].flatMap(({ signal }) =>
+        signal.tagIds.slice(0, 3),
+      ),
+    ),
   ];
   const tags = await Promise.all(tagIds.map((id) => ctx.db.get(id)));
   const tagNames = new Map(
@@ -240,6 +276,14 @@ export async function projectHomepage(
       reason: summary(evaluation.reason),
       ratio: evaluation.ratio,
       isComplete: evaluation.isComplete,
+      labels: signal.tagIds.slice(0, 3).flatMap((id) => {
+        const name = tagNames.get(id);
+        return name ? [name] : [];
+      }),
+    })),
+    doneYesterday: doneYesterday.map(({ signal }) => ({
+      id: signal._id,
+      name: summary(signal.name),
       labels: signal.tagIds.slice(0, 3).flatMap((id) => {
         const name = tagNames.get(id);
         return name ? [name] : [];

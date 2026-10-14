@@ -18,6 +18,11 @@ describe("Tasky homepage module", () => {
       todayCount: 0,
       labels: [],
     });
+    tasky.doneYesterday.push({
+      id: "signal-run",
+      name: "Easy run",
+      labels: ["Health"],
+    });
 
     const html = renderEdition(
       edition.feed,
@@ -27,6 +32,8 @@ describe("Tasky homepage module", () => {
     expect(html).toContain("Strength training");
     expect(html).not.toContain("Water the plants");
     expect(html).not.toContain(">Weight<");
+    expect(html).toContain("Done yesterday");
+    expect(html).toContain("Easy run");
     expect(html).toContain("Due today");
     expect(html).toContain("Make space for the work that matters this week");
     expect(html).not.toContain("Book a table for Friday evening");

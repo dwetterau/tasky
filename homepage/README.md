@@ -182,11 +182,14 @@ persisted accounting and rate-limit backoff. A missing key is rechecked every
 stale after seven hours and is removed after twelve.
 
 Daily rain percentages use AccuWeather's daytime `RainProbability` from detailed
-forecasts; missing values show a dash. The weather header's info control reveals
-collection time, observation time, and separate daily/hourly forecast download
-times. The provider's `Last-Modified`/`Date` still informs daily forecast freshness
-internally; it is not displayed as a forecast creation time. The hourly chart
-uses `PrecipitationProbability` from the standard 12-hour forecast (not the
+forecasts; missing values show a dash. A daily forecast may override the
+top-level location so an agent can publish an itinerary spanning multiple
+cities; every daily row displays its effective location. The weather header's
+info control reveals collection time, observation time, and separate
+daily/hourly forecast download times. The provider's `Last-Modified`/`Date`
+still informs daily forecast freshness internally; it is not displayed as a
+forecast creation time. The hourly chart uses `PrecipitationProbability` from
+the standard 12-hour forecast (not the
 details-only `RainProbability` field) and renders as HTML/CSS, with a fixed
 0–100% scale and no charting library.
 
