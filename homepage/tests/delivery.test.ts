@@ -11,14 +11,13 @@ import {
   cookie,
 } from "../src/auth/credentials";
 import { base64ToBytes, digest } from "../src/transport";
-import { objectCall, type Env } from "../src/env";
+import type { Env } from "../src/env";
 import {
   browserScriptVersion,
   dailyEdition,
   renderEdition,
 } from "../src/rendering/page";
 import { fixtureEdition } from "./fixtures";
-import type { Edition } from "@tasky/home-feed";
 const env = bindings as unknown as Env;
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -85,9 +84,9 @@ describe("private delivery", () => {
     expect(html).not.toContain(">Tasky ↗</a>");
     expect(html).toContain('aria-describedby="weather-info"');
     expect(html).toContain('role="tooltip"');
-    expect(html).toContain("Forecast fetched");
+    expect(html).toContain("Forecast updated");
     expect(html).toContain("Open ↗</a>");
-    expect(html).toContain('action="/api/refresh"');
+    expect(html).not.toContain('action="/api/refresh"');
     expect(
       dailyEdition(Date.parse("2026-09-16T04:00:00Z"), feed.timezone),
     ).toBe(2);
@@ -207,44 +206,6 @@ describe("private delivery", () => {
     expect(html).toContain("A good week");
     expect(html).not.toContain("<!--FRESHNESS-->");
   });
-  it("lets a signed-in user refresh weather for their own enrollment", async () => {
-    const token = await issueSession(env, "user-a", await sid());
-    const denied = await worker.fetch(
-      new Request(`${env.HOME_ORIGIN}/api/refresh`, { method: "POST" }),
-      env,
-    );
-    expect(denied.status).toBe(403);
-    await objectCall(env.PUBLISHERS, "user-a", "/enroll", {
-      userId: "user-a",
-      timezone: "America/New_York",
-      displayName: "Fixture",
-    });
-    await objectCall(env.COORDINATOR, "users", "/enroll", { userId: "user-a" });
-    const response = await worker.fetch(
-      new Request(`${env.HOME_ORIGIN}/api/refresh`, {
-        method: "POST",
-        headers: {
-          origin: env.HOME_ORIGIN,
-          accept: "application/json",
-          cookie: `${SESSION_COOKIE}=${token}`,
-        },
-      }),
-      env,
-    );
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true });
-    const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
-    expect(edition?.feed.userId).toBe("user-a");
-    expect(edition?.feed.revision).toBeGreaterThan(0);
-    const setup = await (
-      await worker.fetch(request("/api/setup", token), env)
-    ).json();
-    expect(setup).toEqual(
-      expect.objectContaining({
-        collector: { weather: null },
-      }),
-    );
-  });
   it("asks Convex to sync prices for the signed-in user only", async () => {
     const token = await issueSession(env, "user-a", await sid());
     const seen: { url?: string; body?: string; headers?: Headers } = {};
@@ -341,7 +302,6 @@ describe("local credentials", () => {
     for (const path of [
       "/auth/logout",
       "/auth/renew",
-      "/api/refresh",
       "/api/sync-prices",
     ]) {
       for (const origin of ["https://evil.test", "null"]) {

@@ -94,7 +94,9 @@ Scorecards compose required and optional signals into a single completion
 ratio; `readScorecards` and `manageScorecard` use the same signal scopes.
 `readWidgetData` and `publishWidgetData` use one strongly validated payload
 union for all registered widget kinds. Current kinds are `briefing`,
-`on-this-day`, `strava`, `releases`, and `recurring-expenses`; clients show the
-newest row for the authenticated user and kind. New briefing publications use
+`weather`, `on-this-day`, `strava`, `releases`, and `recurring-expenses`;
+clients show the newest row for the authenticated user and kind. Weather
+forecasts may set a different location on each day, falling back to the
+top-level current location. New briefing publications use
 `briefing@2`, with a structured local report date separate from the Markdown
 body.

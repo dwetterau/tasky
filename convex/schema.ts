@@ -42,7 +42,7 @@ export const apiKeyTypeValues = [
   "github",
   "linear",
   "cursor_agent_sdk",
-  "accuweather",
+  "accuweather", // Legacy stored rows only; weather now uses widgetData.
   "portfolio_airtable_api_key",
   "portfolio_airtable_base_id",
   "portfolio_schwab_positions_view_id",
@@ -55,7 +55,7 @@ export const apiKeyType = v.union(
   v.literal("github"),
   v.literal("linear"),
   v.literal("cursor_agent_sdk"),
-  v.literal("accuweather"),
+  v.literal("accuweather"), // Retained until existing encrypted rows are removed.
   v.literal("portfolio_airtable_api_key"),
   v.literal("portfolio_airtable_base_id"),
   v.literal("portfolio_schwab_positions_view_id"),
@@ -131,6 +131,7 @@ export type EventSource = "APP" | "MCP";
 
 export const widgetKind = v.union(
   v.literal("briefing"),
+  v.literal("weather"),
   v.literal("on-this-day"),
   v.literal("strava"),
   v.literal("releases"),

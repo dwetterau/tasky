@@ -51,6 +51,30 @@ const stravaData = {
   },
 };
 
+const weatherData = {
+  location: "New York, NY",
+  units: "F" as const,
+  current: {
+    temperature: 68,
+    description: "Partly sunny",
+    observedAt: Date.parse("2026-10-14T16:00:00Z"),
+    isDay: true,
+  },
+  forecast: [
+    {
+      date: "2026-10-15T07:00:00-04:00",
+      location: "Boston, MA",
+      high: 64,
+      low: 49,
+      description: "Cloudy",
+      rainProbability: 25,
+    },
+  ],
+  forecastObservedAt: Date.parse("2026-10-14T16:00:00Z"),
+  forecastFetchedAt: Date.parse("2026-10-14T16:00:00Z"),
+  attributionUrl: "https://www.accuweather.com/",
+};
+
 function makeHandler() {
   const read = vi.fn<WidgetExecutors["read"]>(async () => ({
     id: "widget-data-1" as never,
@@ -88,6 +112,13 @@ describe("widget MCP tool", () => {
           properties: {
             kind: { const: "briefing" },
             schemaVersion: { const: 2 },
+          },
+          additionalProperties: false,
+        },
+        {
+          properties: {
+            kind: { const: "weather" },
+            schemaVersion: { const: 1 },
           },
           additionalProperties: false,
         },
@@ -171,6 +202,29 @@ describe("widget MCP tool", () => {
     });
   });
 
+  it("publishes weather forecasts with per-day locations", async () => {
+    const { handlers, publish } = makeHandler();
+    const response = await handlers.publishWidgetData(
+      3,
+      "user-1",
+      scopes(WIDGETS_WRITE_SCOPE),
+      {
+        kind: "weather",
+        schemaVersion: 1,
+        data: weatherData,
+        idempotencyKey: "weather:2026-10-14T16:00Z",
+      },
+    );
+    expect((await responseBody(response)).error).toBeUndefined();
+    expect(publish).toHaveBeenCalledWith({
+      userId: "user-1",
+      kind: "weather",
+      schemaVersion: 1,
+      dataJson: JSON.stringify(weatherData),
+      idempotencyKey: "weather:2026-10-14T16:00Z",
+    });
+  });
+
   it("returns all useful Zod paths for incompatible data", async () => {
     const { handlers, publish } = makeHandler();
     const response = await handlers.publishWidgetData(
@@ -190,7 +244,7 @@ describe("widget MCP tool", () => {
     expect(body.error?.message).toContain("data.markdown");
     expect(body.error?.message).toContain("arguments");
     expect(body.error?.message).toContain(
-      "briefing@2, on-this-day@1, strava@1, releases@1, recurring-expenses@1",
+      "briefing@2, weather@1, on-this-day@1, strava@1, releases@1, recurring-expenses@1",
     );
     expect(publish).not.toHaveBeenCalled();
   });

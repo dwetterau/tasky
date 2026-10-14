@@ -21,7 +21,6 @@ const http = httpRouter();
 // Enable CORS since frontend (Next.js) is on a different domain
 authComponent.registerRoutes(http, createAuth, { cors: true });
 http.route({ path: "/api/homepage/enroll", method: "POST", handler: homepageService });
-http.route({ path: "/api/homepage/weather-key", method: "POST", handler: homepageService });
 http.route({ path: "/api/homepage/sync-prices", method: "POST", handler: homepageService });
 
 http.route({

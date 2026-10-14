@@ -20,7 +20,6 @@ export default defineConfig({
           PROVISIONING_SECRET: "fixture-provision-only-32-bytes-long-secret",
           ALLOWED_USER_IDS: "user-a,user-b",
           ALLOWED_EMAILS: "",
-          WEATHER_CONFIG: "",
           DEFAULT_TIMEZONE: "America/New_York",
         },
       },

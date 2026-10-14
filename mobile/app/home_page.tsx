@@ -16,6 +16,8 @@ import {
   recurringExpensesPayloadSchema,
   releasesPayloadSchema,
   stravaPayloadSchema,
+  weatherForecastLocation,
+  weatherPayloadSchema,
   type StravaActivity,
 } from "@tasky/home-feed/widgets";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -162,6 +164,140 @@ function BriefingCard() {
           {content.body}
         </Markdown>
       ) : null}
+    </View>
+  );
+}
+
+function weatherSymbol(description: string, isDay = true): string {
+  const text = description.toLowerCase();
+  if (/thunder|storm/.test(text)) return "⛈️";
+  if (/snow|flurr|blizzard/.test(text)) return "🌨️";
+  if (/ice|sleet|freez|rain|shower|drizzle/.test(text)) return "🌧️";
+  if (/fog|haze|mist/.test(text)) return "🌫️";
+  if (/partly|mostly sunny|intermittent/.test(text)) return isDay ? "⛅" : "☁️";
+  if (/cloud|overcast/.test(text)) return "☁️";
+  if (/sun|clear/.test(text)) return isDay ? "☀️" : "🌙";
+  return "🌡️";
+}
+
+function WeatherCard() {
+  const taskyAuth = useTaskyAuth();
+  const now = useSignalClock();
+  const taskyEnabled =
+    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
+  const latest = useTaskyQuery(
+    taskyApi.widgetData.latest,
+    taskyEnabled ? { kind: "weather" } : "skip",
+  );
+  const weather = useMemo(() => {
+    if (!latest.data) return null;
+    try {
+      return weatherPayloadSchema.safeParse(JSON.parse(latest.data.dataJson));
+    } catch {
+      return null;
+    }
+  }, [latest.data]);
+
+  if (!taskyEnabled || latest.isLoading || !weather?.success) return null;
+
+  const current = weather.data.current;
+  const upcomingRain = (weather.data.hourly ?? [])
+    .filter((hour) => hour.at + 60 * 60_000 > now)
+    .slice(0, 12)
+    .reduce<number | null>(
+      (highest, hour) =>
+        hour.rainProbability === null
+          ? highest
+          : Math.max(highest ?? 0, hour.rainProbability),
+      null,
+    );
+
+  return (
+    <View style={[sharedStyles.card, styles.weatherCard]}>
+      <CardHeader
+        title="Weather"
+        subtitle={weather.data.location}
+        trailing={<View />}
+      />
+      {current ? (
+        <View style={styles.currentWeather}>
+          <Text style={styles.weatherIcon}>
+            {weatherSymbol(current.description, current.isDay)}
+          </Text>
+          <View style={styles.currentWeatherSummary}>
+            <Text style={styles.weatherTemperature}>
+              {Math.round(current.temperature)}°{weather.data.units}
+            </Text>
+            <Text style={styles.weatherCondition}>{current.description}</Text>
+          </View>
+          <View style={styles.weatherDetails}>
+            {current.realFeelTemperature != null ? (
+              <Text style={styles.weatherDetail}>
+                Feels {Math.round(current.realFeelTemperature)}°
+              </Text>
+            ) : null}
+            {current.relativeHumidity != null ? (
+              <Text style={styles.weatherDetail}>
+                {Math.round(current.relativeHumidity)}% humidity
+              </Text>
+            ) : null}
+            {upcomingRain != null ? (
+              <Text style={styles.weatherDetail}>
+                Rain up to {Math.round(upcomingRain)}%
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      ) : (
+        <Text style={styles.weatherEmpty}>Current conditions unavailable.</Text>
+      )}
+      <View style={styles.weatherForecast}>
+        {weather.data.forecast.map((day, index) => (
+          <View
+            key={`${day.date}:${weatherForecastLocation(day, weather.data.location)}`}
+            style={[
+              styles.weatherForecastRow,
+              index > 0 && styles.weatherForecastDivider,
+            ]}
+          >
+            <Text style={styles.weatherForecastDay}>
+              {new Intl.DateTimeFormat(undefined, {
+                weekday: "short",
+              }).format(new Date(day.date))}
+            </Text>
+            <View style={styles.weatherForecastSummary}>
+              <Text style={styles.weatherForecastLocation} numberOfLines={1}>
+                {weatherForecastLocation(day, weather.data.location)}
+              </Text>
+              <Text style={styles.weatherForecastCondition} numberOfLines={1}>
+                {weatherSymbol(day.description)} {day.description}
+              </Text>
+            </View>
+            <View style={styles.weatherForecastValues}>
+              <Text style={styles.weatherForecastTemperature}>
+                {Math.round(day.high)}°{" "}
+                <Text style={styles.weatherForecastLow}>
+                  {Math.round(day.low)}°
+                </Text>
+              </Text>
+              <Text style={styles.weatherForecastRain}>
+                💧{" "}
+                {day.rainProbability == null
+                  ? "—"
+                  : `${Math.round(day.rainProbability)}%`}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => void Linking.openURL(weather.data.attributionUrl)}
+        accessibilityRole="link"
+        accessibilityLabel="Open weather source"
+      >
+        <Text style={styles.weatherAttribution}>Open weather source ↗</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -988,6 +1124,7 @@ export default function HomePage() {
         ]}
       >
         <BriefingCard />
+        <WeatherCard />
         <TodayCard />
         <SignalsCard />
         <OnThisDayCard />
@@ -1084,6 +1221,103 @@ const markdownStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   briefingCard: {
     paddingBottom: spacing.sm,
+  },
+  weatherCard: {
+    paddingBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  currentWeather: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  weatherIcon: {
+    fontSize: 42,
+  },
+  currentWeatherSummary: {
+    flex: 1,
+  },
+  weatherTemperature: {
+    color: colors.label,
+    fontSize: fontSize.display,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  weatherCondition: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.small,
+  },
+  weatherDetails: {
+    alignItems: "flex-end",
+    gap: spacing.xs,
+  },
+  weatherDetail: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.caption,
+    fontVariant: ["tabular-nums"],
+  },
+  weatherEmpty: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.small,
+  },
+  weatherForecast: {
+    overflow: "hidden",
+    borderRadius: radius.md,
+    backgroundColor: colors.tertiarySystemGroupedBackground,
+  },
+  weatherForecastRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  weatherForecastDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
+  },
+  weatherForecastDay: {
+    width: 34,
+    color: colors.label,
+    fontSize: fontSize.small,
+    fontWeight: "700",
+  },
+  weatherForecastSummary: {
+    flex: 1,
+    minWidth: 0,
+  },
+  weatherForecastLocation: {
+    color: colors.label,
+    fontSize: fontSize.caption,
+    fontWeight: "600",
+  },
+  weatherForecastCondition: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.micro,
+  },
+  weatherForecastValues: {
+    alignItems: "flex-end",
+  },
+  weatherForecastTemperature: {
+    color: colors.label,
+    fontSize: fontSize.small,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  weatherForecastLow: {
+    color: colors.secondaryLabel,
+    fontWeight: "500",
+  },
+  weatherForecastRain: {
+    color: colors.secondaryLabel,
+    fontSize: fontSize.micro,
+    fontVariant: ["tabular-nums"],
+  },
+  weatherAttribution: {
+    alignSelf: "flex-end",
+    color: colors.systemBlue,
+    fontSize: fontSize.caption,
+    fontWeight: "600",
   },
   onThisDayCard: {
     paddingBottom: spacing.sm,

@@ -117,6 +117,35 @@ describe("widget data", () => {
 
   it("projects every registered widget with its own freshness policy", async () => {
     const t = convexTest(schema, modules);
+    const weatherObservedAt = Date.parse("2026-10-08T12:00:00Z");
+    await t.mutation(internal.widgetData.publishFromMcp, {
+      userId: "user-a",
+      kind: "weather",
+      schemaVersion: 1,
+      dataJson: JSON.stringify({
+        location: "New York, NY",
+        units: "F",
+        current: {
+          temperature: 68,
+          description: "Partly sunny",
+          observedAt: weatherObservedAt,
+          isDay: true,
+        },
+        forecast: [
+          {
+            date: "2026-10-09T07:00:00-04:00",
+            location: "Boston, MA",
+            high: 64,
+            low: 49,
+            description: "Cloudy",
+            rainProbability: 25,
+          },
+        ],
+        forecastObservedAt: weatherObservedAt,
+        forecastFetchedAt: weatherObservedAt,
+        attributionUrl: "https://www.accuweather.com/",
+      }),
+    });
     await t.mutation(internal.widgetData.publishFromMcp, {
       userId: "user-a",
       kind: "on-this-day",
@@ -198,8 +227,19 @@ describe("widget data", () => {
     const projected = await t.run((ctx) =>
       projectLatestWidgets(ctx, "user-a", Date.now()),
     );
-    expect(projected).toHaveLength(4);
+    expect(projected).toHaveLength(5);
     expect(projected[0]).toMatchObject({
+      id: "weather",
+      schemaVersion: 1,
+      freshForMs: 7 * 60 * 60_000,
+      maxAgeMs: 12 * 60 * 60_000,
+      payload: {
+        location: "New York, NY",
+        forecast: [{ location: "Boston, MA" }],
+      },
+    });
+    expect(() => moduleSchema.parse(projected[0])).not.toThrow();
+    expect(projected[1]).toMatchObject({
       id: "on-this-day",
       schemaVersion: 1,
       freshForMs: 18 * 60 * 60_000,
@@ -209,8 +249,8 @@ describe("widget data", () => {
         markdown: "- **2021:** Moved into a new apartment.",
       },
     });
-    expect(() => moduleSchema.parse(projected[0])).not.toThrow();
-    expect(projected[1]).toMatchObject({
+    expect(() => moduleSchema.parse(projected[1])).not.toThrow();
+    expect(projected[2]).toMatchObject({
       id: "strava",
       schemaVersion: 1,
       freshForMs: 30 * 60 * 60_000,
@@ -228,8 +268,8 @@ describe("widget data", () => {
         },
       },
     });
-    expect(() => moduleSchema.parse(projected[1])).not.toThrow();
-    expect(projected[2]).toMatchObject({
+    expect(() => moduleSchema.parse(projected[2])).not.toThrow();
+    expect(projected[3]).toMatchObject({
       id: "releases",
       schemaVersion: 1,
       freshForMs: 8 * 24 * 60 * 60_000,
@@ -245,8 +285,8 @@ describe("widget data", () => {
         ],
       },
     });
-    expect(() => moduleSchema.parse(projected[2])).not.toThrow();
-    expect(projected[3]).toMatchObject({
+    expect(() => moduleSchema.parse(projected[3])).not.toThrow();
+    expect(projected[4]).toMatchObject({
       id: "recurring-expenses",
       schemaVersion: 1,
       freshForMs: 8 * 24 * 60 * 60_000,
@@ -271,6 +311,6 @@ describe("widget data", () => {
         },
       },
     });
-    expect(() => moduleSchema.parse(projected[3])).not.toThrow();
+    expect(() => moduleSchema.parse(projected[4])).not.toThrow();
   });
 });

@@ -162,7 +162,6 @@ describe("durable ingestion and publication", () => {
     });
     expect(edition!.feed.modules.map((module) => module.id)).toEqual([
       "briefing",
-      "weather",
       "tasky",
     ]);
     expect(edition!.html).toContain(
@@ -203,7 +202,6 @@ describe("durable ingestion and publication", () => {
     await tick();
     const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
     expect(edition!.feed.modules.map((module) => module.id)).toEqual([
-      "weather",
       "on-this-day",
       "tasky",
     ]);
@@ -500,16 +498,12 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).not.toContain('name="userId"');
     expect(await env.EDITIONS.get("edition:user-b")).toBeNull();
   });
-  it("keeps weather failures separate from Tasky publication and preserves observation age", async () => {
+  it("publishes weather through the widget pipeline with per-day locations", async () => {
     await enroll();
-    await send();
     const weather = fixtureWeather(Date.now() - 3 * 3600_000);
-    weather.error = "collection_failed";
-    await objectCall(env.PUBLISHERS, "user-a", "/accept-module", {
-      userId: "user-a",
-      snapshot: weather,
-    });
-    await send(fixtureExport("user-a", 2));
+    const envelope = fixtureExport("user-a", 2);
+    envelope.widgets = [weather];
+    await send(envelope);
     await tick();
     const edition = await env.EDITIONS.get<Edition>("edition:user-a", "json");
     expect(
@@ -518,15 +512,13 @@ describe("durable ingestion and publication", () => {
     expect(
       edition!.feed.modules.find((m) => m.id === "weather")!.sourceDataAt,
     ).toBe(weather.sourceDataAt);
-    expect(edition!.html).not.toContain("latest update failed");
-    expect(edition!.html).not.toContain("Earlier weather snapshot");
-    expect(edition!.html).toContain('action="/api/refresh"');
-    await expect(
-      objectCall(env.PUBLISHERS, "user-a", "/accept-module", {
-        userId: "user-b",
-        snapshot: weather,
-      }),
-    ).rejects.toThrow();
+    expect(edition!.html).toContain(
+      '<span class="forecast-location">Boston, MA</span>',
+    );
+    expect(edition!.html).toContain(
+      '<span class="forecast-location">Philadelphia, PA</span>',
+    );
+    expect(edition!.html).not.toContain('action="/api/refresh"');
   });
   it("serializes concurrent exports so a delayed older event cannot overwrite a newer one", async () => {
     await enroll();
@@ -590,16 +582,15 @@ describe("durable ingestion and publication", () => {
     await tick();
     const first = await env.EDITIONS.get<Edition>("edition:user-a", "json");
     const weather = fixtureWeather(Date.now());
-    await objectCall(env.PUBLISHERS, "user-a", "/accept-module", {
-      userId: "user-a",
-      snapshot: weather,
-    });
+    const envelope = fixtureExport("user-a", 2);
+    envelope.widgets = [weather];
+    await send(envelope);
     const pending = await env.EDITIONS.get<Edition>("edition:user-a", "json");
     expect(pending!.feed.revision).toBe(first!.feed.revision);
     expect(
       pending!.feed.modules.find((m) => m.id === "weather")?.sourceDataAt,
     ).not.toBe(weather.sourceDataAt);
-    await objectCall(env.PUBLISHERS, "user-a", "/publish", {});
+    await tick();
     const published = await env.EDITIONS.get<Edition>("edition:user-a", "json");
     expect(published!.feed.revision).toBeGreaterThan(first!.feed.revision);
     expect(
