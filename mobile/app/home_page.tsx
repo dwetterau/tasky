@@ -217,7 +217,16 @@ function WeatherCard() {
       <CardHeader
         title="Weather"
         subtitle={weather.data.location}
-        trailing={<View />}
+        trailing={
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => void Linking.openURL(weather.data.attributionUrl)}
+            accessibilityRole="link"
+            accessibilityLabel="Open weather source"
+          >
+            <Text style={styles.stravaOpen}>Open ↗</Text>
+          </TouchableOpacity>
+        }
       />
       {current ? (
         <View style={styles.currentWeather}>
@@ -290,14 +299,6 @@ function WeatherCard() {
           </View>
         ))}
       </View>
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => void Linking.openURL(weather.data.attributionUrl)}
-        accessibilityRole="link"
-        accessibilityLabel="Open weather source"
-      >
-        <Text style={styles.weatherAttribution}>Open weather source ↗</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -1312,12 +1313,6 @@ const styles = StyleSheet.create({
     color: colors.secondaryLabel,
     fontSize: fontSize.micro,
     fontVariant: ["tabular-nums"],
-  },
-  weatherAttribution: {
-    alignSelf: "flex-end",
-    color: colors.systemBlue,
-    fontSize: fontSize.caption,
-    fontWeight: "600",
   },
   onThisDayCard: {
     paddingBottom: spacing.sm,
