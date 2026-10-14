@@ -83,8 +83,16 @@ function renderPortfolioHistory(data: NamedPortfolio) {
   const changeLabel = `${signedMoney(change)}${changePercent === null ? "" : ` (${percent(changePercent)})`}`;
   const toneClass = change < 0 ? "warning" : change > 0 ? "positive" : "";
   const rangeLabel = `${chartDate(first.date)} to ${chartDate(last.date)}`;
+  const serializedValues = data.history!.values
+    .map((value) => value ?? "")
+    .join(",");
 
-  return /* HTML */ `<figure class="portfolio-history">
+  return /* HTML */ `<figure
+    class="portfolio-history"
+    data-portfolio-history
+    data-history-start="${e(data.history!.startDate)}"
+    data-history-values="${e(serializedValues)}"
+  >
     <figcaption>
       <span>Value · 90 days</span>
       <strong class="${toneClass}">${e(changeLabel)}</strong>
@@ -93,12 +101,21 @@ function renderPortfolioHistory(data: NamedPortfolio) {
       viewBox="0 0 ${width} ${height}"
       preserveAspectRatio="none"
       role="img"
-      aria-label="${e(`${data.name} portfolio value from ${chartDate(first.date)}, ${money(first.value)}, to ${chartDate(last.date)}, ${money(last.value)}`)}"
+      tabindex="0"
+      data-history-chart
+      aria-label="${e(`${data.name} portfolio value from ${chartDate(first.date)}, ${money(first.value)}, to ${chartDate(last.date)}, ${money(last.value)}. Use the arrow keys to inspect daily values.`)}"
     >
       <path class="portfolio-history-area" d="${area}" aria-hidden="true"></path>
       <path class="portfolio-history-line" d="${line}" aria-hidden="true"></path>
-      <circle cx="${coordinates.at(-1)!.x.toFixed(1)}" cy="${coordinates.at(-1)!.y.toFixed(1)}" r="4" aria-hidden="true"></circle>
+      <line class="portfolio-history-cursor" data-history-cursor y1="0" y2="${height}" hidden aria-hidden="true"></line>
+      <circle class="portfolio-history-point" data-history-point r="4" hidden aria-hidden="true"></circle>
+      <circle class="portfolio-history-end" cx="${coordinates.at(-1)!.x.toFixed(1)}" cy="${coordinates.at(-1)!.y.toFixed(1)}" r="4" aria-hidden="true"></circle>
     </svg>
+    <div class="portfolio-history-tooltip" data-history-tooltip data-side="left" hidden aria-live="polite">
+      <time data-history-tooltip-date></time>
+      <strong data-history-tooltip-value></strong>
+      <span data-history-tooltip-change></span>
+    </div>
     <div class="portfolio-history-dates" aria-label="${e(rangeLabel)}">
       <time datetime="${e(first.date)}">${e(chartDate(first.date))}</time>
       <time datetime="${e(last.date)}">${e(chartDate(last.date))}</time>

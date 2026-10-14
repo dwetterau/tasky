@@ -795,6 +795,7 @@ summary {
   overflow-wrap: anywhere;
 }
 .portfolio-history {
+  position: relative;
   margin: 18px 0 0;
 }
 .portfolio-history figcaption,
@@ -823,6 +824,12 @@ summary {
   height: 132px;
   margin-top: 8px;
   overflow: visible;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+.portfolio-history svg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
 }
 .portfolio-history-area {
   fill: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -838,6 +845,53 @@ summary {
   stroke: var(--accent);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
+}
+.portfolio-history-cursor {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+.portfolio-history-tooltip {
+  position: absolute;
+  top: 34px;
+  z-index: 1;
+  display: grid;
+  gap: 1px;
+  min-width: 116px;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 12%, transparent);
+  pointer-events: none;
+  font:
+    10px/1.35 system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.portfolio-history-tooltip[hidden],
+.portfolio-history-cursor[hidden],
+.portfolio-history-point[hidden] {
+  display: none;
+}
+.portfolio-history-tooltip[data-side="left"] {
+  left: 8px;
+  text-align: left;
+}
+.portfolio-history-tooltip[data-side="right"] {
+  right: 8px;
+  text-align: right;
+}
+.portfolio-history-tooltip time,
+.portfolio-history-tooltip span {
+  color: var(--muted);
+}
+.portfolio-history-tooltip span.positive {
+  color: var(--accent);
+}
+.portfolio-history-tooltip span.warning {
+  color: var(--warn);
 }
 .portfolio-history-dates {
   margin-top: 5px;
@@ -1239,6 +1293,153 @@ export const browserScript = `
     } catch {}
     selectPortfolio(selected);
   };
+  const historyMoney = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+  const historyDate = new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+  });
+  const portfolioHistoryCache = new WeakMap();
+  const readPortfolioHistory = (chart) => {
+    const cached = portfolioHistoryCache.get(chart);
+    if (cached) return cached;
+    const figure = chart.closest("[data-portfolio-history]");
+    if (!(figure instanceof HTMLElement)) return null;
+    const start = figure.dataset.historyStart;
+    const serialized = figure.dataset.historyValues;
+    if (!start || serialized === undefined) return null;
+    const values = serialized.split(",").map((value) => {
+      if (value === "") return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    });
+    const indexes = values.flatMap((value, index) =>
+      value === null ? [] : [index],
+    );
+    if (indexes.length < 2) return null;
+    const availableValues = indexes.map((index) => values[index]);
+    const minimum = Math.min(...availableValues);
+    const maximum = Math.max(...availableValues);
+    const rawRange = maximum - minimum;
+    const padding =
+      rawRange > 0 ? rawRange * 0.08 : Math.max(maximum * 0.02, 1);
+    const history = {
+      figure,
+      start,
+      values,
+      indexes,
+      firstIndex: indexes[0],
+      lastIndex: indexes[indexes.length - 1],
+      yMinimum: minimum - padding,
+      yRange: maximum - minimum + padding * 2,
+    };
+    portfolioHistoryCache.set(chart, history);
+    return history;
+  };
+  const historyDateAt = (start, index) => {
+    const date = new Date(start + "T12:00:00Z");
+    date.setUTCDate(date.getUTCDate() + index);
+    return date;
+  };
+  const showPortfolioHistoryPoint = (chart, index) => {
+    const history = readPortfolioHistory(chart);
+    if (!history || !history.indexes.includes(index)) return;
+    const value = history.values[index];
+    if (value === null) return;
+    const width = chart.viewBox.baseVal.width || 640;
+    const height = chart.viewBox.baseVal.height || 144;
+    const x =
+      history.firstIndex === history.lastIndex
+        ? width / 2
+        : ((index - history.firstIndex) /
+            (history.lastIndex - history.firstIndex)) *
+          width;
+    const y =
+      height - ((value - history.yMinimum) / history.yRange) * height;
+    const cursor = history.figure.querySelector("[data-history-cursor]");
+    const point = history.figure.querySelector("[data-history-point]");
+    const tooltip = history.figure.querySelector("[data-history-tooltip]");
+    if (
+      !(cursor instanceof SVGElement) ||
+      !(point instanceof SVGElement) ||
+      !(tooltip instanceof HTMLElement)
+    )
+      return;
+    cursor.setAttribute("x1", String(x));
+    cursor.setAttribute("x2", String(x));
+    cursor.removeAttribute("hidden");
+    point.setAttribute("cx", String(x));
+    point.setAttribute("cy", String(y));
+    point.removeAttribute("hidden");
+    const date = historyDateAt(history.start, index);
+    const dateElement = tooltip.querySelector("[data-history-tooltip-date]");
+    const valueElement = tooltip.querySelector("[data-history-tooltip-value]");
+    const changeElement = tooltip.querySelector(
+      "[data-history-tooltip-change]",
+    );
+    if (dateElement instanceof HTMLTimeElement) {
+      dateElement.dateTime = date.toISOString().slice(0, 10);
+      dateElement.textContent = historyDate.format(date);
+    }
+    if (valueElement) valueElement.textContent = historyMoney.format(value);
+    if (changeElement) {
+      const previousIndex = history.indexes
+        .filter((candidate) => candidate < index)
+        .at(-1);
+      const previousValue =
+        previousIndex === undefined ? null : history.values[previousIndex];
+      const change =
+        previousValue === null || previousValue === 0
+          ? null
+          : ((value - previousValue) / previousValue) * 100;
+      changeElement.textContent =
+        change === null
+          ? "No prior day"
+          : (change >= 0 ? "+" : "") + change.toFixed(2) + "% day";
+      changeElement.classList.toggle("positive", change !== null && change > 0);
+      changeElement.classList.toggle("warning", change !== null && change < 0);
+    }
+    tooltip.dataset.side = x >= width / 2 ? "left" : "right";
+    tooltip.removeAttribute("hidden");
+    chart.dataset.historyIndex = String(index);
+  };
+  const hidePortfolioHistoryPoint = (chart) => {
+    const history = readPortfolioHistory(chart);
+    if (!history) return;
+    history.figure
+      .querySelector("[data-history-cursor]")
+      ?.setAttribute("hidden", "");
+    history.figure
+      .querySelector("[data-history-point]")
+      ?.setAttribute("hidden", "");
+    history.figure
+      .querySelector("[data-history-tooltip]")
+      ?.setAttribute("hidden", "");
+    delete chart.dataset.historyIndex;
+  };
+  const showPortfolioHistoryAtPointer = (chart, clientX) => {
+    const history = readPortfolioHistory(chart);
+    if (!history) return;
+    const bounds = chart.getBoundingClientRect();
+    if (bounds.width <= 0) return;
+    const fraction = Math.max(
+      0,
+      Math.min(1, (clientX - bounds.left) / bounds.width),
+    );
+    const target =
+      history.firstIndex +
+      fraction * (history.lastIndex - history.firstIndex);
+    const index = history.indexes.reduce((closest, candidate) =>
+      Math.abs(candidate - target) < Math.abs(closest - target)
+        ? candidate
+        : closest,
+    );
+    showPortfolioHistoryPoint(chart, index);
+  };
   const renewal = document.querySelector("form[data-auto-renew]");
   if (renewal instanceof HTMLFormElement) {
     const renew = async () => {
@@ -1260,6 +1461,78 @@ export const browserScript = `
     renew();
     return;
   }
+  document.addEventListener("pointerdown", (event) => {
+    const element = event.target instanceof Element ? event.target : null;
+    const chart = element?.closest("[data-history-chart]");
+    if (chart instanceof SVGSVGElement)
+      showPortfolioHistoryAtPointer(chart, event.clientX);
+  });
+  document.addEventListener("pointermove", (event) => {
+    const element = event.target instanceof Element ? event.target : null;
+    const chart = element?.closest("[data-history-chart]");
+    if (chart instanceof SVGSVGElement)
+      showPortfolioHistoryAtPointer(chart, event.clientX);
+  });
+  document.addEventListener("pointerout", (event) => {
+    if (event.pointerType === "touch") return;
+    const element = event.target instanceof Element ? event.target : null;
+    const chart = element?.closest("[data-history-chart]");
+    if (!(chart instanceof SVGSVGElement)) return;
+    if (event.relatedTarget instanceof Node && chart.contains(event.relatedTarget))
+      return;
+    hidePortfolioHistoryPoint(chart);
+  });
+  document.addEventListener("focusin", (event) => {
+    const chart =
+      event.target instanceof SVGSVGElement &&
+      event.target.matches("[data-history-chart]")
+        ? event.target
+        : null;
+    const history = chart && readPortfolioHistory(chart);
+    if (chart && history) {
+      const selected = Number(chart.dataset.historyIndex);
+      showPortfolioHistoryPoint(
+        chart,
+        Number.isInteger(selected) && history.indexes.includes(selected)
+          ? selected
+          : history.indexes[history.indexes.length - 1],
+      );
+    }
+  });
+  document.addEventListener("focusout", (event) => {
+    const chart =
+      event.target instanceof SVGSVGElement &&
+      event.target.matches("[data-history-chart]")
+        ? event.target
+        : null;
+    if (chart) hidePortfolioHistoryPoint(chart);
+  });
+  document.addEventListener("keydown", (event) => {
+    const chart =
+      event.target instanceof SVGSVGElement &&
+      event.target.matches("[data-history-chart]")
+        ? event.target
+        : null;
+    const history = chart && readPortfolioHistory(chart);
+    if (!chart || !history) return;
+    if (event.key === "Escape") {
+      hidePortfolioHistoryPoint(chart);
+      chart.blur();
+      return;
+    }
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+      return;
+    event.preventDefault();
+    const selected = Number(chart.dataset.historyIndex);
+    let position = history.indexes.indexOf(selected);
+    if (position < 0) position = history.indexes.length - 1;
+    if (event.key === "ArrowLeft") position = Math.max(0, position - 1);
+    if (event.key === "ArrowRight")
+      position = Math.min(history.indexes.length - 1, position + 1);
+    if (event.key === "Home") position = 0;
+    if (event.key === "End") position = history.indexes.length - 1;
+    showPortfolioHistoryPoint(chart, history.indexes[position]);
+  });
   document.addEventListener("click", (event) => {
     const element = event.target instanceof Element ? event.target : null;
     const portfolioTab = element?.closest("[data-portfolio-tab]");

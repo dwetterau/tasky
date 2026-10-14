@@ -471,8 +471,12 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Total %");
     expect(edition!.html).toContain("Value · 90 days");
     expect(edition!.html).toContain('class="portfolio-history-line"');
+    expect(edition!.html).toContain('data-history-values="1690,1750"');
+    expect(edition!.html).toContain("data-history-cursor");
+    expect(edition!.html).toContain("data-history-tooltip");
+    expect(edition!.html).toContain('data-history-chart');
     expect(edition!.html).toContain(
-      "portfolio value from Sep 28, $1,690, to Sep 29, $1,750",
+      "portfolio value from Sep 28, $1,690, to Sep 29, $1,750. Use the arrow keys to inspect daily values.",
     );
     expect(edition!.html).toContain("Show all 6");
     expect(edition!.html).toContain('data-portfolio-tab="all"');
