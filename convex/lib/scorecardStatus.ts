@@ -11,7 +11,7 @@ export type ScorecardEvaluation = {
   isComplete: boolean;
   optionalDoneCount: number;
   count: number;
-  attention?: "ok" | "soon" | "due";
+  attention?: "ok" | "soon" | "due" | "unknown";
   actionAt?: number;
   reason?: string;
   scheduleProgress?: {
@@ -25,6 +25,12 @@ export type ScorecardEvaluation = {
     overdueCount: number;
     nextDueAt?: number;
   };
+};
+
+export type ScorecardMemberAttention = {
+  attention: "ok" | "soon" | "due" | "unknown";
+  actionAt?: number;
+  isComplete: boolean;
 };
 
 function clampedRatio(ratio: number): number {
@@ -120,11 +126,34 @@ export function withScorecardAttention(
   scheduleProgress?: NonNullable<
     ScorecardEvaluation["scheduleProgress"]
   >,
+  members: ScorecardMemberAttention[] = [],
 ): ScorecardEvaluation {
   if (!scheduleProgress) {
+    const incompleteMembers = members.filter((member) => !member.isComplete);
+    const attention = evaluation.isComplete
+      ? "ok"
+      : incompleteMembers.some((member) => member.attention === "due")
+        ? "due"
+        : incompleteMembers.some((member) => member.attention === "soon")
+          ? "soon"
+          : incompleteMembers.some((member) => member.attention === "unknown")
+            ? "unknown"
+            : incompleteMembers.length > 0
+              ? "ok"
+              : "due";
+    const actionAt = incompleteMembers
+      .filter((member) => member.attention === attention)
+      .reduce<number | undefined>(
+        (earliest, member) =>
+          member.actionAt === undefined
+            ? earliest
+            : Math.min(earliest ?? member.actionAt, member.actionAt),
+        undefined,
+      );
     return {
       ...evaluation,
-      attention: evaluation.isComplete ? "ok" : "due",
+      attention,
+      actionAt: evaluation.isComplete ? undefined : actionAt,
       reason: evaluation.isComplete ? "Scorecard is complete" : "Scorecard is incomplete",
     };
   }

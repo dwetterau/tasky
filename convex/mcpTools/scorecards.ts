@@ -5,9 +5,8 @@ import {
   SIGNALS_WRITE_SCOPE,
   type ParsedMcpScopes,
 } from "../mcpScopes";
+import { SIGNAL_SOON_WINDOW_MS } from "../lib/signalConstants";
 import { mcpError, mcpToolResult, type McpToolDescriptor } from "./common";
-
-const DEFAULT_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type ScorecardMemberRole = "required" | "optional";
 
@@ -738,7 +737,7 @@ export function createScorecardToolHandlers(
         }
         now = parsedNow.value;
       }
-      let soonWindowMs = DEFAULT_SOON_WINDOW_MS;
+      let soonWindowMs = SIGNAL_SOON_WINDOW_MS;
       if (parsed.value.soonWindowMs !== undefined) {
         const parsedWindow = parseFiniteNumber(
           rpcId,
