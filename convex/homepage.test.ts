@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import schema from "./schema";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { modules } from "./test.setup";
 import { projectHomepage } from "./lib/homepageProjection";
 import { homepageHeaders } from "./lib/homepageTransport";
@@ -228,6 +229,79 @@ describe("homepage projection and durable outbox", () => {
       projectHomepage(ctx, "a", "America/New_York", now),
     );
     expect(result.signals.map((signal) => signal.name)).toEqual(["Due signal"]);
+  });
+  it("uses the shared soon window for scorecard progress", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.parse("2026-10-15T12:00:00Z");
+    await t.run(async (ctx) => {
+      const members: Array<{
+        type: "signal";
+        signalId: Id<"signals">;
+        role: "required";
+      }> = [];
+      for (const [name, model] of [
+        [
+          "Soon inventory",
+          {
+            kind: "inventory" as const,
+            unit: "Pills",
+            threshold: { value: 14, comparison: "atOrBelow" as const },
+            flow: { amount: -1, everyDays: 1 },
+            confirmedQuantity: 20,
+            confirmedAt: now,
+            nextFlowAt: now + 86400_000,
+          },
+        ],
+        ...["Inventory 2", "Inventory 3", "Inventory 4"].map(
+          (name) =>
+            [
+              name,
+              {
+                kind: "inventory" as const,
+                unit: "Pills",
+                threshold: { value: 7, comparison: "atOrBelow" as const },
+                confirmedQuantity: 30,
+                confirmedAt: now,
+              },
+            ] as const,
+        ),
+      ] as const) {
+        const signalId = await ctx.db.insert("signals", {
+          userId: "a",
+          name,
+          tagIds: [],
+          model,
+          createdAt: now,
+          updatedAt: now,
+        });
+        members.push({
+          type: "signal" as const,
+          signalId,
+          role: "required" as const,
+        });
+      }
+      await ctx.db.insert("scorecards", {
+        userId: "a",
+        name: "Prescriptions",
+        tagIds: [],
+        members,
+        optionalQuota: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const result = await t.run((ctx) =>
+      projectHomepage(ctx, "a", "America/New_York", now),
+    );
+
+    expect(result.scorecards).toEqual([
+      expect.objectContaining({
+        name: "Prescriptions",
+        ratio: 0.75,
+        isComplete: false,
+      }),
+    ]);
   });
   it("exports distinct activity signals completed yesterday in the user's timezone", async () => {
     const t = convexTest(schema, modules);

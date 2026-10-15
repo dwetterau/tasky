@@ -658,6 +658,7 @@ async function toScorecardItem(
       now,
       soonWindowMs,
       scheduleProgress,
+      members.map((member) => member.evaluation),
     ),
   };
 }
@@ -721,7 +722,7 @@ async function listScorecardsForUser(
     ),
   );
   return items.sort((left, right) => {
-    const rank = { due: 0, soon: 1, ok: 2 };
+    const rank = { due: 0, soon: 1, unknown: 2, ok: 3 };
     const attentionDifference =
       rank[left.evaluation.attention ?? "due"] -
       rank[right.evaluation.attention ?? "due"];

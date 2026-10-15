@@ -5,9 +5,8 @@ import {
   SIGNALS_WRITE_SCOPE,
   type ParsedMcpScopes,
 } from "../mcpScopes";
+import { SIGNAL_SOON_WINDOW_MS } from "../lib/signalConstants";
 import { mcpError, mcpToolResult, type McpToolDescriptor } from "./common";
-
-const DEFAULT_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type SignalKind = "activity" | "inventory";
 type SignalAttention = "ok" | "soon" | "due" | "unknown";
@@ -1626,7 +1625,7 @@ export function createSignalToolHandlers(
         }
         now = parsedNow.value;
       }
-      let soonWindowMs = DEFAULT_SOON_WINDOW_MS;
+      let soonWindowMs = SIGNAL_SOON_WINDOW_MS;
       if (parsed.value.soonWindowMs !== undefined) {
         const parsedWindow = parseFiniteNumber(
           rpcId,
@@ -1761,7 +1760,7 @@ export function createSignalToolHandlers(
           operation.error ?? mcpError(rpcId, -32602, "Invalid signal operation")
         );
       }
-      let soonWindowMs = DEFAULT_SOON_WINDOW_MS;
+      let soonWindowMs = SIGNAL_SOON_WINDOW_MS;
       if (parsed.value.soonWindowMs !== undefined) {
         const parsedWindow = parseFiniteNumber(
           rpcId,

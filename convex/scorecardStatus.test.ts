@@ -174,6 +174,27 @@ describe("scorecard evaluation", () => {
     });
   });
 
+  it("inherits attention from incomplete members when it has no schedule", () => {
+    const evaluation = evaluateScorecard(
+      [
+        { role: "required", ratio: 1 },
+        { role: "required", ratio: 0 },
+      ],
+      0,
+    );
+
+    expect(
+      withScorecardAttention(evaluation, 10, 100, undefined, [
+        { attention: "ok", isComplete: true },
+        { attention: "soon", actionAt: 50, isComplete: false },
+      ]),
+    ).toMatchObject({
+      attention: "soon",
+      actionAt: 50,
+      isComplete: false,
+    });
+  });
+
   it("sums member counts against a session target", () => {
     expect(
       evaluateScorecard(

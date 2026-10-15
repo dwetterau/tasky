@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { taskyApi } from "./tasky";
 
-export const SIGNAL_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export { SIGNAL_SOON_WINDOW_MS } from "tasky-convex/lib/signalConstants";
+
 export const SIGNAL_QUERY_REFRESH_MS = 5 * 60 * 1000;
 
 export type SignalDashboardItem = FunctionReturnType<

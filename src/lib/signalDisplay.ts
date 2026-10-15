@@ -3,8 +3,8 @@
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
+export { SIGNAL_SOON_WINDOW_MS } from "../../convex/lib/signalConstants";
 
-export const SIGNAL_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const SIGNAL_QUERY_REFRESH_MS = 5 * 60 * 1000;
 
 export type SignalDashboardItem = FunctionReturnType<

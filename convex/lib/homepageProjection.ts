@@ -8,6 +8,7 @@ import {
   type TaskyPayload,
 } from "../../packages/home-feed/src/index";
 import { evaluateSignal } from "./signalStatus";
+import { SIGNAL_SOON_WINDOW_MS } from "./signalConstants";
 import {
   evaluateScorecard,
   withScorecardAttention,
@@ -114,7 +115,12 @@ export async function projectHomepage(
         now,
         timezone,
       );
-      const evaluation = evaluateSignal(signal.model, now, 86400_000, progress);
+      const evaluation = evaluateSignal(
+        signal.model,
+        now,
+        SIGNAL_SOON_WINDOW_MS,
+        progress,
+      );
       return {
         signal,
         evaluation,
@@ -149,6 +155,11 @@ export async function projectHomepage(
           role: member.role,
           ratio: evaluatedCard.ratio,
           count: evaluatedCard.count,
+          attention:
+            evaluatedCard.attention ??
+            (evaluatedCard.isComplete ? "ok" : "unknown"),
+          actionAt: evaluatedCard.actionAt,
+          isComplete: evaluatedCard.isComplete,
         };
       }
       const item = signalMap.get(member.signalId);
@@ -157,6 +168,9 @@ export async function projectHomepage(
         role: member.role,
         ratio: item?.evaluation.ratio ?? 0,
         count: item?.count ?? 0,
+        attention: item?.evaluation.attention ?? "unknown",
+        actionAt: item?.evaluation.actionAt,
+        isComplete: item?.evaluation.isComplete ?? false,
       };
     });
     const baseResult = evaluateScorecard(
@@ -187,8 +201,9 @@ export async function projectHomepage(
     const result = withScorecardAttention(
       baseResult,
       now,
-      86400_000,
+      SIGNAL_SOON_WINDOW_MS,
       progress,
+      members,
     );
     memo.set(id, result);
     return result;
