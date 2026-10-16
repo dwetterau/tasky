@@ -74,6 +74,16 @@ const navItems = [
     ),
   },
   {
+    name: "Portfolio",
+    href: "/portfolio",
+    preserveTag: false,
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h10v8H4V4zm0 12h10v4H4v-4zm14-12h2v11h-2V4zm0 15h2v1h-2v-1z" />
+      </svg>
+    ),
+  },
+  {
     name: "Dashboard",
     href: "/dashboard",
     preserveTag: false,
@@ -160,7 +170,7 @@ export function Navigation() {
           />
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center gap-1">
+          <div className="hidden xl:flex items-center gap-1">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
@@ -267,7 +277,7 @@ export function Navigation() {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="lg:hidden p-2 text-(--muted) hover:text-foreground transition-colors"
+            className="xl:hidden p-2 text-(--muted) hover:text-foreground transition-colors"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               {menuOpen ? (
@@ -282,7 +292,7 @@ export function Navigation() {
 
       {/* Mobile Menu */}
       {menuOpen && (
-        <div className="lg:hidden border-t border-(--card-border) bg-(--card-bg)">
+        <div className="xl:hidden border-t border-(--card-border) bg-(--card-bg)">
           <div className="px-4 sm:px-6 lg:px-8 py-2 space-y-1">
             {navItems.map((item) => {
               const isActive = pathname === item.href;

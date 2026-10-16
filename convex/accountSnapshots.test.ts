@@ -102,12 +102,14 @@ it("builds only complete portfolio days and keeps the newest duplicate", () => {
         {
           ticker: "VTI",
           name: "Vanguard Total Market",
+          quantity: 4,
           value: 550,
           costBasis: 425,
         },
         {
           ticker: "",
           name: "Cash",
+          quantity: 0,
           value: 50,
           costBasis: 50,
         },
