@@ -70,12 +70,12 @@ function AuthenticatedHome() {
 export default function Index() {
   const taskyAuth = useTaskyAuth();
 
-  if (taskyAuth.isPending) {
-    return <LoadingScreen message="Logging in..." />;
-  }
-
   if (taskyAuth.isAuthenticated) {
     return <AuthenticatedHome />;
+  }
+
+  if (taskyAuth.isPending) {
+    return <LoadingScreen message="Logging in..." />;
   }
 
   return <LoginScreen />;

@@ -1,6 +1,24 @@
 export const TASKY_AUTH_BACKGROUND_REFRESH_MS = 60_000;
 export const TASKY_AUTH_RETRY_MAX_MS = 30_000;
 
+export function isTaskyAuthBootstrapPending({
+  hasSession,
+  sessionPending,
+  convexAuthenticated,
+  convexAuthLoading,
+}: {
+  hasSession: boolean;
+  sessionPending: boolean;
+  convexAuthenticated: boolean;
+  convexAuthLoading: boolean;
+}): boolean {
+  return (
+    !hasSession &&
+    !convexAuthenticated &&
+    (sessionPending || convexAuthLoading)
+  );
+}
+
 export function shouldRestartTaskyAuthOnForeground({
   hasSession,
   hasCachedToken,
