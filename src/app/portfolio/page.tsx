@@ -2,7 +2,12 @@
 
 import { useAction, useQuery } from "convex/react";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent,
+} from "react";
 import { ResponsiveContainer, Treemap } from "recharts";
 import type { TreemapNode } from "recharts/types/chart/Treemap";
 import { api } from "../../../convex/_generated/api";
@@ -51,13 +56,16 @@ function shiftDate(date: string, horizon: Exclude<Horizon, "1d" | "total">) {
   return shifted.toISOString().slice(0, 10);
 }
 
-function colorForReturn(value: number | null): string {
+function colorForReturn(value: number | null, scaleMax: number): string {
   if (value === null || Math.abs(value) < 0.01) return "#475569";
-  const strength = Math.min(1, Math.abs(value) / 8);
+  const strength = Math.min(
+    1,
+    Math.sqrt(Math.abs(value) / Math.max(scaleMax, 0.01)),
+  );
   if (value > 0) {
-    return `hsl(142 55% ${32 + strength * 8}%)`;
+    return `hsl(142 ${38 + strength * 40}% ${25 + strength * 20}%)`;
   }
-  return `hsl(0 62% ${34 + strength * 7}%)`;
+  return `hsl(0 ${42 + strength * 43}% ${27 + strength * 21}%)`;
 }
 
 function PortfolioTile(node: TreemapNode) {
@@ -69,9 +77,18 @@ function PortfolioTile(node: TreemapNode) {
     typeof node.returnPercent === "number" ? node.returnPercent : null;
   const fill = typeof node.fill === "string" ? node.fill : "#475569";
   const value = typeof node.value === "number" ? node.value : 0;
-  const showTicker = node.width >= 38 && node.height >= 24;
-  const showReturn = node.width >= 62 && node.height >= 46;
-  const showValue = node.width >= 110 && node.height >= 68;
+  const returnLabel = formatPercent(returnPercent);
+  const valueLabel = formatCurrency(value);
+  const showTicker =
+    node.width >= Math.max(42, ticker.length * 9 + 16) && node.height >= 24;
+  const showReturn =
+    showTicker &&
+    node.width >= returnLabel.length * 7 + 16 &&
+    node.height >= 46;
+  const showValue =
+    showReturn &&
+    node.width >= valueLabel.length * 6.5 + 16 &&
+    node.height >= 68;
 
   return (
     <g>
@@ -79,14 +96,14 @@ function PortfolioTile(node: TreemapNode) {
         {ticker}: {formatCurrency(value)} · {formatPercent(returnPercent)}
       </title>
       <rect
-        x={node.x + 1}
-        y={node.y + 1}
-        width={Math.max(0, node.width - 2)}
-        height={Math.max(0, node.height - 2)}
-        rx={4}
+        x={node.x + 0.5}
+        y={node.y + 0.5}
+        width={Math.max(0, node.width - 1)}
+        height={Math.max(0, node.height - 1)}
+        rx={3}
         fill={fill}
         stroke="var(--background)"
-        strokeWidth={2}
+        strokeWidth={1}
       />
       {showTicker ? (
         <text
@@ -113,7 +130,7 @@ function PortfolioTile(node: TreemapNode) {
           fontWeight={650}
           pointerEvents="none"
         >
-          {formatPercent(returnPercent)}
+          {returnLabel}
         </text>
       ) : null}
       {showValue ? (
@@ -126,7 +143,7 @@ function PortfolioTile(node: TreemapNode) {
           fontSize={10}
           pointerEvents="none"
         >
-          {formatCurrency(value)}
+          {valueLabel}
         </text>
       ) : null}
     </g>
@@ -319,6 +336,22 @@ function PortfolioContent() {
       );
   }, [baselinePoint, horizon, snapshot]);
 
+  const returnColorScale = useMemo(() => {
+    const magnitudes = holdingsWithReturns
+      .flatMap(({ returnPercent }) =>
+        returnPercent === null || Math.abs(returnPercent) < 0.01
+          ? []
+          : [Math.abs(returnPercent)],
+      )
+      .sort((a, b) => a - b);
+    if (magnitudes.length === 0) return 1;
+    const percentileIndex = Math.min(
+      magnitudes.length - 1,
+      Math.ceil(magnitudes.length * 0.9) - 1,
+    );
+    return magnitudes[percentileIndex]!;
+  }, [holdingsWithReturns]);
+
   const treemapData = useMemo(
     () =>
       holdingsWithReturns.map(({ holding, returnPercent }) => ({
@@ -327,9 +360,9 @@ function PortfolioContent() {
         ticker: holding.ticker || "Cash",
         value: holding.currentValue,
         returnPercent,
-        fill: colorForReturn(returnPercent),
+        fill: colorForReturn(returnPercent, returnColorScale),
       })),
-    [holdingsWithReturns],
+    [holdingsWithReturns, returnColorScale],
   );
 
   const weightedReturn = useMemo(() => {
@@ -366,6 +399,34 @@ function PortfolioContent() {
   const selectSingle = (portfolio: Portfolio) => {
     setScopeMode("single");
     setSingleId(String(portfolio._id));
+    setHoveredId(null);
+  };
+
+  const selectPortfolio = (
+    event: MouseEvent<HTMLButtonElement>,
+    portfolio: Portfolio,
+  ) => {
+    if (!event.shiftKey || !portfolios || portfolios.length < 2) {
+      selectSingle(portfolio);
+      return;
+    }
+
+    const id = String(portfolio._id);
+    setCustomIds((current) => {
+      const next =
+        scopeMode === "all"
+          ? new Set(portfolios.map((candidate) => String(candidate._id)))
+          : scopeMode === "single" && singleId
+            ? new Set([singleId])
+            : new Set(current);
+      if (next.has(id)) {
+        if (next.size > 1) next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+    setScopeMode("custom");
     setHoveredId(null);
   };
 
@@ -478,6 +539,9 @@ function PortfolioContent() {
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-(--muted)">
                 Portfolio scope
               </p>
+              <p className="mb-2 text-xs text-(--muted)">
+                Click for one portfolio. Shift-click to add or remove.
+              </p>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -490,21 +554,28 @@ function PortfolioContent() {
                 >
                   All portfolios
                 </button>
-                {portfolios.map((portfolio) => (
-                  <button
-                    key={portfolio._id}
-                    type="button"
-                    onClick={() => selectSingle(portfolio)}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                      scopeMode === "single" &&
-                      singleId === String(portfolio._id)
-                        ? "bg-(--accent)/15 text-accent"
-                        : "bg-background text-(--muted) hover:text-foreground"
-                    }`}
-                  >
-                    {portfolio.name}
-                  </button>
-                ))}
+                {portfolios.map((portfolio) => {
+                  const id = String(portfolio._id);
+                  const selected =
+                    (scopeMode === "single" && singleId === id) ||
+                    (scopeMode === "custom" && customIds.has(id));
+                  return (
+                    <button
+                      key={portfolio._id}
+                      type="button"
+                      onClick={(event) => selectPortfolio(event, portfolio)}
+                      aria-pressed={selected}
+                      title="Click to view only this portfolio; Shift-click to add or remove it"
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                        selected
+                          ? "bg-(--accent)/15 text-accent"
+                          : "bg-background text-(--muted) hover:text-foreground"
+                      }`}
+                    >
+                      {portfolio.name}
+                    </button>
+                  );
+                })}
                 {portfolios.length > 1 ? (
                   <button
                     type="button"
