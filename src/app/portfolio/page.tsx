@@ -13,6 +13,10 @@ import type { TreemapNode } from "recharts/types/chart/Treemap";
 import { api } from "../../../convex/_generated/api";
 import { Navigation } from "@/components/Navigation";
 import { SignIn } from "@/components/SignIn";
+import {
+  colorForReturn,
+  RETURN_LEGEND,
+} from "@/lib/portfolioMapColors";
 import { useAuthSession } from "@/lib/useAuthSession";
 
 type Portfolio = FunctionReturnType<typeof api.portfolios.list>[number];
@@ -64,18 +68,6 @@ function shiftDate(date: string, horizon: Exclude<Horizon, "1d" | "total">) {
     shifted.setUTCMonth(0, 1);
   }
   return shifted.toISOString().slice(0, 10);
-}
-
-function colorForReturn(value: number | null, scaleMax: number): string {
-  if (value === null || Math.abs(value) < 0.01) return "#475569";
-  const strength = Math.min(
-    1,
-    Math.sqrt(Math.abs(value) / Math.max(scaleMax, 0.01)),
-  );
-  if (value > 0) {
-    return `hsl(142 ${38 + strength * 40}% ${25 + strength * 20}%)`;
-  }
-  return `hsl(0 ${42 + strength * 43}% ${27 + strength * 21}%)`;
 }
 
 function PortfolioTile(node: TreemapNode) {
@@ -346,22 +338,6 @@ function PortfolioContent() {
       );
   }, [baselinePoint, horizon, snapshot]);
 
-  const returnColorScale = useMemo(() => {
-    const magnitudes = holdingsWithReturns
-      .flatMap(({ returnPercent }) =>
-        returnPercent === null || Math.abs(returnPercent) < 0.01
-          ? []
-          : [Math.abs(returnPercent)],
-      )
-      .sort((a, b) => a - b);
-    if (magnitudes.length === 0) return 1;
-    const percentileIndex = Math.min(
-      magnitudes.length - 1,
-      Math.ceil(magnitudes.length * 0.9) - 1,
-    );
-    return magnitudes[percentileIndex]!;
-  }, [holdingsWithReturns]);
-
   const treemapData = useMemo(
     () =>
       holdingsWithReturns.map(({ holding, returnPercent }) => ({
@@ -370,9 +346,9 @@ function PortfolioContent() {
         ticker: holding.ticker || "Cash",
         value: holding.currentValue,
         returnPercent,
-        fill: colorForReturn(returnPercent, returnColorScale),
+        fill: colorForReturn(returnPercent),
       })),
-    [holdingsWithReturns, returnColorScale],
+    [holdingsWithReturns],
   );
 
   const weightedReturn = useMemo(() => {
@@ -717,13 +693,19 @@ function PortfolioContent() {
             <section className="overflow-hidden rounded-xl border border-(--card-border) bg-(--card-bg)">
               <div className="flex flex-col gap-3 border-b border-(--card-border) px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="font-semibold">Holdings</h2>
-                <div className="flex items-center gap-2 text-xs text-(--muted)">
-                  <span className="h-3 w-3 rounded-sm bg-red-600" />
-                  Loss
-                  <span className="ml-2 h-3 w-3 rounded-sm bg-slate-600" />
-                  Flat / unavailable
-                  <span className="ml-2 h-3 w-3 rounded-sm bg-green-600" />
-                  Gain
+                <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5 text-xs text-(--muted)">
+                  {RETURN_LEGEND.map((bucket) => (
+                    <span
+                      key={bucket.label}
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                    >
+                      <span
+                        className="h-3 w-3 rounded-sm"
+                        style={{ backgroundColor: bucket.color }}
+                      />
+                      {bucket.label}
+                    </span>
+                  ))}
                 </div>
               </div>
               <div className="relative h-[58vh] min-h-[420px] w-full">
