@@ -858,6 +858,55 @@ async function resolvePortfolioConfiguration(
   );
 }
 
+type PortfolioReadSelection = {
+  portfolioId?: Id<"portfolios">;
+  portfolioIds?: Id<"portfolios">[];
+  allPortfolios?: boolean;
+};
+
+async function resolvePortfolioSelection(
+  ctx: ActionCtx,
+  userId: string,
+  selection: PortfolioReadSelection,
+): Promise<PortfolioConfiguration[]> {
+  const selectorCount =
+    (selection.portfolioId ? 1 : 0) +
+    (selection.portfolioIds ? 1 : 0) +
+    (selection.allPortfolios ? 1 : 0);
+  if (selectorCount > 1) {
+    throw new Error("Choose only one portfolio selection mode");
+  }
+
+  const portfolios = await getPortfolioConfigurations(ctx, userId);
+  if (selection.allPortfolios) return portfolios;
+
+  if (selection.portfolioIds) {
+    const selectedIds = new Set(selection.portfolioIds);
+    if (selectedIds.size === 0) {
+      throw new Error("Select at least one portfolio");
+    }
+    const selected = portfolios.filter(
+      (portfolio) => portfolio.id && selectedIds.has(portfolio.id),
+    );
+    if (selected.length !== selectedIds.size) {
+      throw new Error("Portfolio not found or access denied");
+    }
+    return selected;
+  }
+
+  if (selection.portfolioId) {
+    const selected = portfolios.find(
+      (portfolio) => portfolio.id === selection.portfolioId,
+    );
+    if (!selected) throw new Error("Portfolio not found or access denied");
+    return [selected];
+  }
+
+  const selected =
+    portfolios.find((portfolio) => portfolio.isDefault) ?? portfolios[0];
+  return selected ? [selected] : [];
+}
+
 export const getSyncStateInternal = internalQuery({
   args: { userId: v.string() },
   returns: v.union(v.object({ lastSyncedAt: v.number() }), v.null()),
@@ -944,6 +993,7 @@ export const getSnapshot = action({
   args: {
     includePriceStatus: v.optional(v.boolean()),
     portfolioId: v.optional(v.id("portfolios")),
+    portfolioIds: v.optional(v.array(v.id("portfolios"))),
     allPortfolios: v.optional(v.boolean()),
   },
   returns: v.object({
@@ -990,14 +1040,12 @@ export const getSnapshot = action({
       throw new Error("Not authenticated");
     }
 
-    const portfolio = args.allPortfolios
-      ? await getPortfolioConfigurations(ctx, userId)
-      : await resolvePortfolioConfiguration(ctx, userId, args.portfolioId);
+    const portfolios = await resolvePortfolioSelection(ctx, userId, args);
     return await readPortfolioSnapshot(
       ctx,
       userId,
       args.includePriceStatus ?? true,
-      portfolio,
+      portfolios,
     );
   },
 });
@@ -1222,6 +1270,7 @@ const snapshotHistoryPointValidator = v.object({
     v.object({
       ticker: v.string(),
       name: v.string(),
+      quantity: v.number(),
       value: v.number(),
       costBasis: v.number(),
     }),
@@ -1243,6 +1292,7 @@ export const getSnapshotHistory = action({
   args: {
     startDate: v.optional(v.string()),
     portfolioId: v.optional(v.id("portfolios")),
+    portfolioIds: v.optional(v.array(v.id("portfolios"))),
     allPortfolios: v.optional(v.boolean()),
   },
   returns: v.object({
@@ -1261,18 +1311,11 @@ export const getSnapshotHistory = action({
       throw new Error("Not authenticated");
     }
 
-    const [apiKey, baseId, portfolioSelection] = await Promise.all([
+    const [apiKey, baseId, portfolios] = await Promise.all([
       getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
       getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
-      args.allPortfolios
-        ? getPortfolioConfigurations(ctx, userId)
-        : resolvePortfolioConfiguration(ctx, userId, args.portfolioId),
+      resolvePortfolioSelection(ctx, userId, args),
     ]);
-    const portfolios = Array.isArray(portfolioSelection)
-      ? portfolioSelection
-      : portfolioSelection
-        ? [portfolioSelection]
-        : [];
 
     if (!apiKey || !baseId || portfolios.length === 0) {
       return emptySnapshotHistory(

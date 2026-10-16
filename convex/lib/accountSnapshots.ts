@@ -36,6 +36,7 @@ export type PortfolioSnapshotHistoryPoint = {
   holdings: Array<{
     ticker: string;
     name: string;
+    quantity: number;
     value: number;
     costBasis: number;
   }>;
@@ -221,6 +222,7 @@ export function buildPortfolioSnapshotHistory(
         {
           ticker: string;
           name: string;
+          quantity: number;
           value: number;
           costBasis: number;
         }
@@ -231,12 +233,14 @@ export function buildPortfolioSnapshotHistory(
           const existing = holdingMap.get(ticker);
           if (existing) {
             existing.name ||= position.name;
+            existing.quantity += position.quantity;
             existing.value += position.value;
             existing.costBasis += position.costBasis;
           } else {
             holdingMap.set(ticker, {
               ticker,
               name: position.name,
+              quantity: position.quantity,
               value: position.value,
               costBasis: position.costBasis,
             });
