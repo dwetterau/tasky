@@ -40,6 +40,16 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
+function formatSharePrice(value: number | null): string {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(value);
+}
+
 function formatPercent(value: number | null): string {
   if (value === null) return "No baseline";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -539,9 +549,6 @@ function PortfolioContent() {
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-(--muted)">
                 Portfolio scope
               </p>
-              <p className="mb-2 text-xs text-(--muted)">
-                Click for one portfolio. Shift-click to add or remove.
-              </p>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -709,13 +716,7 @@ function PortfolioContent() {
 
             <section className="overflow-hidden rounded-xl border border-(--card-border) bg-(--card-bg)">
               <div className="flex flex-col gap-3 border-b border-(--card-border) px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="font-semibold">Holdings</h2>
-                  <p className="text-xs text-(--muted)">
-                    Hover a tile for details. Tiny positions remain visible
-                    without labels.
-                  </p>
-                </div>
+                <h2 className="font-semibold">Holdings</h2>
                 <div className="flex items-center gap-2 text-xs text-(--muted)">
                   <span className="h-3 w-3 rounded-sm bg-red-600" />
                   Loss
@@ -746,7 +747,7 @@ function PortfolioContent() {
                 </ResponsiveContainer>
               </div>
               {activeEntry ? (
-                <div className="grid grid-cols-2 gap-3 border-t border-(--card-border) px-4 py-4 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 border-t border-(--card-border) px-4 py-4 sm:grid-cols-5">
                   <div>
                     <p className="text-xs text-(--muted)">Holding</p>
                     <p className="font-bold">
@@ -760,6 +761,12 @@ function PortfolioContent() {
                     <p className="text-xs text-(--muted)">Value</p>
                     <p className="font-semibold tabular-nums">
                       {formatCurrency(activeEntry.holding.currentValue)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-(--muted)">Per share</p>
+                    <p className="font-semibold tabular-nums">
+                      {formatSharePrice(activeEntry.holding.currentPrice)}
                     </p>
                   </div>
                   <div>
