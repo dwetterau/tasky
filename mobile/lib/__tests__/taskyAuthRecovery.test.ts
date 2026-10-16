@@ -3,11 +3,39 @@ import {
   TASKY_AUTH_BACKGROUND_REFRESH_MS,
   TASKY_AUTH_RETRY_MAX_MS,
   isRetryableTaskyTokenError,
+  isTaskyAuthBootstrapPending,
   shouldRestartTaskyAuthOnForeground,
   taskyAuthRetryDelay,
 } from "../taskyAuthRecovery";
 
 describe("Tasky auth recovery", () => {
+  it("only blocks the app during the initial auth bootstrap", () => {
+    expect(
+      isTaskyAuthBootstrapPending({
+        hasSession: false,
+        sessionPending: true,
+        convexAuthenticated: false,
+        convexAuthLoading: true,
+      }),
+    ).toBe(true);
+    expect(
+      isTaskyAuthBootstrapPending({
+        hasSession: true,
+        sessionPending: false,
+        convexAuthenticated: false,
+        convexAuthLoading: true,
+      }),
+    ).toBe(false);
+    expect(
+      isTaskyAuthBootstrapPending({
+        hasSession: false,
+        sessionPending: true,
+        convexAuthenticated: true,
+        convexAuthLoading: false,
+      }),
+    ).toBe(false);
+  });
+
   it("restarts after a long background interval or a lost token", () => {
     expect(
       shouldRestartTaskyAuthOnForeground({

@@ -37,6 +37,7 @@ import {
 } from "react";
 import { AppState, Platform } from "react-native";
 import {
+  isTaskyAuthBootstrapPending,
   isRetryableTaskyTokenError,
   shouldRestartTaskyAuthOnForeground,
   taskyAuthRetryDelay,
@@ -459,8 +460,15 @@ function ConfiguredTaskyAuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<TaskyAuthContextValue>(
     () => ({
       isConfigured: Boolean(taskyConvexUrl && taskyConvexSiteUrl && appScheme),
-      isPending:
-        (isPending || convexAuthLoading) && !convexAuthenticated,
+      // A foreground token renewal temporarily puts Convex back into its
+      // loading state. The Better Auth session is still valid during that
+      // refresh, so keep the mounted app and its query cache visible.
+      isPending: isTaskyAuthBootstrapPending({
+        hasSession: Boolean(session?.session),
+        sessionPending: isPending,
+        convexAuthenticated,
+        convexAuthLoading,
+      }),
       isAuthenticated: Boolean(session?.session) || convexAuthenticated,
       convexAuthenticated,
       cacheScope: lastUserId.current ?? "authenticated",
