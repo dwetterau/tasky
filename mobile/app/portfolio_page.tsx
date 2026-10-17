@@ -25,6 +25,7 @@ import {
 } from "@/lib/theme";
 import { automaticKeyboardInsets } from "@/lib/headerItems";
 import { PortfolioHistoryChart } from "@/components/PortfolioHistoryChart";
+import { PortfolioMap } from "@/components/PortfolioMap";
 
 type PortfolioSnapshot = FunctionReturnType<
   typeof taskyApi.portfolio.getSnapshot
@@ -52,6 +53,7 @@ type PortfolioSelection = {
 
 type SortKey = "ticker" | "value" | "dayDollar" | "dayPercent" | "totalPercent";
 type SortDirection = "asc" | "desc";
+type PortfolioView = "overview" | "map";
 const ALL_PORTFOLIOS_ID = "__all_portfolios__";
 const DEFAULT_PORTFOLIO_ID = "__default_portfolio__";
 
@@ -524,6 +526,43 @@ type SyncResult = NonNullable<
   >
 >;
 
+function PortfolioViewToggle({
+  view,
+  onChange,
+}: {
+  view: PortfolioView;
+  onChange: (view: PortfolioView) => void;
+}) {
+  return (
+    <View style={styles.viewToggle}>
+      {(["overview", "map"] as const).map((option) => {
+        const selected = view === option;
+        return (
+          <TouchableOpacity
+            key={option}
+            style={[
+              styles.viewToggleButton,
+              selected && styles.viewToggleButtonSelected,
+            ]}
+            onPress={() => onChange(option)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+          >
+            <Text
+              style={[
+                styles.viewToggleText,
+                selected && styles.viewToggleTextSelected,
+              ]}
+            >
+              {option === "overview" ? "Overview" : "Map"}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function PortfolioPage() {
   const router = useRouter();
   const taskyAuth = useTaskyAuth();
@@ -570,6 +609,8 @@ export default function PortfolioPage() {
   const [syncFeedback, setSyncFeedback] = useState<SyncFeedback | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("value");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [portfolioView, setPortfolioView] =
+    useState<PortfolioView>("overview");
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(
     null,
   );
@@ -1027,30 +1068,85 @@ export default function PortfolioPage() {
           onDismiss={() => setSyncFeedback(null)}
         />
       ) : null}
-      <PortfolioHistoryChart
-        key={selectedKey ?? "default"}
-        points={snapshotHistory?.status === "ok" ? snapshotHistory.points : []}
-        startDate={snapshotHistory?.startDate ?? null}
-        isLoading={isHistoryLoading && !snapshotHistory}
-        error={historyError}
-      />
-      <MoversCard holdings={portfolio.holdings} />
-      <View style={styles.holdingsHeader}>
-        <Text style={sharedStyles.sectionTitle}>Holdings</Text>
-        <Text style={styles.holdingsHint}>Tap a column to sort</Text>
-      </View>
-      <HoldingsTable
-        holdings={sortedHoldings}
-        sortKey={sortKey}
-        sortDirection={sortDirection}
-        onSort={handleSort}
-      />
+      {portfolioView === "map" ? (
+        <PortfolioMap
+          key={selectedKey ?? "default"}
+          holdings={portfolio.holdings}
+          totalValue={portfolio.summary.totalCurrentValue}
+          latestPriceDate={portfolio.summary.latestPriceDate}
+          historyPoints={
+            snapshotHistory?.status === "ok" ? snapshotHistory.points : []
+          }
+          isHistoryLoading={isHistoryLoading && !snapshotHistory}
+          historyError={historyError}
+          viewToggle={
+            <PortfolioViewToggle
+              view={portfolioView}
+              onChange={setPortfolioView}
+            />
+          }
+        />
+      ) : (
+        <>
+          <PortfolioHistoryChart
+            key={selectedKey ?? "default"}
+            points={
+              snapshotHistory?.status === "ok" ? snapshotHistory.points : []
+            }
+            startDate={snapshotHistory?.startDate ?? null}
+            isLoading={isHistoryLoading && !snapshotHistory}
+            error={historyError}
+            viewToggle={
+              <PortfolioViewToggle
+                view={portfolioView}
+                onChange={setPortfolioView}
+              />
+            }
+          />
+          <MoversCard holdings={portfolio.holdings} />
+          <View style={styles.holdingsHeader}>
+            <Text style={sharedStyles.sectionTitle}>Holdings</Text>
+            <Text style={styles.holdingsHint}>Tap a column to sort</Text>
+          </View>
+          <HoldingsTable
+            holdings={sortedHoldings}
+            sortKey={sortKey}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+          />
+        </>
+      )}
       {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  viewToggle: {
+    flexDirection: "row",
+    alignSelf: "center",
+    padding: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.secondarySystemGroupedBackground,
+  },
+  viewToggleButton: {
+    minWidth: 104,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    alignItems: "center",
+  },
+  viewToggleButtonSelected: {
+    backgroundColor: colors.systemBlue,
+  },
+  viewToggleText: {
+    fontSize: fontSize.small,
+    fontWeight: "700",
+    color: colors.secondaryLabel,
+  },
+  viewToggleTextSelected: {
+    color: "#ffffff",
+  },
   portfolioTabs: {
     gap: spacing.sm,
     paddingHorizontal: spacing.xs,

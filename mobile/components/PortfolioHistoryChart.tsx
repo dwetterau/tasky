@@ -1,4 +1,9 @@
-import { useCallback, useMemo, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -116,11 +121,13 @@ export function PortfolioHistoryChart({
   startDate,
   isLoading,
   error,
+  viewToggle,
 }: {
   points: SnapshotHistoryPoint[];
   startDate: string | null;
   isLoading: boolean;
   error: string | null;
+  viewToggle: ReactNode;
 }) {
   const colorScheme = useColorScheme();
   const dark = colorScheme === "dark";
@@ -260,6 +267,7 @@ export function PortfolioHistoryChart({
 
   return (
     <View style={styles.card}>
+      {viewToggle}
       <View style={styles.header}>
         <Text style={styles.title}>History</Text>
         <Text style={styles.headerHint}>
