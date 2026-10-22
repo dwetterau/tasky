@@ -190,12 +190,9 @@ export default function ScorecardPage() {
   const periodBounds = getSignalPeriodBounds(queryNow);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
-
   const scorecard = useTaskyQuery(
     taskyApi.scorecards.get,
-    taskyEnabled && scorecardId
+    taskyAuth.isAuthenticated && scorecardId
       ? {
           scorecardId,
           now: queryNow,
@@ -206,7 +203,7 @@ export default function ScorecardPage() {
   );
   const signals = useTaskyQuery(
     taskyApi.signals.listDashboard,
-    taskyEnabled
+    taskyAuth.isAuthenticated
       ? {
           now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
@@ -250,6 +247,10 @@ export default function ScorecardPage() {
       (signal.model.measurementFields?.length ?? 0) > 0
     ) {
       openSignal(signal.id);
+      return;
+    }
+    if (!taskyAuth.convexAuthenticated) {
+      setError("Tasky is reconnecting. Try again in a moment.");
       return;
     }
     setSavingId(signal.id);

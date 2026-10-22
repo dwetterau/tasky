@@ -91,14 +91,12 @@ export default function SignalHistoryPage() {
     : params.signalId;
   const signalId = rawSignalId as SignalId | undefined;
   const taskyAuth = useTaskyAuth();
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const now = useSignalClock();
   const queryNow = getSignalQueryTime(now);
   const periodBounds = getSignalPeriodBounds(queryNow);
   const signal = useTaskyQuery(
     taskyApi.signals.get,
-    taskyEnabled && signalId
+    taskyAuth.isAuthenticated && signalId
       ? {
           signalId,
           now: queryNow,
@@ -109,7 +107,7 @@ export default function SignalHistoryPage() {
   );
   const history = useTaskyQuery(
     taskyApi.signals.history,
-    taskyEnabled && signalId
+    taskyAuth.isAuthenticated && signalId
       ? {
           signalId,
           paginationOpts: { numItems: 100, cursor: null },
@@ -213,6 +211,10 @@ export default function SignalHistoryPage() {
         },
   ) => {
     if (!signalId) return;
+    if (!taskyAuth.convexAuthenticated) {
+      setError("Tasky is reconnecting. Try again in a moment.");
+      return;
+    }
     setIsSaving(true);
     setError(null);
     try {
@@ -325,6 +327,10 @@ export default function SignalHistoryPage() {
     if (!editingEntryId) {
       return;
     }
+    if (!taskyAuth.convexAuthenticated) {
+      setError("Tasky is reconnecting. Try again in a moment.");
+      return;
+    }
     setIsSaving(true);
     setError(null);
     try {
@@ -391,7 +397,17 @@ export default function SignalHistoryPage() {
     );
   }
 
-  if (!taskyEnabled || signal.isLoading) {
+  if (!taskyAuth.isAuthenticated) {
+    return (
+      <View style={[sharedStyles.screen, styles.center]}>
+        <Text style={sharedStyles.muted}>
+          Connect Tasky to view this signal.
+        </Text>
+      </View>
+    );
+  }
+
+  if (signal.isLoading) {
     return (
       <View style={[sharedStyles.screen, styles.center]}>
         <ActivityIndicator />
@@ -495,7 +511,7 @@ export default function SignalHistoryPage() {
                   fields={measurementFields}
                   value={activityMeasurements}
                   onChange={setActivityMeasurements}
-                  disabled={isSaving}
+                  disabled={isSaving || !taskyAuth.convexAuthenticated}
                 />
                 <TextInput
                   style={styles.input}
@@ -561,6 +577,7 @@ export default function SignalHistoryPage() {
                   label="Record"
                   onPress={() => void handleActivityRecord()}
                   loading={isSaving}
+                  disabled={!taskyAuth.convexAuthenticated}
                 />
               </View>
             ) : (
@@ -581,7 +598,7 @@ export default function SignalHistoryPage() {
                     variant="tinted"
                     label="Adjust by"
                     onPress={() => void handleInventory("adjust")}
-                    disabled={isSaving}
+                    disabled={isSaving || !taskyAuth.convexAuthenticated}
                     style={styles.rowButton}
                   />
                   <PillButton
@@ -589,6 +606,7 @@ export default function SignalHistoryPage() {
                     label="Set count"
                     onPress={() => void handleInventory("set")}
                     loading={isSaving}
+                    disabled={!taskyAuth.convexAuthenticated}
                     style={styles.rowButton}
                   />
                 </View>
@@ -684,6 +702,7 @@ export default function SignalHistoryPage() {
                             label="Save"
                             onPress={() => void saveActivityEntry()}
                             loading={isSaving}
+                            disabled={!taskyAuth.convexAuthenticated}
                             style={styles.rowButton}
                           />
                         </View>
@@ -691,7 +710,9 @@ export default function SignalHistoryPage() {
                           variant="destructive"
                           label="Delete entry"
                           onPress={() => confirmDeleteActivityEntry(entry.id)}
-                          disabled={isSaving}
+                          disabled={
+                            isSaving || !taskyAuth.convexAuthenticated
+                          }
                         />
                       </View>
                     ) : null}

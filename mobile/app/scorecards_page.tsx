@@ -132,11 +132,9 @@ export default function ScorecardsPage() {
   const now = useSignalClock();
   const queryNow = getSignalQueryTime(now);
   const periodBounds = getSignalPeriodBounds(queryNow);
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const scorecards = useTaskyQuery(
     taskyApi.scorecards.list,
-    taskyEnabled
+    taskyAuth.isAuthenticated
       ? {
           now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
@@ -146,7 +144,7 @@ export default function ScorecardsPage() {
   );
   const signals = useTaskyQuery(
     taskyApi.signals.listDashboard,
-    taskyEnabled
+    taskyAuth.isAuthenticated
       ? {
           now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
@@ -159,8 +157,7 @@ export default function ScorecardsPage() {
     () => leftoverSignals(signals.data ?? [], items),
     [items, signals.data],
   );
-  const isLoading =
-    !taskyEnabled || scorecards.isLoading || signals.isLoading;
+  const isLoading = scorecards.isLoading || signals.isLoading;
 
   if (!taskyAuth.isAuthenticated) {
     return (

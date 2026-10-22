@@ -333,7 +333,11 @@ function RecoveringTaskyConvexProvider({ children }: { children: ReactNode }) {
   );
 }
 
-const TASKY_QUERY_CACHE_TTL_MS = 5 * 60 * 1000;
+// Query results are only used as stale-while-revalidate placeholders. Keep
+// them for a full day so a foreground auth refresh or screen remount does not
+// replace useful content with a spinner; live watches refresh them as soon as
+// Convex reconnects, and signing out still clears the cache.
+const TASKY_QUERY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const TASKY_QUERY_CACHE_MAX_ENTRIES = 100;
 
 type TaskyQueryCacheEntry = {
@@ -647,7 +651,16 @@ export function useTaskyQuery<Query extends FunctionReference<"query">>(
     // Use the function name plus serialized args to keep subscriptions stable.
   }, [cacheScope, queryName, serializedArgs, canRun]);
 
-  return { data, error, isLoading: Boolean(canRun && data === undefined) };
+  return {
+    data,
+    error,
+    // A valid app session can exist briefly before Convex has renewed its
+    // token. Cached data should remain visible then; without cached data the
+    // query is still pending even though its live watch cannot start yet.
+    isLoading: Boolean(
+      args !== "skip" && isAuthenticated && data === undefined,
+    ),
+  };
 }
 
 export function useTaskyAction<Action extends FunctionReference<"action">>(
@@ -676,9 +689,9 @@ export function useTaskyMutation<
   return useCallback(
     async (
       args: FunctionArgs<Mutation>,
-    ): Promise<FunctionReturnType<Mutation> | null> => {
+    ): Promise<FunctionReturnType<Mutation>> => {
       if (!taskyConvex || !isAuthenticated || !convexAuthenticated) {
-        return null;
+        throw new Error("Tasky is reconnecting. Try again in a moment.");
       }
       return await taskyConvex.mutation(mutationReference, args);
     },

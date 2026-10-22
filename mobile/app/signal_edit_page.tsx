@@ -228,14 +228,12 @@ export default function SignalEditPage() {
     : params.signalId;
   const signalId = rawSignalId as SignalId | undefined;
   const taskyAuth = useTaskyAuth();
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const now = useSignalClock();
   const queryNow = getSignalQueryTime(now);
   const periodBounds = getSignalPeriodBounds(queryNow);
   const signal = useTaskyQuery(
     taskyApi.signals.get,
-    taskyEnabled && signalId
+    taskyAuth.isAuthenticated && signalId
       ? {
           signalId,
           now: queryNow,
@@ -244,7 +242,10 @@ export default function SignalEditPage() {
         }
       : "skip",
   );
-  const tags = useTaskyQuery(taskyApi.tags.list, taskyEnabled ? {} : "skip");
+  const tags = useTaskyQuery(
+    taskyApi.tags.list,
+    taskyAuth.isAuthenticated ? {} : "skip",
+  );
   const createActivity = useTaskyMutation(taskyApi.signals.createActivity);
   const createInventory = useTaskyMutation(taskyApi.signals.createInventory);
   const updateActivity = useTaskyMutation(taskyApi.signals.updateActivity);
@@ -312,6 +313,10 @@ export default function SignalEditPage() {
   }, [signal.data]);
 
   const handleSave = async () => {
+    if (!taskyAuth.convexAuthenticated) {
+      setError("Tasky is reconnecting. Try again in a moment.");
+      return;
+    }
     const normalizedName = name.trim();
     if (!normalizedName) {
       setError("Name is required");
@@ -463,6 +468,10 @@ export default function SignalEditPage() {
 
   const handleArchive = () => {
     if (!signalId) return;
+    if (!taskyAuth.convexAuthenticated) {
+      setError("Tasky is reconnecting. Try again in a moment.");
+      return;
+    }
     Alert.alert(
       "Archive signal?",
       "Its history will be kept, but it will leave the dashboard.",
@@ -494,11 +503,10 @@ export default function SignalEditPage() {
     );
   };
 
-  if (!taskyEnabled) {
+  if (!taskyAuth.isAuthenticated) {
     return (
       <View style={[sharedStyles.screen, styles.center]}>
-        <ActivityIndicator />
-        <Text style={sharedStyles.muted}>Preparing Tasky…</Text>
+        <Text style={sharedStyles.muted}>Connect Tasky to edit signals.</Text>
       </View>
     );
   }

@@ -254,14 +254,17 @@ export default function TaskyCapturesPage() {
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const captures = useTaskyQuery(
     taskyApi.captures.list,
-    taskyEnabled ? { includeCompleted: false } : "skip",
+    taskyAuth.isAuthenticated ? { includeCompleted: false } : "skip",
   );
   const closedAfter = useMemo(() => Date.now() - 32 * 24 * 60 * 60 * 1000, []);
   const tasks = useTaskyQuery(
     taskyApi.tasks.list,
-    taskyEnabled ? { closedAfter } : "skip",
+    taskyAuth.isAuthenticated ? { closedAfter } : "skip",
   );
-  const tags = useTaskyQuery(taskyApi.tags.list, taskyEnabled ? {} : "skip");
+  const tags = useTaskyQuery(
+    taskyApi.tags.list,
+    taskyAuth.isAuthenticated ? {} : "skip",
+  );
 
   const createCapture = useTaskyMutation(taskyApi.captures.create);
   const updateCapture = useTaskyMutation(taskyApi.captures.update);
@@ -416,7 +419,11 @@ export default function TaskyCapturesPage() {
     );
   }
 
-  if (!taskyEnabled) {
+  if (
+    !taskyEnabled &&
+    captures.data === undefined &&
+    tasks.data === undefined
+  ) {
     return (
       <View style={[sharedStyles.screen, styles.centerColumn]}>
         <ActivityIndicator />

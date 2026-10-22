@@ -116,11 +116,9 @@ function CardHeader({
 
 function BriefingCard() {
   const taskyAuth = useTaskyAuth();
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const latest = useTaskyQuery(
     taskyApi.widgetData.latest,
-    taskyEnabled ? { kind: "briefing" } : "skip",
+    taskyAuth.isAuthenticated ? { kind: "briefing" } : "skip",
   );
   const briefing = useMemo(() => {
     if (!latest.data) return null;
@@ -133,7 +131,7 @@ function BriefingCard() {
     }
   }, [latest.data]);
 
-  if (!taskyEnabled || latest.isLoading || !briefing?.success) return null;
+  if (latest.isLoading || !briefing?.success) return null;
 
   const content =
     "date" in briefing.data
@@ -183,11 +181,9 @@ function weatherSymbol(description: string, isDay = true): string {
 function WeatherCard() {
   const taskyAuth = useTaskyAuth();
   const now = useSignalClock();
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const latest = useTaskyQuery(
     taskyApi.widgetData.latest,
-    taskyEnabled ? { kind: "weather" } : "skip",
+    taskyAuth.isAuthenticated ? { kind: "weather" } : "skip",
   );
   const weather = useMemo(() => {
     if (!latest.data) return null;
@@ -198,7 +194,7 @@ function WeatherCard() {
     }
   }, [latest.data]);
 
-  if (!taskyEnabled || latest.isLoading || !weather?.success) return null;
+  if (latest.isLoading || !weather?.success) return null;
 
   const current = weather.data.current;
   const upcomingRain = (weather.data.hourly ?? [])
@@ -305,11 +301,9 @@ function WeatherCard() {
 
 function OnThisDayCard() {
   const taskyAuth = useTaskyAuth();
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const latest = useTaskyQuery(
     taskyApi.widgetData.latest,
-    taskyEnabled ? { kind: "on-this-day" } : "skip",
+    taskyAuth.isAuthenticated ? { kind: "on-this-day" } : "skip",
   );
   const onThisDay = useMemo(() => {
     if (!latest.data) return null;
@@ -322,7 +316,7 @@ function OnThisDayCard() {
     }
   }, [latest.data]);
 
-  if (!taskyEnabled || latest.isLoading || !onThisDay?.success) return null;
+  if (latest.isLoading || !onThisDay?.success) return null;
 
   return (
     <View style={[sharedStyles.card, styles.onThisDayCard]}>
@@ -382,11 +376,9 @@ function StravaActivityRow({ activity }: { activity: StravaActivity }) {
 
 function StravaCard() {
   const taskyAuth = useTaskyAuth();
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const latest = useTaskyQuery(
     taskyApi.widgetData.latest,
-    taskyEnabled ? { kind: "strava" } : "skip",
+    taskyAuth.isAuthenticated ? { kind: "strava" } : "skip",
   );
   const strava = useMemo(() => {
     if (!latest.data) return null;
@@ -397,7 +389,7 @@ function StravaCard() {
     }
   }, [latest.data]);
 
-  if (!taskyEnabled || latest.isLoading || !strava?.success) return null;
+  if (latest.isLoading || !strava?.success) return null;
 
   return (
     <View style={[sharedStyles.card, styles.stravaCard]}>
@@ -412,11 +404,9 @@ function StravaCard() {
 function ReleasesCard() {
   const taskyAuth = useTaskyAuth();
   const now = useSignalClock();
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const latest = useTaskyQuery(
     taskyApi.widgetData.latest,
-    taskyEnabled ? { kind: "releases" } : "skip",
+    taskyAuth.isAuthenticated ? { kind: "releases" } : "skip",
   );
   const releases = useMemo(() => {
     if (!latest.data) return null;
@@ -432,7 +422,7 @@ function ReleasesCard() {
     ? getUpcomingReleases(releases.data, today)
     : [];
 
-  if (!taskyEnabled || latest.isLoading || !releases?.success) return null;
+  if (latest.isLoading || !releases?.success) return null;
 
   return (
     <View style={[sharedStyles.card, styles.releasesCard]}>
@@ -469,11 +459,9 @@ function ReleasesCard() {
 function RecurringExpensesCard() {
   const taskyAuth = useTaskyAuth();
   const now = useSignalClock();
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const latest = useTaskyQuery(
     taskyApi.widgetData.latest,
-    taskyEnabled ? { kind: "recurring-expenses" } : "skip",
+    taskyAuth.isAuthenticated ? { kind: "recurring-expenses" } : "skip",
   );
   const recurringExpenses = useMemo(() => {
     if (!latest.data) return null;
@@ -498,11 +486,7 @@ function RecurringExpensesCard() {
     0,
   );
 
-  if (
-    !taskyEnabled ||
-    latest.isLoading ||
-    !recurringExpenses?.success
-  ) {
+  if (latest.isLoading || !recurringExpenses?.success) {
     return null;
   }
 
@@ -603,7 +587,7 @@ function SignalsCard() {
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const signals = useTaskyQuery(
     taskyApi.signals.listDashboard,
-    taskyEnabled
+    taskyAuth.isAuthenticated
       ? {
           now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
@@ -650,6 +634,7 @@ function SignalsCard() {
       openSignal(signal.id);
       return;
     }
+    if (!taskyEnabled) return;
     setSavingId(signal.id);
     setError(null);
     try {
@@ -701,13 +686,13 @@ function SignalsCard() {
           <CardHeader
             title="Signals"
             subtitle={
-              taskyEnabled && !signals.isLoading && completedToday > 0
+              !signals.isLoading && completedToday > 0
                 ? `${completedToday} done today`
                 : undefined
             }
           />
         </TouchableOpacity>
-        {!taskyEnabled || signals.isLoading ? (
+        {signals.isLoading ? (
           <View style={sharedStyles.inlineLoading}>
             <ActivityIndicator />
           </View>
@@ -753,11 +738,9 @@ function TodayCard() {
   const now = useSignalClock();
   const queryNow = getSignalQueryTime(now);
   const periodBounds = getSignalPeriodBounds(queryNow);
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const scorecards = useTaskyQuery(
     taskyApi.scorecards.list,
-    taskyEnabled
+    taskyAuth.isAuthenticated
       ? {
           now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
@@ -800,7 +783,7 @@ function TodayCard() {
       >
         <CardHeader title="Scorecards" />
       </TouchableOpacity>
-      {!taskyEnabled || scorecards.isLoading ? (
+      {scorecards.isLoading ? (
         <View style={sharedStyles.inlineLoading}>
           <ActivityIndicator />
         </View>
@@ -867,17 +850,15 @@ function ScaleCard() {
 function TaskyCard() {
   const router = useRouter();
   const taskyAuth = useTaskyAuth();
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
 
   const closedAfter = useMemo(() => Date.now() - 32 * 24 * 60 * 60 * 1000, []);
   const captures = useTaskyQuery(
     taskyApi.captures.list,
-    taskyEnabled ? { includeCompleted: false } : "skip",
+    taskyAuth.isAuthenticated ? { includeCompleted: false } : "skip",
   );
   const tasks = useTaskyQuery(
     taskyApi.tasks.list,
-    taskyEnabled ? { closedAfter } : "skip",
+    taskyAuth.isAuthenticated ? { closedAfter } : "skip",
   );
 
   const captureCount = captures.data?.length ?? 0;
@@ -918,14 +899,14 @@ function TaskyCard() {
       <CardHeader
         title="Tasks"
         subtitle={
-          !taskyEnabled
-            ? "Refreshing session…"
+          captures.isLoading || tasks.isLoading
+            ? "Loading tasks…"
             : captureCount === 0 && openTasks.length === 0
               ? "Inbox zero"
               : `${captureCount} capture${captureCount === 1 ? "" : "s"} · ${openTasks.length} task${openTasks.length === 1 ? "" : "s"} open`
         }
       />
-      {!taskyEnabled ? (
+      {captures.isLoading || tasks.isLoading ? (
         <View style={sharedStyles.inlineLoading}>
           <ActivityIndicator />
         </View>
@@ -989,7 +970,7 @@ function PortfolioCard() {
   }
 
   const renderBody = () => {
-    if (!taskyEnabled || (isLoading && !portfolio)) {
+    if (isLoading && !portfolio) {
       return (
         <View style={sharedStyles.inlineLoading}>
           <ActivityIndicator />

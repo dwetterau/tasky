@@ -180,9 +180,6 @@ export default function ScorecardEditPage() {
   const now = useSignalClock();
   const queryNow = getSignalQueryTime(now);
   const periodBounds = getSignalPeriodBounds(queryNow);
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
-
   const [name, setName] = useState("");
   const [tagIds, setTagIds] = useState<TaskyTagId[]>([]);
   const [members, setMembers] = useState<DraftMember[]>([]);
@@ -196,7 +193,7 @@ export default function ScorecardEditPage() {
 
   const scorecard = useTaskyQuery(
     taskyApi.scorecards.get,
-    taskyEnabled && scorecardId
+    taskyAuth.isAuthenticated && scorecardId
       ? {
           scorecardId,
           now: queryNow,
@@ -207,7 +204,7 @@ export default function ScorecardEditPage() {
   );
   const signals = useTaskyQuery(
     taskyApi.signals.listDashboard,
-    taskyEnabled
+    taskyAuth.isAuthenticated
       ? {
           now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
@@ -217,7 +214,7 @@ export default function ScorecardEditPage() {
   );
   const scorecards = useTaskyQuery(
     taskyApi.scorecards.list,
-    taskyEnabled
+    taskyAuth.isAuthenticated
       ? {
           now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
@@ -225,7 +222,10 @@ export default function ScorecardEditPage() {
         }
       : "skip",
   );
-  const tags = useTaskyQuery(taskyApi.tags.list, taskyEnabled ? {} : "skip");
+  const tags = useTaskyQuery(
+    taskyApi.tags.list,
+    taskyAuth.isAuthenticated ? {} : "skip",
+  );
   const createScorecard = useTaskyMutation(taskyApi.scorecards.create);
   const updateScorecard = useTaskyMutation(taskyApi.scorecards.update);
   const setArchived = useTaskyMutation(taskyApi.scorecards.setArchived);
@@ -358,6 +358,10 @@ export default function ScorecardEditPage() {
   };
 
   const handleSave = async () => {
+    if (!taskyAuth.convexAuthenticated) {
+      setError("Tasky is reconnecting. Try again in a moment.");
+      return;
+    }
     if (!canSave) {
       setError(
         "Add a name, at least one member, and a valid completion goal.",
@@ -405,6 +409,10 @@ export default function ScorecardEditPage() {
 
   const handleArchive = () => {
     if (!scorecardId) {
+      return;
+    }
+    if (!taskyAuth.convexAuthenticated) {
+      setError("Tasky is reconnecting. Try again in a moment.");
       return;
     }
     Alert.alert("Archive scorecard?", "You can restore it later from Tasky.", [

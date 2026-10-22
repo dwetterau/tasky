@@ -21,11 +21,16 @@ export default function ScalePage() {
   const now = useSignalClock();
   const queryNow = getSignalQueryTime(now);
   const enabled = auth.isAuthenticated && auth.convexAuthenticated;
-  const signals = useTaskyQuery(taskyApi.signals.listDashboard, enabled ? {
-    now: queryNow,
-    soonWindowMs: SIGNAL_SOON_WINDOW_MS,
-    periodBounds: getSignalPeriodBounds(queryNow),
-  } : "skip");
+  const signals = useTaskyQuery(
+    taskyApi.signals.listDashboard,
+    auth.isAuthenticated
+      ? {
+          now: queryNow,
+          soonWindowMs: SIGNAL_SOON_WINDOW_MS,
+          periodBounds: getSignalPeriodBounds(queryNow),
+        }
+      : "skip",
+  );
   const matches = signals.data?.filter(signal => signal.name === "Weight") ?? [];
   const signal = matches.length === 1 ? matches[0] : undefined;
   const compatible = signal?.model.kind === "activity" && signal.model.measurementFields?.length === 1 && signal.model.measurementFields[0] === "weight";
@@ -37,7 +42,17 @@ export default function ScalePage() {
   const busy = ["scanning", "connecting", "connected"].includes(scale.state);
   const saved = scale.reading !== null && savedKey === scale.reading.key;
   const readingInProgress = scale.state === "connected" && !scale.reading?.final;
-  const setupMessage = compatible ? null : !enabled ? "Sign in to Tasky in Settings to save your weight." : signals.isLoading ? "Finding your Weight signal…" : matches.length > 1 ? "More than one signal is named Weight. Give them distinct names to select the destination." : signal ? "Weight must be an activity signal with only the Weight measurement enabled." : "No Weight signal found in this Tasky account.";
+  const setupMessage = compatible
+    ? null
+    : !auth.isAuthenticated
+      ? "Sign in to Tasky in Settings to save your weight."
+      : signals.isLoading
+        ? "Finding your Weight signal…"
+        : matches.length > 1
+          ? "More than one signal is named Weight. Give them distinct names to select the destination."
+          : signal
+            ? "Weight must be an activity signal with only the Weight measurement enabled."
+            : "No Weight signal found in this Tasky account.";
   const connectChoices = scale.state === "scanning"
     ? scale.devices.filter(device => device.id !== scale.lastDeviceId)
     : [];
@@ -49,7 +64,7 @@ export default function ScalePage() {
     setSaving(true);
     setError(null);
     try {
-      const result = await record({
+      await record({
         signalId: signal.id,
         idempotencyKey: reading.key,
         operation: { type: "activity.occurred", occurredAt: reading.receivedAt,
@@ -57,7 +72,6 @@ export default function ScalePage() {
         soonWindowMs: SIGNAL_SOON_WINDOW_MS,
         periodBounds: getSignalPeriodBounds(Date.now()),
       });
-      if (result === null) throw new Error("Sign in to Tasky, then retry saving this reading.");
       setSavedKey(reading.key);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save. Keep this screen open and retry.");

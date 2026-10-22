@@ -575,7 +575,7 @@ export default function PortfolioPage() {
   const syncPortfolio = useTaskyAction(taskyApi.portfolio.syncPortfolio);
   const { data: portfolios, isLoading: portfoliosLoading } = useTaskyQuery(
     taskyApi.portfolios.list,
-    taskyEnabled ? {} : "skip",
+    taskyAuth.isAuthenticated ? {} : "skip",
   );
 
   const portfolioCacheRef = useRef(
@@ -954,7 +954,7 @@ export default function PortfolioPage() {
     );
   }
 
-  if (!taskyEnabled || (isLoading && !portfolio)) {
+  if (isLoading && !portfolio) {
     return (
       <View style={[sharedStyles.screen, styles.centerColumn]}>
         <ActivityIndicator />

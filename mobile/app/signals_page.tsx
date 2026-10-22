@@ -150,11 +150,9 @@ export default function SignalsPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [selectedTagId, setSelectedTagId] = useState<TaskyTagId | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const taskyEnabled =
-    taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const signals = useTaskyQuery(
     taskyApi.signals.listDashboard,
-    taskyEnabled
+    taskyAuth.isAuthenticated
       ? {
           now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
@@ -163,7 +161,10 @@ export default function SignalsPage() {
         }
       : "skip",
   );
-  const tags = useTaskyQuery(taskyApi.tags.list, taskyEnabled ? {} : "skip");
+  const tags = useTaskyQuery(
+    taskyApi.tags.list,
+    taskyAuth.isAuthenticated ? {} : "skip",
+  );
   const recordSignal = useTaskyMutation(taskyApi.signals.record);
   useEffect(() => {
     if (
@@ -209,6 +210,10 @@ export default function SignalsPage() {
       (signal.model.measurementFields?.length ?? 0) > 0
     ) {
       openSignal(signal.id);
+      return;
+    }
+    if (!taskyAuth.convexAuthenticated) {
+      setError("Tasky is reconnecting. Try again in a moment.");
       return;
     }
     setSavingId(signal.id);
@@ -303,7 +308,7 @@ export default function SignalsPage() {
           ]}
         />
 
-        {!taskyEnabled || signals.isLoading ? (
+        {signals.isLoading ? (
           <View style={sharedStyles.inlineLoading}>
             <ActivityIndicator />
             <Text style={sharedStyles.muted}>Loading signals…</Text>
