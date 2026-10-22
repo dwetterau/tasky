@@ -31,6 +31,7 @@ type MapHolding = {
   currentPrice: number | null;
   currentValue: number;
   gainLossPercent: number;
+  dayReturn?: number | null;
   dayReturnPercent?: number | null;
 };
 
@@ -88,6 +89,31 @@ function formatSharePrice(value: number | null): string {
 function formatPercent(value: number | null): string {
   if (value === null) return "No baseline";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatCompactSignedCurrency(value: number): string {
+  const absoluteValue = Math.abs(value);
+  const maximumFractionDigits =
+    absoluteValue < 10 ? 2 : absoluteValue < 100 ? 1 : 0;
+  const formatted = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: absoluteValue >= 1_000 ? "compact" : "standard",
+    maximumFractionDigits,
+  }).format(absoluteValue);
+  return `${value >= 0 ? "+" : "-"}${formatted}`;
+}
+
+function formatReturnLabel(
+  returnPercent: number | null,
+  horizon: Horizon,
+  dayReturn: number | null | undefined,
+): string {
+  const percentLabel = formatPercent(returnPercent);
+  if (horizon !== "1d" || returnPercent === null || dayReturn == null) {
+    return percentLabel;
+  }
+  return `${percentLabel} (${formatCompactSignedCurrency(dayReturn)})`;
 }
 
 function shiftDate(
@@ -270,12 +296,18 @@ export function PortfolioMap({
       >
         {layout.map(({ item, x, y, width, height }) => {
           const ticker = item.holding.ticker || "Cash";
-          const returnLabel = formatPercent(item.returnPercent);
+          const returnLabel = formatReturnLabel(
+            item.returnPercent,
+            horizon,
+            item.holding.dayReturn,
+          );
           const valueLabel = formatCurrency(item.holding.currentValue);
           const showTicker =
             width >= Math.max(42, ticker.length * 8 + 14) && height >= 24;
           const showReturn =
-            showTicker && width >= returnLabel.length * 7 + 14 && height >= 45;
+            showTicker &&
+            width >= returnLabel.length * 5.25 + 14 &&
+            height >= 45;
           const showValue =
             showReturn && width >= valueLabel.length * 6 + 14 && height >= 66;
           const selected = selectedEntry?.holding.id === item.holding.id;
@@ -310,7 +342,12 @@ export function PortfolioMap({
                 </Text>
               ) : null}
               {showReturn ? (
-                <Text style={styles.tileReturn} numberOfLines={1}>
+                <Text
+                  style={styles.tileReturn}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
                   {returnLabel}
                 </Text>
               ) : null}
@@ -357,7 +394,11 @@ export function PortfolioMap({
             />
             <Detail
               label="Return"
-              value={formatPercent(selectedEntry.returnPercent)}
+              value={formatReturnLabel(
+                selectedEntry.returnPercent,
+                horizon,
+                selectedEntry.holding.dayReturn,
+              )}
             />
           </View>
         </View>
