@@ -469,7 +469,7 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Day $");
     expect(edition!.html).toContain("Day %");
     expect(edition!.html).toContain("Total %");
-    expect(edition!.html).toContain("Value · 90 days");
+    expect(edition!.html).toContain("Value · 2 days");
     expect(edition!.html).toContain('class="portfolio-history-line"');
     expect(edition!.html).toContain('data-history-values="1690,1750"');
     expect(edition!.html).toContain("data-history-cursor");

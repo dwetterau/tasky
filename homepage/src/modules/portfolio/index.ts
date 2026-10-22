@@ -57,6 +57,8 @@ function renderPortfolioHistory(data: NamedPortfolio) {
   const values = history.map((point) => point.value);
   const firstTimestamp = timestamps[0]!;
   const lastTimestamp = timestamps[timestamps.length - 1]!;
+  const historyDays =
+    Math.floor((lastTimestamp - firstTimestamp) / 86_400_000) + 1;
   const minimum = Math.min(...values);
   const maximum = Math.max(...values);
   const rawRange = maximum - minimum;
@@ -94,7 +96,7 @@ function renderPortfolioHistory(data: NamedPortfolio) {
     data-history-values="${e(serializedValues)}"
   >
     <figcaption>
-      <span>Value · 90 days</span>
+      <span>Value · ${historyDays} ${historyDays === 1 ? "day" : "days"}</span>
       <strong class="${toneClass}">${e(changeLabel)}</strong>
     </figcaption>
     <svg
