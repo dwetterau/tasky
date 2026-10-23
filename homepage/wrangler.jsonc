@@ -1,30 +1,46 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tasky-homepage",
-  "account_id": "00000000000000000000000000000000",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-22",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": false,
   "preview_urls": false,
   "kv_namespaces": [
-    { "binding": "EDITIONS", "id": "00000000000000000000000000000000" },
+    {
+      "binding": "EDITIONS",
+      "id": "00000000000000000000000000000000"
+    }
   ],
   "durable_objects": {
     "bindings": [
-      { "name": "PUBLISHERS", "class_name": "UserPublisher" },
-      { "name": "SESSIONS", "class_name": "HomepageSession" },
-    ],
+      {
+        "name": "PUBLISHERS",
+        "class_name": "UserPublisher"
+      },
+      {
+        "name": "SESSIONS",
+        "class_name": "HomepageSession"
+      }
+    ]
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["UserPublisher", "HomepageSession", "Coordinator"],
+      "new_sqlite_classes": [
+        "UserPublisher",
+        "HomepageSession",
+        "Coordinator"
+      ]
     },
     {
       "tag": "v2",
-      "deleted_classes": ["Coordinator"],
-    },
+      "deleted_classes": [
+        "Coordinator"
+      ]
+    }
   ],
   "vars": {
     "HOME_ORIGIN": "https://home.davidw.tech",
@@ -33,7 +49,12 @@
     "OAUTH_CLIENT_ID": "tasky-homepage",
     "DEFAULT_TIMEZONE": "UTC",
     "SESSION_TTL_SECONDS": "604800",
-    "ALLOWED_USER_IDS": "",
+    "ALLOWED_USER_IDS": ""
   },
-  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": false
+    }
+  }
 }

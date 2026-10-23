@@ -84,3 +84,12 @@ All tables have a `by_user` index. Tasks/notes have full-text `search_content` i
 - Markdown content rendered via `react-markdown` (read) and TipTap (edit)
 - `useSelectedTag` syncs tag filter to URL params + sessionStorage for persistence
 - Task/note creation from captures uses the same modals (`TaskModal`/`NoteModal`) as regular creation, with `initialContent` and `createdFromCaptureId` props
+
+
+## Public repository privacy
+
+This repository is public. Use synthetic fixtures and generic operator examples.
+Never commit personal journal text or inventory metadata, real activity exports,
+internal user IDs, account inspection output, private signing/deployment IDs, or
+debug transcripts. Keep deployment-specific values in ignored local files or CI
+secrets. Git author names and emails and intentional public app URLs are allowed.

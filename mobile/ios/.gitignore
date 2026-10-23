@@ -28,3 +28,6 @@ project.xcworkspace
 
 # CocoaPods
 /Pods/
+
+# Private signing identity
+/Config/Signing.local.xcconfig

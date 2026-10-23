@@ -1,3 +1,4 @@
+// Strava activity records below are synthetic; never substitute personal activity exports.
 import { env as bindings } from "cloudflare:workers";
 import {
   reset,

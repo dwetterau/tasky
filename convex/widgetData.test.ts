@@ -1,3 +1,4 @@
+// Strava activity records below are synthetic; never substitute personal activity exports.
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { internal } from "./_generated/api";

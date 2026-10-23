@@ -57,3 +57,11 @@ Protocol references:
 ```bash
 npx jest lib/__tests__/yunmaiProtocol.test.ts --runInBand --watch=false
 ```
+
+## Private iOS signing configuration
+
+For local device builds, put `DEVELOPMENT_TEAM = YOUR_TEAM_ID` in the ignored
+`ios/Config/Signing.local.xcconfig` file. Debug and Release include this file
+alongside their CocoaPods configuration. Keep signing IDs out of the project
+file. CI can provide the same ignored file before building, or supply
+`DEVELOPMENT_TEAM` as an xcodebuild setting.

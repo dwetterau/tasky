@@ -1,3 +1,4 @@
+// Strava activity records below are synthetic; never substitute personal activity exports.
 import { describe, expect, it } from "vitest";
 import { feedSchema } from "@tasky/home-feed";
 import { renderEdition } from "../src/rendering/page";

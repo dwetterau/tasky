@@ -1,3 +1,4 @@
+// Strava activity records below are synthetic; never substitute personal activity exports.
 import { describe, expect, it, vi } from "vitest";
 import {
   WIDGETS_READ_SCOPE,

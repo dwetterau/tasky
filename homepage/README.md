@@ -235,3 +235,17 @@ aliases are rejected.
 - Rotate session keys by adding a new key and switching `SESSION_ACTIVE_KID`;
   retain the old verification key for at least 24 hours after its last issuance.
   Changing `GRANT_ENCRYPTION_KEY` requires signing in again.
+
+## Private deployment configuration
+
+Account and storage IDs are not tracked. `npm run deploy` requires
+`CLOUDFLARE_ACCOUNT_ID`, `HOMEPAGE_EDITIONS_KV_ID`, and
+`HOMEPAGE_DEFAULT_TIMEZONE` in the environment or ignored
+`.env.homepage-deploy` file. CI supplies these as repository secrets, alongside
+`CLOUDFLARE_API_TOKEN`. Keep the existing deployment's values when configuring
+these settings. The checked-in zero namespace ID and UTC timezone are examples
+for local tests and dry-run builds. The deployment script validates private
+settings, writes a temporary config, and removes it when Wrangler exits.
+
+`npm run deploy:gateway` also needs `CLOUDFLARE_ACCOUNT_ID` in its environment.
+Do not paste real account settings or private user data into source or PRs.

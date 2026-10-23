@@ -15,7 +15,7 @@ const stravaActivityUrlSchema = z
 
 const activityFields = {
   activityUrl: stravaActivityUrlSchema.describe(
-    "Canonical Strava activity link, for example https://www.strava.com/activities/00000000001.",
+    "Canonical Strava activity link; synthetic example: https://www.strava.com/activities/00000000001.",
   ),
   startedAt: z
     .string()

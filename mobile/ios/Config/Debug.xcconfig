@@ -1,0 +1,2 @@
+#include "../Pods/Target Support Files/Pods-Tasky/Pods-Tasky.debug.xcconfig"
+#include? "Signing.local.xcconfig"
