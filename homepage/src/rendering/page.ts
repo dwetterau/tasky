@@ -787,12 +787,35 @@ summary {
   border-color: var(--ink);
   color: var(--paper);
 }
+.portfolio-value-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 4px;
+}
 .portfolio-value {
   font-size: clamp(32px, 3.5vw, 44px);
   letter-spacing: -0.045em;
   line-height: 1.2;
-  margin: 0 0 4px;
   overflow-wrap: anywhere;
+}
+.portfolio-value-redacted {
+  letter-spacing: 0.08em;
+}
+.portfolio-total-toggle {
+  padding: 4px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--muted);
+  font:
+    10px system-ui,
+    sans-serif;
+  line-height: 1;
+}
+.portfolio-total-toggle:hover,
+.portfolio-total-toggle[aria-pressed="true"] {
+  border-color: var(--ink);
+  color: var(--ink);
 }
 .portfolio-history {
   position: relative;
@@ -1535,6 +1558,24 @@ export const browserScript = `
   });
   document.addEventListener("click", (event) => {
     const element = event.target instanceof Element ? event.target : null;
+    const totalToggle = element?.closest("[data-portfolio-total-toggle]");
+    if (totalToggle instanceof HTMLButtonElement) {
+      const panel = totalToggle.closest("[data-portfolio-panel]");
+      const redacted = panel?.querySelector("[data-portfolio-total-redacted]");
+      const value = panel?.querySelector("[data-portfolio-total-value]");
+      if (!(redacted instanceof HTMLElement) || !(value instanceof HTMLElement))
+        return;
+      const reveal = value.hidden;
+      redacted.hidden = reveal;
+      value.hidden = !reveal;
+      totalToggle.textContent = reveal ? "Hide" : "Show";
+      totalToggle.setAttribute("aria-pressed", String(reveal));
+      totalToggle.setAttribute(
+        "aria-label",
+        reveal ? "Hide portfolio total" : "Show portfolio total",
+      );
+      return;
+    }
     const portfolioTab = element?.closest("[data-portfolio-tab]");
     if (portfolioTab instanceof HTMLButtonElement) {
       selectPortfolio(portfolioTab.dataset.portfolioTab ?? "");

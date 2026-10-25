@@ -150,8 +150,18 @@ function renderPortfolio(data: NamedPortfolio) {
       </tr>`;
     })
     .join("");
-  return /* HTML */ `<div class="portfolio-value">
-      ${e(money(data.totalValue))}
+  return /* HTML */ `<div class="portfolio-value-line">
+      <div class="portfolio-value">
+        <span class="portfolio-value-redacted" data-portfolio-total-redacted aria-label="Portfolio total hidden">••••••</span>
+        <span data-portfolio-total-value hidden>${e(money(data.totalValue))}</span>
+      </div>
+      <button
+        class="portfolio-total-toggle"
+        type="button"
+        data-portfolio-total-toggle
+        aria-label="Show portfolio total"
+        aria-pressed="false"
+      >Show</button>
     </div>
     ${renderPortfolioHistory(data)}
     <div class="holdings-heading">

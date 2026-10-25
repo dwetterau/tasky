@@ -464,6 +464,16 @@ describe("durable ingestion and publication", () => {
       'class="module module-supporting module-portfolio"',
     );
     expect(edition!.html).toContain("$1,250");
+    expect(edition!.html).toContain(
+      'data-portfolio-total-redacted aria-label="Portfolio total hidden">••••••</span>',
+    );
+    expect(edition!.html).toContain(
+      "data-portfolio-total-value hidden>$1,750</span>",
+    );
+    expect(edition!.html).toContain(
+      'data-portfolio-total-toggle\n        aria-label="Show portfolio total"\n        aria-pressed="false"',
+    );
+    expect(edition!.html).toContain("+$60 (+3.55%)");
     expect(edition!.html).not.toContain("Unrealized return");
     expect(edition!.html).toContain('action="/api/sync-prices"');
     expect(edition!.html).toContain("Sync prices");
