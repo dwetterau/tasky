@@ -1316,6 +1316,31 @@ export const browserScript = `
     } catch {}
     selectPortfolio(selected);
   };
+  let portfolioTotalsVisible = false;
+  const setPortfolioTotalsVisible = (visible) => {
+    portfolioTotalsVisible = visible;
+    document
+      .querySelectorAll("[data-portfolio-total-redacted]")
+      .forEach((redacted) => {
+        if (redacted instanceof HTMLElement) redacted.hidden = visible;
+      });
+    document
+      .querySelectorAll("[data-portfolio-total-value]")
+      .forEach((value) => {
+        if (value instanceof HTMLElement) value.hidden = !visible;
+      });
+    document
+      .querySelectorAll("[data-portfolio-total-toggle]")
+      .forEach((toggle) => {
+        if (!(toggle instanceof HTMLButtonElement)) return;
+        toggle.textContent = visible ? "Hide" : "Show";
+        toggle.setAttribute("aria-pressed", String(visible));
+        toggle.setAttribute(
+          "aria-label",
+          visible ? "Hide portfolio totals" : "Show portfolio totals",
+        );
+      });
+  };
   const historyMoney = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -1560,20 +1585,7 @@ export const browserScript = `
     const element = event.target instanceof Element ? event.target : null;
     const totalToggle = element?.closest("[data-portfolio-total-toggle]");
     if (totalToggle instanceof HTMLButtonElement) {
-      const panel = totalToggle.closest("[data-portfolio-panel]");
-      const redacted = panel?.querySelector("[data-portfolio-total-redacted]");
-      const value = panel?.querySelector("[data-portfolio-total-value]");
-      if (!(redacted instanceof HTMLElement) || !(value instanceof HTMLElement))
-        return;
-      const reveal = value.hidden;
-      redacted.hidden = reveal;
-      value.hidden = !reveal;
-      totalToggle.textContent = reveal ? "Hide" : "Show";
-      totalToggle.setAttribute("aria-pressed", String(reveal));
-      totalToggle.setAttribute(
-        "aria-label",
-        reveal ? "Hide portfolio total" : "Show portfolio total",
-      );
+      setPortfolioTotalsVisible(!portfolioTotalsVisible);
       return;
     }
     const portfolioTab = element?.closest("[data-portfolio-tab]");
@@ -1650,6 +1662,7 @@ export const browserScript = `
             .querySelector(".paper")
             .replaceWith(page.querySelector(".paper"));
           applyPortfolioSelection();
+          setPortfolioTotalsVisible(portfolioTotalsVisible);
           revision = next;
           document.body.dataset.revision = String(next);
         }

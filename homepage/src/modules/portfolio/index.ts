@@ -159,7 +159,7 @@ function renderPortfolio(data: NamedPortfolio) {
         class="portfolio-total-toggle"
         type="button"
         data-portfolio-total-toggle
-        aria-label="Show portfolio total"
+        aria-label="Show portfolio totals"
         aria-pressed="false"
       >Show</button>
     </div>

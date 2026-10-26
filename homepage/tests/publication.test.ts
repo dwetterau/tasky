@@ -471,7 +471,7 @@ describe("durable ingestion and publication", () => {
       "data-portfolio-total-value hidden>$1,750</span>",
     );
     expect(edition!.html).toContain(
-      'data-portfolio-total-toggle\n        aria-label="Show portfolio total"\n        aria-pressed="false"',
+      'data-portfolio-total-toggle\n        aria-label="Show portfolio totals"\n        aria-pressed="false"',
     );
     expect(edition!.html).toContain("+$60 (+3.55%)");
     expect(edition!.html).not.toContain("Unrealized return");
