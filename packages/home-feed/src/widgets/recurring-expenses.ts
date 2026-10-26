@@ -108,6 +108,7 @@ export function getUpcomingRecurringExpenses(
   return payload.upcomingExpenses
     .filter(
       (expense) =>
+        expense.monthlyAmount > 0 &&
         expense.nextPaymentDate >= today &&
         expense.nextPaymentDate <= through,
     )
@@ -125,6 +126,7 @@ export function getVisibleRecurringExpenseCategoryTotals(
   return payload.monthlyTotals.byCategory
     .filter(
       (total) =>
+        total.totalMonthlyAmount > 0 &&
         total.category.trim().toLocaleLowerCase("en-US") !== "housing",
     )
     .sort(

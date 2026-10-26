@@ -37,6 +37,12 @@ const payload: RecurringExpensesPayload = {
       category: "Entertainment",
       nextPaymentDate: "2026-10-12",
     },
+    {
+      name: "Variable charge",
+      monthlyAmount: 0,
+      category: "Utilities",
+      nextPaymentDate: "2026-10-06",
+    },
   ],
   monthlyTotals: {
     month: "2026-10",
@@ -44,6 +50,7 @@ const payload: RecurringExpensesPayload = {
       { category: "Software", totalMonthlyAmount: 42.98 },
       { category: "Housing", totalMonthlyAmount: 3200 },
       { category: "Health", totalMonthlyAmount: 75 },
+      { category: "Utilities", totalMonthlyAmount: 0 },
     ],
   },
 };
@@ -78,7 +85,7 @@ describe("recurring expenses widget", () => {
     ).toThrow("Category totals must be unique");
   });
 
-  it("keeps only payments from today through seven days ahead", () => {
+  it("keeps only non-zero payments from today through seven days ahead", () => {
     expect(
       getUpcomingRecurringExpenses(payload, "2026-10-04").map(
         (expense) => expense.name,
@@ -86,7 +93,7 @@ describe("recurring expenses widget", () => {
     ).toEqual(["Cloud storage", "Gym"]);
   });
 
-  it("hides housing only from the rendered category summary", () => {
+  it("hides housing and zero-value rows from the rendered category summary", () => {
     expect(
       getVisibleRecurringExpenseCategoryTotals(payload).map(
         (total) => total.category,

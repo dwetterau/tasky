@@ -12,6 +12,9 @@ import {
 import type { HomeModule } from "../contract";
 import { escapeHtml as e } from "../../rendering/html";
 
+const COLLAPSED_UPCOMING_COUNT = 5;
+const COLLAPSED_CATEGORY_COUNT = 6;
+
 export const recurringExpensesModule: HomeModule<RecurringExpensesPayload> = {
   id: "recurring-expenses",
   title: "Recurring expenses",
@@ -31,7 +34,7 @@ export const recurringExpensesModule: HomeModule<RecurringExpensesPayload> = {
     const upcomingHtml =
       upcoming.length === 0
         ? '<p class="empty">No recurring payments due in the next week.</p>'
-        : `<ul class="expense-list">${upcoming
+        : `<ul class="expense-list" data-expense-list data-expanded="false">${upcoming
             .map(
               (expense) => `<li>
                 <span class="expense-name"><strong>${e(expense.name)}</strong><span>${e(expense.category)}</span></span>
@@ -39,16 +42,24 @@ export const recurringExpensesModule: HomeModule<RecurringExpensesPayload> = {
                 <time datetime="${e(expense.nextPaymentDate)}">${e(formatRecurringExpenseDate(expense.nextPaymentDate, today))}</time>
               </li>`,
             )
-            .join("")}</ul>`;
+            .join("")}</ul>${
+            upcoming.length > COLLAPSED_UPCOMING_COUNT
+              ? `<button class="expense-expand" type="button" data-expense-expand data-total="${upcoming.length}" aria-expanded="false">Show all ${upcoming.length}</button>`
+              : ""
+          }`;
     const totalsHtml =
       categoryTotals.length === 0
         ? '<p class="empty">No category totals to show.</p>'
-        : `<dl class="expense-category-totals">${categoryTotals
+        : `<dl class="expense-category-totals" data-expense-list data-expanded="false">${categoryTotals
             .map(
               (total) =>
-                `<div><dt>${e(total.category)}</dt><dd>${e(formatRecurringExpenseAmount(total.totalMonthlyAmount, data.currency))}</dd></div>`,
+                `<div data-expense-category><dt>${e(total.category)}</dt><dd>${e(formatRecurringExpenseAmount(total.totalMonthlyAmount, data.currency))}</dd></div>`,
             )
-            .join("")}<div><dt>Total</dt><dd>${e(formatRecurringExpenseAmount(monthlyTotal, data.currency))}</dd></div></dl>`;
+            .join("")}<div><dt>Total</dt><dd>${e(formatRecurringExpenseAmount(monthlyTotal, data.currency))}</dd></div></dl>${
+            categoryTotals.length > COLLAPSED_CATEGORY_COUNT
+              ? `<button class="expense-expand" type="button" data-expense-expand data-total="${categoryTotals.length}" aria-expanded="false">Show all ${categoryTotals.length}</button>`
+              : ""
+          }`;
     return `<div class="recurring-expenses">
       <section>
         <h3 class="section-label">Due in the next week</h3>

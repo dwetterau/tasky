@@ -66,6 +66,9 @@ type PortfolioSnapshot = FunctionReturnType<
 >;
 type Task = FunctionReturnType<typeof taskyApi.tasks.list>[number];
 
+const COLLAPSED_EXPENSE_COUNT = 5;
+const COLLAPSED_EXPENSE_CATEGORY_COUNT = 6;
+
 const briefingMarkdownRules: RenderRules = {
   image: () => null,
 };
@@ -458,6 +461,8 @@ function ReleasesCard() {
 
 function RecurringExpensesCard() {
   const taskyAuth = useTaskyAuth();
+  const [showAllUpcoming, setShowAllUpcoming] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const now = useSignalClock();
   const latest = useTaskyQuery(
     taskyApi.widgetData.latest,
@@ -485,6 +490,12 @@ function RecurringExpensesCard() {
     (sum, total) => sum + total.totalMonthlyAmount,
     0,
   );
+  const visibleUpcoming = showAllUpcoming
+    ? upcoming
+    : upcoming.slice(0, COLLAPSED_EXPENSE_COUNT);
+  const visibleCategoryTotals = showAllCategories
+    ? categoryTotals
+    : categoryTotals.slice(0, COLLAPSED_EXPENSE_CATEGORY_COUNT);
 
   if (latest.isLoading || !recurringExpenses?.success) {
     return null;
@@ -501,7 +512,7 @@ function RecurringExpensesCard() {
           </Text>
         ) : (
           <View>
-            {upcoming.map((expense, index) => (
+            {visibleUpcoming.map((expense, index) => (
               <View
                 key={`${expense.name}:${expense.nextPaymentDate}`}
                 style={[
@@ -532,6 +543,19 @@ function RecurringExpensesCard() {
                 </Text>
               </View>
             ))}
+            {upcoming.length > COLLAPSED_EXPENSE_COUNT ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showAllUpcoming }}
+                onPress={() => setShowAllUpcoming((value) => !value)}
+              >
+                <Text style={styles.expenseExpand}>
+                  {showAllUpcoming
+                    ? "Show fewer"
+                    : `Show all ${upcoming.length}`}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
       </View>
@@ -545,30 +569,45 @@ function RecurringExpensesCard() {
         {categoryTotals.length === 0 ? (
           <Text style={styles.expenseEmpty}>No category totals to show.</Text>
         ) : (
-          <View style={styles.expenseTotals}>
-            {categoryTotals.map((total) => (
-              <View key={total.category} style={styles.expenseTotal}>
-                <Text style={styles.expenseTotalCategory} numberOfLines={1}>
-                  {total.category}
-                </Text>
+          <>
+            <View style={styles.expenseTotals}>
+              {visibleCategoryTotals.map((total) => (
+                <View key={total.category} style={styles.expenseTotal}>
+                  <Text style={styles.expenseTotalCategory} numberOfLines={1}>
+                    {total.category}
+                  </Text>
+                  <Text style={styles.expenseTotalAmount}>
+                    {formatRecurringExpenseAmount(
+                      total.totalMonthlyAmount,
+                      recurringExpenses.data.currency,
+                    )}
+                  </Text>
+                </View>
+              ))}
+              <View style={styles.expenseTotal}>
+                <Text style={styles.expenseTotalCategory}>Total</Text>
                 <Text style={styles.expenseTotalAmount}>
                   {formatRecurringExpenseAmount(
-                    total.totalMonthlyAmount,
+                    monthlyTotal,
                     recurringExpenses.data.currency,
                   )}
                 </Text>
               </View>
-            ))}
-            <View style={styles.expenseTotal}>
-              <Text style={styles.expenseTotalCategory}>Total</Text>
-              <Text style={styles.expenseTotalAmount}>
-                {formatRecurringExpenseAmount(
-                  monthlyTotal,
-                  recurringExpenses.data.currency,
-                )}
-              </Text>
             </View>
-          </View>
+            {categoryTotals.length > COLLAPSED_EXPENSE_CATEGORY_COUNT ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showAllCategories }}
+                onPress={() => setShowAllCategories((value) => !value)}
+              >
+                <Text style={styles.expenseExpand}>
+                  {showAllCategories
+                    ? "Show fewer"
+                    : `Show all ${categoryTotals.length}`}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </>
         )}
       </View>
     </View>
@@ -1464,6 +1503,12 @@ const styles = StyleSheet.create({
     color: colors.secondaryLabel,
     fontSize: fontSize.caption,
     fontVariant: ["tabular-nums"],
+  },
+  expenseExpand: {
+    marginTop: spacing.sm,
+    color: colors.systemBlue,
+    fontSize: fontSize.caption,
+    fontWeight: "600",
   },
   expenseTotals: {
     flexDirection: "row",

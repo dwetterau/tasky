@@ -323,6 +323,11 @@ p {
 .expense-list li:last-child {
   border-bottom: 0;
 }
+.expense-list[data-expanded="false"] li:nth-child(n + 6),
+.expense-category-totals[data-expanded="false"]
+  [data-expense-category]:nth-child(n + 7) {
+  display: none;
+}
 .expense-name {
   display: grid;
   min-width: 0;
@@ -1003,7 +1008,8 @@ summary {
 .portfolio-table[data-expanded="false"] tbody tr:nth-child(n + 6) {
   display: none;
 }
-.portfolio-expand {
+.portfolio-expand,
+.expense-expand {
   margin-top: 10px;
   color: var(--accent);
   font:
@@ -1605,6 +1611,20 @@ export const browserScript = `
       expand.textContent = open
         ? "Show fewer"
         : "Show all " + table.tBodies[0].rows.length;
+      return;
+    }
+    const expenseExpand = element?.closest("[data-expense-expand]");
+    if (expenseExpand instanceof HTMLButtonElement) {
+      const list = expenseExpand
+        .closest("section")
+        ?.querySelector("[data-expense-list]");
+      if (!(list instanceof HTMLElement)) return;
+      const open = list.dataset.expanded !== "true";
+      list.dataset.expanded = String(open);
+      expenseExpand.ariaExpanded = String(open);
+      expenseExpand.textContent = open
+        ? "Show fewer"
+        : "Show all " + expenseExpand.dataset.total;
       return;
     }
     const sort = element?.closest("[data-portfolio-sort]");
