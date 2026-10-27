@@ -9,8 +9,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "typecheck": "npm run typecheck:app && npm --prefix mobile run typecheck && npm --prefix homepage run typecheck",
+    "typecheck:app": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm test && npm --prefix mobile run lint && npm --prefix mobile test -- --runInBand --watchAll=false && npm --prefix homepage test"
   },
   "dependencies": {
     "@better-auth/expo": "^1.4.9",

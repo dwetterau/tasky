@@ -168,15 +168,33 @@ export function isolateHomepageFromMcp(
               const stored =
                 await ctx.context.internalAdapter.findVerificationValue(code);
               if (!stored) throw denied();
-              await ctx.context.internalAdapter.updateVerificationValue(
-                stored.id,
-                {
-                  value: JSON.stringify({
-                    ...JSON.parse(stored.value),
-                    resource,
-                  }),
-                },
-              );
+              const value = JSON.stringify({
+                ...JSON.parse(stored.value),
+                resource,
+              });
+              const internalAdapter = ctx.context.internalAdapter as typeof ctx.context.internalAdapter & {
+                updateVerificationByIdentifier?: (
+                  identifier: string,
+                  data: { value: string },
+                ) => Promise<unknown>;
+                updateVerificationValue?: (
+                  id: string,
+                  data: { value: string },
+                ) => Promise<unknown>;
+              };
+              if (internalAdapter.updateVerificationByIdentifier) {
+                await internalAdapter.updateVerificationByIdentifier(code, {
+                  value,
+                });
+              } else if (internalAdapter.updateVerificationValue) {
+                await internalAdapter.updateVerificationValue(stored.id, {
+                  value,
+                });
+              } else {
+                throw new Error(
+                  "Better Auth verification adapter cannot update values",
+                );
+              }
             }
           }
           return response;
