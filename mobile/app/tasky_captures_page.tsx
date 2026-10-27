@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { FunctionReturnType } from "convex/server";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -55,7 +55,7 @@ function SegmentedControl({
   onChange,
 }: {
   value: Tab;
-  options: Array<{ value: Tab; label: string; badge?: number }>;
+  options: { value: Tab; label: string; badge?: number }[];
   onChange: (next: Tab) => void;
 }) {
   return (
@@ -256,7 +256,9 @@ export default function TaskyCapturesPage() {
     taskyApi.captures.list,
     taskyAuth.isAuthenticated ? { includeCompleted: false } : "skip",
   );
-  const closedAfter = useMemo(() => Date.now() - 32 * 24 * 60 * 60 * 1000, []);
+  const [closedAfter] = useState(
+    () => Date.now() - 32 * 24 * 60 * 60 * 1000,
+  );
   const tasks = useTaskyQuery(
     taskyApi.tasks.list,
     taskyAuth.isAuthenticated ? { closedAfter } : "skip",
@@ -265,6 +267,12 @@ export default function TaskyCapturesPage() {
     taskyApi.tags.list,
     taskyAuth.isAuthenticated ? {} : "skip",
   );
+  const effectiveSelectedTagId =
+    selectedTagId !== null &&
+    tags.data &&
+    !tags.data.some((tag) => tag._id === selectedTagId)
+      ? null
+      : selectedTagId;
 
   const createCapture = useTaskyMutation(taskyApi.captures.create);
   const updateCapture = useTaskyMutation(taskyApi.captures.update);
@@ -276,22 +284,12 @@ export default function TaskyCapturesPage() {
     [tasks.data],
   );
   const filteredTasks = useMemo<Task[]>(() => {
-    if (selectedTagId === null) return openTasks;
-    const allowed = tagSubtreeIds([selectedTagId], tags.data ?? []);
+    if (effectiveSelectedTagId === null) return openTasks;
+    const allowed = tagSubtreeIds([effectiveSelectedTagId], tags.data ?? []);
     return openTasks.filter((task) =>
       task.tags.some((tag) => allowed.has(String(tag._id))),
     );
-  }, [openTasks, selectedTagId, tags.data]);
-
-  useEffect(() => {
-    if (
-      selectedTagId !== null &&
-      tags.data &&
-      !tags.data.some((tag) => tag._id === selectedTagId)
-    ) {
-      setSelectedTagId(null);
-    }
-  }, [selectedTagId, tags.data]);
+  }, [effectiveSelectedTagId, openTasks, tags.data]);
 
   const groupedTasks = useMemo(() => {
     const byStatus = new Map<TaskStatus, Task[]>();
@@ -525,7 +523,7 @@ export default function TaskyCapturesPage() {
           <>
             <TagFilterRow
               tags={tags.data ?? []}
-              selectedTagId={selectedTagId}
+              selectedTagId={effectiveSelectedTagId}
               onChange={setSelectedTagId}
             />
             {tasks.isLoading ? (
@@ -536,10 +534,12 @@ export default function TaskyCapturesPage() {
             ) : filteredTasks.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyTitle}>
-                  {selectedTagId ? "No matching tasks" : "No open tasks"}
+                  {effectiveSelectedTagId
+                    ? "No matching tasks"
+                    : "No open tasks"}
                 </Text>
                 <Text style={sharedStyles.muted}>
-                  {selectedTagId
+                  {effectiveSelectedTagId
                     ? "Nothing open with this tag."
                     : "You're all caught up. New tasks land here as you triage captures from the web app."}
                 </Text>

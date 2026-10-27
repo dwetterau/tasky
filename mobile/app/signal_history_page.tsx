@@ -136,7 +136,12 @@ export default function SignalHistoryPage() {
   const [editingNote, setEditingNote] = useState("");
   const [editingMeasurements, setEditingMeasurements] =
     useState<ActivityMeasurementDraft>(() => emptyActivityMeasurementDraft());
-  const [inventoryValue, setInventoryValue] = useState("");
+  const [inventoryDraft, setInventoryDraft] = useState<{
+    signalId: SignalId | undefined;
+    value: string;
+  }>(() => ({ signalId, value: "" }));
+  const inventoryValue =
+    inventoryDraft.signalId === signalId ? inventoryDraft.value : "";
   const measurementFields =
     signal.data?.model.kind === "activity"
       ? signal.data.model.measurementFields ?? []
@@ -159,26 +164,24 @@ export default function SignalHistoryPage() {
           "none"
         }:${measurementFields.join(",")}`;
   const appliedMeasurementPrefillKey = useRef<string | undefined>(undefined);
-  const didPrefillInventory = useRef(false);
-
-  useEffect(() => {
-    didPrefillInventory.current = false;
-    setInventoryValue("");
-  }, [signalId]);
+  const prefilledInventorySignalId = useRef<SignalId | undefined>(undefined);
 
   useEffect(() => {
     if (
       signal.data?.model.kind !== "inventory" ||
-      didPrefillInventory.current
+      prefilledInventorySignalId.current === signalId
     ) {
       return;
     }
-    didPrefillInventory.current = true;
+    prefilledInventorySignalId.current = signalId;
     const current =
       signal.data.evaluation.projectedQuantity ??
       signal.data.model.confirmedQuantity;
-    setInventoryValue(formatSignalQuantity(current));
-  }, [signal.data]);
+    setInventoryDraft({
+      signalId,
+      value: formatSignalQuantity(current),
+    });
+  }, [signal.data, signalId]);
 
   useEffect(() => {
     if (
@@ -229,7 +232,7 @@ export default function SignalHistoryPage() {
       setBackdatedDate(new Date());
       setActivityNote("");
       if (operation.type !== "activity.occurred") {
-        setInventoryValue("");
+        setInventoryDraft({ signalId, value: "" });
       }
     } catch (recordError) {
       setError(
@@ -588,7 +591,9 @@ export default function SignalHistoryPage() {
                 <TextInput
                   style={styles.input}
                   value={inventoryValue}
-                  onChangeText={setInventoryValue}
+                  onChangeText={(value) =>
+                    setInventoryDraft({ signalId, value })
+                  }
                   placeholder="-1, +30, or exact count"
                   placeholderTextColor={colors.tertiaryLabel}
                   keyboardType="numbers-and-punctuation"

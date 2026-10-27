@@ -1,6 +1,6 @@
 import type { FunctionArgs } from "convex/server";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -52,7 +52,7 @@ type DraftMember =
   | { type: "signal"; signalId: SignalId; role: MemberRole }
   | { type: "scorecard"; scorecardId: ScorecardId; role: MemberRole };
 
-const SCHEDULE_OPTIONS: Array<{ value: ScheduleMode; label: string }> = [
+const SCHEDULE_OPTIONS: { value: ScheduleMode; label: string }[] = [
   { value: "continuous", label: "Continuous" },
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
@@ -110,7 +110,7 @@ function Segmented<T extends string>({
   onChange,
 }: {
   value: T;
-  options: Array<{ value: T; label: string }>;
+  options: { value: T; label: string }[];
   onChange: (value: T) => void;
 }) {
   return (
@@ -188,6 +188,8 @@ export default function ScorecardEditPage() {
   const [scheduleMode, setScheduleMode] =
     useState<ScheduleMode>("continuous");
   const [scheduledWeekday, setScheduledWeekday] = useState(2);
+  const [initializedScorecardRevision, setInitializedScorecardRevision] =
+    useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -230,14 +232,19 @@ export default function ScorecardEditPage() {
   const updateScorecard = useTaskyMutation(taskyApi.scorecards.update);
   const setArchived = useTaskyMutation(taskyApi.scorecards.setArchived);
 
-  useEffect(() => {
-    if (!scorecard.data) {
-      return;
-    }
-    setName(scorecard.data.name);
-    setTagIds(scorecard.data.tagIds);
+  const scorecardRevision = scorecard.data
+    ? `${String(scorecardId)}:${scorecard.data.updatedAt}`
+    : undefined;
+  if (
+    scorecard.data &&
+    initializedScorecardRevision !== scorecardRevision
+  ) {
+    const data = scorecard.data;
+    setInitializedScorecardRevision(scorecardRevision);
+    setName(data.name);
+    setTagIds(data.tagIds);
     setMembers(
-      scorecard.data.members.map((member) =>
+      data.members.map((member) =>
         member.type === "scorecard"
           ? {
               type: "scorecard" as const,
@@ -251,22 +258,22 @@ export default function ScorecardEditPage() {
             },
       ),
     );
-    if (scorecard.data.targetCount !== undefined) {
+    if (data.targetCount !== undefined) {
       setGoalMode("times");
-      setGoalCount(String(scorecard.data.targetCount));
+      setGoalCount(String(data.targetCount));
     } else {
       setGoalMode("members");
-      setGoalCount(String(scorecard.data.optionalQuota));
+      setGoalCount(String(data.optionalQuota));
     }
-    if (scorecard.data.schedule) {
-      setScheduleMode(modeForSchedule(scorecard.data.schedule));
-      if (scorecard.data.schedule.due.type === "weekdays") {
-        setScheduledWeekday(scorecard.data.schedule.due.weekdays[0] ?? 2);
+    if (data.schedule) {
+      setScheduleMode(modeForSchedule(data.schedule));
+      if (data.schedule.due.type === "weekdays") {
+        setScheduledWeekday(data.schedule.due.weekdays[0] ?? 2);
       }
     } else {
       setScheduleMode("continuous");
     }
-  }, [scorecard.data]);
+  }
 
   const optionalCount = members.filter(
     (member) => member.role === "optional",

@@ -1,5 +1,5 @@
 import { type Href, Stack, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -56,7 +56,7 @@ function SegmentedControl({
   onChange,
 }: {
   value: SignalsTab;
-  options: Array<{ value: SignalsTab; label: string; badge?: number }>;
+  options: { value: SignalsTab; label: string; badge?: number }[];
   onChange: (next: SignalsTab) => void;
 }) {
   return (
@@ -150,6 +150,16 @@ export default function SignalsPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [selectedTagId, setSelectedTagId] = useState<TaskyTagId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const tags = useTaskyQuery(
+    taskyApi.tags.list,
+    taskyAuth.isAuthenticated ? {} : "skip",
+  );
+  const effectiveSelectedTagId =
+    selectedTagId !== null &&
+    tags.data &&
+    !tags.data.some((tag) => tag._id === selectedTagId)
+      ? null
+      : selectedTagId;
   const signals = useTaskyQuery(
     taskyApi.signals.listDashboard,
     taskyAuth.isAuthenticated
@@ -157,31 +167,20 @@ export default function SignalsPage() {
           now: queryNow,
           soonWindowMs: SIGNAL_SOON_WINDOW_MS,
           periodBounds,
-          ...(selectedTagId === null ? {} : { tagId: selectedTagId }),
+          ...(effectiveSelectedTagId === null
+            ? {}
+            : { tagId: effectiveSelectedTagId }),
         }
       : "skip",
   );
-  const tags = useTaskyQuery(
-    taskyApi.tags.list,
-    taskyAuth.isAuthenticated ? {} : "skip",
-  );
   const recordSignal = useTaskyMutation(taskyApi.signals.record);
-  useEffect(() => {
-    if (
-      selectedTagId !== null &&
-      tags.data &&
-      !tags.data.some((tag) => tag._id === selectedTagId)
-    ) {
-      setSelectedTagId(null);
-    }
-  }, [selectedTagId, tags.data]);
 
   const grouped = useMemo(() => {
-    const result: Array<{
+    const result: {
       attention: SignalAttention;
       items: SignalDashboardItem[];
       tagGroups: ReturnType<typeof groupSignalsByFirstTag>;
-    }> = [];
+    }[] = [];
     for (const attention of ATTENTION_ORDER) {
       const matching = (signals.data ?? []).filter(
         (signal) => signal.evaluation.attention === attention,
@@ -296,7 +295,7 @@ export default function SignalsPage() {
       >
         <TagFilterRow
           tags={tags.data ?? []}
-          selectedTagId={selectedTagId}
+          selectedTagId={effectiveSelectedTagId}
           onChange={setSelectedTagId}
         />
         <SegmentedControl

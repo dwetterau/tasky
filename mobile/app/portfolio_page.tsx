@@ -626,17 +626,13 @@ export default function PortfolioPage() {
       null
     );
   }, [allPortfoliosSelected, portfolios, selectedPortfolioId]);
-
-  useEffect(() => {
-    if (
-      allPortfoliosSelected ||
-      !selectedPortfolio ||
-      selectedPortfolioId === String(selectedPortfolio._id)
-    ) {
-      return;
-    }
+  if (
+    !allPortfoliosSelected &&
+    selectedPortfolio &&
+    selectedPortfolioId !== String(selectedPortfolio._id)
+  ) {
     setSelectedPortfolioId(String(selectedPortfolio._id));
-  }, [allPortfoliosSelected, selectedPortfolio, selectedPortfolioId]);
+  }
 
   const portfolioSelections = useMemo<PortfolioSelection[]>(() => {
     if (!portfolios) return [];
@@ -706,16 +702,16 @@ export default function PortfolioPage() {
       (!snapshotHistory && !historyError));
 
   const loadPortfolio = useCallback(
-    (selection: PortfolioSelection, force = false): Promise<void> => {
+    async (selection: PortfolioSelection, force = false): Promise<void> => {
       if (!taskyEnabled) return Promise.resolve();
       if (!force && portfolioCacheRef.current.has(selection.key)) {
         return Promise.resolve();
       }
-      const pending = portfolioRequestsRef.current.get(selection.key);
-      if (pending) {
-        return force
-          ? pending.then(() => loadPortfolio(selection, true))
-          : pending;
+      while (true) {
+        const pending = portfolioRequestsRef.current.get(selection.key);
+        if (!pending) break;
+        if (!force) return pending;
+        await pending;
       }
 
       setPortfolioLoading((current) => {
@@ -763,14 +759,16 @@ export default function PortfolioPage() {
   );
 
   const loadHistory = useCallback(
-    (selection: PortfolioSelection, force = false): Promise<void> => {
+    async (selection: PortfolioSelection, force = false): Promise<void> => {
       if (!taskyEnabled) return Promise.resolve();
       if (!force && historyCacheRef.current.has(selection.key)) {
         return Promise.resolve();
       }
-      const pending = historyRequestsRef.current.get(selection.key);
-      if (pending) {
-        return force ? pending.then(() => loadHistory(selection, true)) : pending;
+      while (true) {
+        const pending = historyRequestsRef.current.get(selection.key);
+        if (!pending) break;
+        if (!force) return pending;
+        await pending;
       }
 
       setHistoryLoading((current) => {

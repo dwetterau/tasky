@@ -20,7 +20,7 @@ import {
   weatherPayloadSchema,
   type StravaActivity,
 } from "@tasky/home-feed/widgets";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Markdown, {
   type RenderRules,
 } from "react-native-markdown-display";
@@ -890,7 +890,9 @@ function TaskyCard() {
   const router = useRouter();
   const taskyAuth = useTaskyAuth();
 
-  const closedAfter = useMemo(() => Date.now() - 32 * 24 * 60 * 60 * 1000, []);
+  const [closedAfter] = useState(
+    () => Date.now() - 32 * 24 * 60 * 60 * 1000,
+  );
   const captures = useTaskyQuery(
     taskyApi.captures.list,
     taskyAuth.isAuthenticated ? { includeCompleted: false } : "skip",
@@ -979,30 +981,33 @@ function PortfolioCard() {
     taskyAuth.isAuthenticated && taskyAuth.convexAuthenticated;
   const getPortfolioSnapshot = useTaskyAction(taskyApi.portfolio.getSnapshot);
   const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const refreshPortfolio = useCallback(async () => {
-    if (!taskyEnabled) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const snapshot = await getPortfolioSnapshot({ includePriceStatus: true });
-      setPortfolio(snapshot);
-    } catch (refreshError) {
-      setError(
-        refreshError instanceof Error
-          ? refreshError.message
-          : "Failed to load portfolio",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getPortfolioSnapshot, taskyEnabled]);
+  const isLoading = portfolio === null && error === null;
 
   useEffect(() => {
-    void refreshPortfolio();
-  }, [refreshPortfolio]);
+    if (!taskyEnabled) return;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) setError(null);
+    });
+    void getPortfolioSnapshot({ includePriceStatus: true })
+      .then((snapshot) => {
+        if (!active) return;
+        setPortfolio(snapshot);
+        setError(null);
+      })
+      .catch((refreshError: unknown) => {
+        if (!active) return;
+        setError(
+          refreshError instanceof Error
+            ? refreshError.message
+            : "Failed to load portfolio",
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [getPortfolioSnapshot, taskyEnabled]);
 
   if (!taskyAuth.isAuthenticated) {
     return null;

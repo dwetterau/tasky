@@ -16,7 +16,7 @@
     "postinstall": "node ./scripts/link-tasky-convex.js",
     "web": "expo start --web",
     "test": "jest --watchAll",
-    "lint": "expo lint",
+    "lint": "expo lint --max-warnings=0",
     "typecheck": "tsc --noEmit"
   },
   "jest": {

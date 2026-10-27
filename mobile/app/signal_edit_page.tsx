@@ -1,6 +1,6 @@
 import type { FunctionArgs } from "convex/server";
 import { type Href, Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -62,7 +62,7 @@ function goalModeForPeriod(
   return "monthly";
 }
 
-const GOAL_OPTIONS: Array<{ value: ActivityGoalMode; label: string }> = [
+const GOAL_OPTIONS: { value: ActivityGoalMode; label: string }[] = [
   { value: "tracking", label: "None" },
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
@@ -190,7 +190,7 @@ function Segmented<T extends string>({
   onChange,
 }: {
   value: T;
-  options: Array<{ value: T; label: string }>;
+  options: { value: T; label: string }[];
   onChange: (value: T) => void;
 }) {
   return (
@@ -252,7 +252,9 @@ export default function SignalEditPage() {
   const updateInventory = useTaskyMutation(taskyApi.signals.updateInventory);
   const setArchived = useTaskyMutation(taskyApi.signals.setArchived);
 
-  const initialized = useRef(false);
+  const [initializedSignalId, setInitializedSignalId] = useState<
+    SignalId | undefined
+  >(undefined);
   const [kind, setKind] = useState<SignalKind>("activity");
   const [name, setName] = useState("");
   const [tagIds, setTagIds] = useState<TaskyTagId[]>([]);
@@ -275,15 +277,15 @@ export default function SignalEditPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!signal.data || initialized.current) return;
-    initialized.current = true;
-    setName(signal.data.name);
-    setTagIds(signal.data.tagIds);
-    setKind(signal.data.model.kind);
-    if (signal.data.model.kind === "activity") {
-      const target = signal.data.model.target;
-      setMeasurementFields(signal.data.model.measurementFields ?? []);
+  if (signal.data && initializedSignalId !== signalId) {
+    const data = signal.data;
+    setInitializedSignalId(signalId);
+    setName(data.name);
+    setTagIds(data.tagIds);
+    setKind(data.model.kind);
+    if (data.model.kind === "activity") {
+      const target = data.model.target;
+      setMeasurementFields(data.model.measurementFields ?? []);
       if (target?.type === "period") {
         setActivityGoalMode(goalModeForPeriod(target.period));
         setTargetCount(String(target.targetCount));
@@ -301,16 +303,16 @@ export default function SignalEditPage() {
       } else {
         setActivityGoalMode("tracking");
       }
-      return;
+    } else {
+      setUnit(data.model.unit);
+      setInitialQuantity(String(data.model.confirmedQuantity));
+      setThresholdValue(String(data.model.threshold.value));
+      setComparison(data.model.threshold.comparison);
+      setFlowEnabled(data.model.flow !== undefined);
+      setFlowAmount(String(data.model.flow?.amount ?? ""));
+      setFlowEveryDays(String(data.model.flow?.everyDays ?? 1));
     }
-    setUnit(signal.data.model.unit);
-    setInitialQuantity(String(signal.data.model.confirmedQuantity));
-    setThresholdValue(String(signal.data.model.threshold.value));
-    setComparison(signal.data.model.threshold.comparison);
-    setFlowEnabled(signal.data.model.flow !== undefined);
-    setFlowAmount(String(signal.data.model.flow?.amount ?? ""));
-    setFlowEveryDays(String(signal.data.model.flow?.everyDays ?? 1));
-  }, [signal.data]);
+  }
 
   const handleSave = async () => {
     if (!taskyAuth.convexAuthenticated) {
