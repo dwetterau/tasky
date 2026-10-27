@@ -90,6 +90,31 @@ function preparing() {
   );
 }
 
+async function restorePublisher(
+  env: Env,
+  envelope: ReturnType<typeof exportSchema.parse>,
+) {
+  let displayName = "";
+  try {
+    const existing = editionSchema.safeParse(
+      await env.EDITIONS.get(`edition:${envelope.userId}`, "json"),
+    );
+    if (
+      existing.success &&
+      existing.data.feed.userId === envelope.userId
+    ) {
+      displayName = existing.data.feed.displayName;
+    }
+  } catch {
+    // A missing or unavailable prior edition should not block recovery.
+  }
+  await objectCall(env.PUBLISHERS, envelope.userId, "/enroll", {
+    userId: envelope.userId,
+    timezone: envelope.timezone,
+    displayName,
+  });
+}
+
 export async function handleRequest(
   request: Request,
   env: Env,
@@ -129,12 +154,26 @@ export async function handleRequest(
       );
       return json({ error: "Invalid export" }, 400);
     }
-    const result = await objectCall(
-      env.PUBLISHERS,
-      parsed.data.userId,
-      "/accept-tasky",
-      { body },
-    );
+    let result: unknown;
+    try {
+      result = await objectCall(
+        env.PUBLISHERS,
+        parsed.data.userId,
+        "/accept-tasky",
+        { body },
+      );
+    } catch (error) {
+      if (!(error instanceof HttpError) || error.status !== 403) throw error;
+      // A valid signed export can restore Durable Object enrollment after
+      // namespace or storage loss. The Convex side already authorized this user.
+      await restorePublisher(env, parsed.data);
+      result = await objectCall(
+        env.PUBLISHERS,
+        parsed.data.userId,
+        "/accept-tasky",
+        { body },
+      );
+    }
     return json(result, 202);
   }
   if (request.method === "GET" && url.pathname === "/auth/sign-in") {

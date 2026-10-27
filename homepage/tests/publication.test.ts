@@ -11,7 +11,7 @@ import { type Edition, type PortfolioPayload } from "@tasky/home-feed";
 import worker from "../src/index";
 import { objectCall, type Env } from "../src/env";
 import { signedHeaders } from "../src/transport";
-import { fixtureExport, fixtureWeather } from "./fixtures";
+import { fixtureEdition, fixtureExport, fixtureWeather } from "./fixtures";
 const env = bindings as unknown as Env;
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -49,9 +49,23 @@ async function tick() {
   await runDurableObjectAlarm(stub());
 }
 describe("durable ingestion and publication", () => {
-  it("rejects bad authentication, malformed bodies and unenrolled identities", async () => {
-    expect((await send()).status).toBe(403);
-    await enroll();
+  it("restores missing publisher state from a valid signed export", async () => {
+    await env.EDITIONS.put(
+      "edition:user-a",
+      JSON.stringify(fixtureEdition()),
+    );
+    expect((await send()).status).toBe(202);
+    await runInDurableObject(stub(), async (_instance, state) => {
+      expect(await state.storage.get("state")).toMatchObject({
+        userId: "user-a",
+        timezone: "America/New_York",
+        displayName: "Fixture",
+        sourceRevision: 1,
+        provisioned: true,
+      });
+    });
+  });
+  it("rejects bad authentication and malformed bodies", async () => {
     expect(
       (
         await send(
