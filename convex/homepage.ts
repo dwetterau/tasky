@@ -51,11 +51,11 @@ export const enroll = internalMutation({
     if (!user) throw new Error("Unknown homepage user");
     const ids = (process.env.HOMEPAGE_ALLOWED_USER_IDS ?? "")
       .split(",")
-      .map((value) => value.trim());
+      .map((value: string) => value.trim());
     const emails = (process.env.HOMEPAGE_ALLOWED_EMAILS ?? "")
       .toLowerCase()
       .split(",")
-      .map((value) => value.trim())
+      .map((value: string) => value.trim())
       .filter(Boolean);
     if (
       !ids.includes(args.userId) &&
