@@ -47,13 +47,17 @@ export class UserPublisher extends DurableObject<Env> {
       try {
         const path = new URL(request.url).pathname;
         let state = await this.ctx.storage.get<PublisherState>("state");
-        if (path === "/enroll") {
+        if (path === "/enroll" || path === "/restore") {
           const input = await request.json<Enrollment>();
           identitySchema.parse(input.userId);
           timezoneSchema.parse(input.timezone);
-          if (state && state.userId !== input.userId)
+          if (
+            path === "/enroll" &&
+            state &&
+            state.userId !== input.userId
+          )
             throw new HttpError(403, "Wrong publisher");
-          if (!state) {
+          if (!state || path === "/restore") {
             state = {
               userId: input.userId,
               timezone: input.timezone,

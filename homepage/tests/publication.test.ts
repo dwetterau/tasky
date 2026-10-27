@@ -49,7 +49,12 @@ async function tick() {
   await runDurableObjectAlarm(stub());
 }
 describe("durable ingestion and publication", () => {
-  it("restores missing publisher state from a valid signed export", async () => {
+  it("restores missing or mismatched publisher state from a valid signed export", async () => {
+    await objectCall(env.PUBLISHERS, "user-a", "/enroll", {
+      userId: "stale-user",
+      timezone: "UTC",
+      displayName: "Stale",
+    });
     await env.EDITIONS.put(
       "edition:user-a",
       JSON.stringify(fixtureEdition()),

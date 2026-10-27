@@ -108,7 +108,7 @@ async function restorePublisher(
   } catch {
     // A missing or unavailable prior edition should not block recovery.
   }
-  await objectCall(env.PUBLISHERS, envelope.userId, "/enroll", {
+  await objectCall(env.PUBLISHERS, envelope.userId, "/restore", {
     userId: envelope.userId,
     timezone: envelope.timezone,
     displayName,
