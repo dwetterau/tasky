@@ -192,35 +192,41 @@ export const deliveryResult = internalMutation({
     exportId: v.string(),
     ok: v.boolean(),
     permanent: v.boolean(),
+    revisionConflict: v.boolean(),
   },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row || row.pendingExportId !== args.exportId) return;
     const attempt = row.attempt + 1;
+    const retryWithFreshRevision = !args.ok && args.revisionConflict;
     const runQueuedExport = args.ok && row.exportRequested === true;
-    const delay = args.ok
-      ? runQueuedExport
-        ? 0
-        : interval()
-      : args.permanent
-        ? 3600_000
-        : Math.min(900_000, 10_000 * 2 ** Math.min(attempt, 7));
+    const delay = retryWithFreshRevision
+      ? Math.min(60_000, 1000 * 2 ** Math.min(row.attempt, 6))
+      : args.ok
+        ? runQueuedExport
+          ? 0
+          : interval()
+        : args.permanent
+          ? 3600_000
+          : Math.min(900_000, 10_000 * 2 ** Math.min(attempt, 7));
     await ctx.db.patch(row._id, {
       nextRunAt: Date.now() + delay,
       attempt: args.ok ? 0 : attempt,
       lastError: args.ok
         ? undefined
-        : args.permanent
-          ? "configuration"
-          : "delivery_failed",
-      ...(args.ok
+        : retryWithFreshRevision
+          ? "revision_conflict"
+          : args.permanent
+            ? "configuration"
+            : "delivery_failed",
+      ...(args.ok || retryWithFreshRevision
         ? {
             pendingBody: undefined,
             pendingExportId: undefined,
-            lastSuccessAt: Date.now(),
-            ...(runQueuedExport ? { exportRequested: undefined } : {}),
+            exportRequested: undefined,
           }
         : {}),
+      ...(args.ok ? { lastSuccessAt: Date.now() } : {}),
     });
     await ctx.scheduler.runAfter(delay, internal.homepage.prepare, {
       id: row._id,
@@ -234,6 +240,7 @@ export const deliver = internalAction({
     if (!row?.enabled || !row.pendingBody || !row.pendingExportId) return;
     let ok = false;
     let permanent = false;
+    let revisionConflict = false;
     try {
       const home = new URL(process.env.HOMEPAGE_ORIGIN!);
       if (
@@ -254,6 +261,7 @@ export const deliver = internalAction({
         signal: AbortSignal.timeout(20_000),
       });
       ok = response.ok;
+      revisionConflict = response.status === 409;
       permanent =
         response.status >= 400 &&
         response.status < 500 &&
@@ -267,6 +275,7 @@ export const deliver = internalAction({
       exportId: row.pendingExportId,
       ok,
       permanent,
+      revisionConflict,
     });
   },
 });

@@ -129,6 +129,7 @@ describe("homepage price sync completion", () => {
       exportId: "a-1",
       ok: true,
       permanent: false,
+      revisionConflict: false,
     });
     const ready = await t.query(internal.homepage.pending, { id });
     expect(ready!.pendingBody).toBeUndefined();

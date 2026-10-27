@@ -127,19 +127,22 @@ describe("homepage projection and durable outbox", () => {
       id,
       exportId: first!.pendingExportId!,
       ok: false,
-      permanent: false,
+      permanent: true,
+      revisionConflict: false,
     });
     await t.run((ctx) => ctx.db.patch(id, { nextRunAt: 0 }));
     await t.mutation(internal.homepage.freeze, { id });
     const retry = await t.query(internal.homepage.pending, { id });
     expect(retry!.pendingBody).toBe(first!.pendingBody);
     expect(retry!.revision).toBe(1);
+    expect(retry!.lastError).toBe("configuration");
     const deliveredAt = Date.now();
     await t.mutation(internal.homepage.deliveryResult, {
       id,
       exportId: first!.pendingExportId!,
       ok: true,
       permanent: false,
+      revisionConflict: false,
     });
     const delivered = await t.query(internal.homepage.pending, { id });
     expect(delivered!.nextRunAt).toBeGreaterThanOrEqual(deliveredAt + 600_000);
@@ -169,10 +172,56 @@ describe("homepage projection and durable outbox", () => {
       exportId: first!.pendingExportId!,
       ok: true,
       permanent: false,
+      revisionConflict: false,
     });
     expect(
       (await t.query(internal.homepage.pending, { id }))!.pendingExportId,
     ).toBe(next!.pendingExportId);
+  });
+  it("abandons a conflicted envelope and advances to a fresh revision", async () => {
+    const t = convexTest(schema, modules);
+    const id = await t.run((ctx) =>
+      ctx.db.insert("homepageEnrollments", {
+        userId: "a",
+        timezone: "America/New_York",
+        enabled: true,
+        revision: 1,
+        nextRunAt: 0,
+        attempt: 0,
+        pendingBody: "conflicted-envelope",
+        pendingExportId: "a-1",
+        lastSuccessAt: 123,
+        exportRequested: true,
+      }),
+    );
+
+    const conflictAt = Date.now();
+    await t.mutation(internal.homepage.deliveryResult, {
+      id,
+      exportId: "a-1",
+      ok: false,
+      permanent: true,
+      revisionConflict: true,
+    });
+    const recovering = await t.query(internal.homepage.pending, { id });
+    expect(recovering).toMatchObject({
+      revision: 1,
+      attempt: 1,
+      lastError: "revision_conflict",
+      lastSuccessAt: 123,
+    });
+    expect(recovering!.pendingBody).toBeUndefined();
+    expect(recovering!.pendingExportId).toBeUndefined();
+    expect(recovering!.exportRequested).toBeUndefined();
+    expect(recovering!.nextRunAt).toBeGreaterThanOrEqual(conflictAt + 1000);
+    expect(recovering!.nextRunAt).toBeLessThanOrEqual(Date.now() + 1000);
+
+    await t.run((ctx) => ctx.db.patch(id, { nextRunAt: 0 }));
+    await t.mutation(internal.homepage.freeze, { id });
+    const fresh = await t.query(internal.homepage.pending, { id });
+    expect(fresh!.revision).toBe(2);
+    expect(fresh!.pendingExportId).toBe("a-2");
+    expect(fresh!.pendingBody).not.toBe("conflicted-envelope");
   });
   it("bounds output text and reads", async () => {
     const t = convexTest(schema, modules);
