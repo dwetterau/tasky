@@ -92,13 +92,24 @@ function renderPortfolioHistory(data: NamedPortfolio) {
   return /* HTML */ `<figure
     class="portfolio-history"
     data-portfolio-history
+    data-history-range="3m"
+    data-history-name="${e(data.name)}"
     data-history-start="${e(data.history!.startDate)}"
     data-history-values="${e(serializedValues)}"
   >
     <figcaption>
-      <span>Value · ${historyDays} ${historyDays === 1 ? "day" : "days"}</span>
-      <strong class="${toneClass}">${e(changeLabel)}</strong>
+      <span data-history-summary>Value · ${historyDays} ${historyDays === 1 ? "day" : "days"}</span>
+      <strong class="${toneClass}" data-history-change>${e(changeLabel)}</strong>
     </figcaption>
+    <div
+      class="portfolio-history-ranges"
+      role="tablist"
+      aria-label="Portfolio history range"
+    >
+      <button type="button" role="tab" data-portfolio-history-range="1w" aria-selected="false">1W</button>
+      <button type="button" role="tab" data-portfolio-history-range="1m" aria-selected="false">1M</button>
+      <button type="button" role="tab" data-portfolio-history-range="3m" aria-selected="true">3M</button>
+    </div>
     <svg
       viewBox="0 0 ${width} ${height}"
       preserveAspectRatio="none"
@@ -119,8 +130,8 @@ function renderPortfolioHistory(data: NamedPortfolio) {
       <span data-history-tooltip-change></span>
     </div>
     <div class="portfolio-history-dates" aria-label="${e(rangeLabel)}">
-      <time datetime="${e(first.date)}">${e(chartDate(first.date))}</time>
-      <time datetime="${e(last.date)}">${e(chartDate(last.date))}</time>
+      <time data-history-start-date datetime="${e(first.date)}">${e(chartDate(first.date))}</time>
+      <time data-history-end-date datetime="${e(last.date)}">${e(chartDate(last.date))}</time>
     </div>
   </figure>`;
 }

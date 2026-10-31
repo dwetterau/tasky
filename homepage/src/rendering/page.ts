@@ -846,6 +846,31 @@ summary {
   letter-spacing: 0;
   text-transform: none;
 }
+.portfolio-history-ranges {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+  font:
+    10px system-ui,
+    sans-serif;
+}
+.portfolio-history-ranges button {
+  min-width: 34px;
+  padding: 3px 7px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--muted);
+}
+.portfolio-history-ranges button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.portfolio-history-ranges button[aria-selected="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
 .portfolio-history svg {
   display: block;
   width: 100%;
@@ -1246,9 +1271,12 @@ export const browserScript = `
 (() => {
   const portfolioStorageKey = "tasky:selected-portfolio";
   const portfolioSortStorageKey = "tasky:portfolio-sort";
+  const portfolioHistoryRangeStorageKey = "tasky:portfolio-history-range";
   const portfolioSortKeys = ["ticker", "day-dollar", "day-percent", "value", "total-percent"];
+  const portfolioHistoryRanges = { "1w": 7, "1m": 30, "3m": 90 };
   let portfolioSortKey = "day-dollar";
   let portfolioSortDirection = "desc";
+  let portfolioHistoryRange = "3m";
   try {
     const savedSort = (localStorage.getItem(portfolioSortStorageKey) ?? "").split(":");
     if (
@@ -1258,6 +1286,11 @@ export const browserScript = `
       portfolioSortKey = savedSort[0];
       portfolioSortDirection = savedSort[1];
     }
+    const savedHistoryRange = localStorage.getItem(
+      portfolioHistoryRangeStorageKey,
+    );
+    if (savedHistoryRange in portfolioHistoryRanges)
+      portfolioHistoryRange = savedHistoryRange;
   } catch {}
   const applyPortfolioSort = (table, key, direction) => {
     const rows = Array.from(table.tBodies[0].rows);
@@ -1309,6 +1342,9 @@ export const browserScript = `
             portfolioSortKey,
             portfolioSortDirection,
           );
+        panel
+          .querySelectorAll("[data-portfolio-history]")
+          .forEach((figure) => setPortfolioHistoryRange(figure, portfolioHistoryRange));
       }
     });
     try {
@@ -1385,6 +1421,7 @@ export const browserScript = `
       figure,
       start,
       values,
+      allIndexes: indexes,
       indexes,
       firstIndex: indexes[0],
       lastIndex: indexes[indexes.length - 1],
@@ -1474,6 +1511,121 @@ export const browserScript = `
       .querySelector("[data-history-tooltip]")
       ?.setAttribute("hidden", "");
     delete chart.dataset.historyIndex;
+  };
+  const setPortfolioHistoryRange = (figure, requestedRange) => {
+    if (!(figure instanceof HTMLElement)) return;
+    const chart = figure.querySelector("[data-history-chart]");
+    if (!(chart instanceof SVGSVGElement)) return;
+    const history = readPortfolioHistory(chart);
+    const rangeDays = portfolioHistoryRanges[requestedRange];
+    if (!history || !rangeDays) return;
+    hidePortfolioHistoryPoint(chart);
+    const cutoffIndex =
+      history.allIndexes[history.allIndexes.length - 1] - (rangeDays - 1);
+    const indexes = history.allIndexes.filter((index) => index >= cutoffIndex);
+    if (indexes.length === 0) return;
+    const values = indexes.map((index) => history.values[index]);
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    const rawRange = maximum - minimum;
+    const padding =
+      rawRange > 0 ? rawRange * 0.08 : Math.max(maximum * 0.02, 1);
+    history.indexes = indexes;
+    history.firstIndex = indexes[0];
+    history.lastIndex = indexes[indexes.length - 1];
+    history.yMinimum = minimum - padding;
+    history.yRange = maximum - minimum + padding * 2;
+    const width = chart.viewBox.baseVal.width || 640;
+    const height = chart.viewBox.baseVal.height || 144;
+    const xRange = Math.max(history.lastIndex - history.firstIndex, 1);
+    const coordinates = indexes.map((index) => ({
+      x:
+        indexes.length === 1
+          ? width / 2
+          : ((index - history.firstIndex) / xRange) * width,
+      y:
+        height -
+        ((history.values[index] - history.yMinimum) / history.yRange) * height,
+    }));
+    const line = coordinates
+      .map(
+        ({ x, y }, index) =>
+          (index === 0 ? "M" : "L") +
+          x.toFixed(1) +
+          "," +
+          y.toFixed(1),
+      )
+      .join(" ");
+    const area = line + " L" + width + "," + height + " L0," + height + " Z";
+    figure.querySelector(".portfolio-history-line")?.setAttribute("d", line);
+    figure.querySelector(".portfolio-history-area")?.setAttribute("d", area);
+    const end = figure.querySelector(".portfolio-history-end");
+    if (end) {
+      end.setAttribute("cx", coordinates[coordinates.length - 1].x.toFixed(1));
+      end.setAttribute("cy", coordinates[coordinates.length - 1].y.toFixed(1));
+    }
+    const firstValue = values[0];
+    const lastValue = values[values.length - 1];
+    const change = lastValue - firstValue;
+    const changePercent =
+      firstValue === 0 ? null : (change / firstValue) * 100;
+    const changeLabel =
+      (change >= 0 ? "+" : "−") +
+      historyMoney.format(Math.abs(change)) +
+      (changePercent === null
+        ? ""
+        : " (" +
+          (changePercent >= 0 ? "+" : "") +
+          changePercent.toFixed(2) +
+          "%)");
+    const firstDate = historyDateAt(history.start, history.firstIndex);
+    const lastDate = historyDateAt(history.start, history.lastIndex);
+    const historyDays = history.lastIndex - history.firstIndex + 1;
+    const summary = figure.querySelector("[data-history-summary]");
+    if (summary)
+      summary.textContent =
+        "Value · " + historyDays + " " + (historyDays === 1 ? "day" : "days");
+    const changeElement = figure.querySelector("[data-history-change]");
+    if (changeElement) {
+      changeElement.textContent = changeLabel;
+      changeElement.classList.toggle("positive", change > 0);
+      changeElement.classList.toggle("warning", change < 0);
+    }
+    const startDate = figure.querySelector("[data-history-start-date]");
+    const endDate = figure.querySelector("[data-history-end-date]");
+    if (startDate instanceof HTMLTimeElement) {
+      startDate.dateTime = firstDate.toISOString().slice(0, 10);
+      startDate.textContent = historyDate.format(firstDate);
+    }
+    if (endDate instanceof HTMLTimeElement) {
+      endDate.dateTime = lastDate.toISOString().slice(0, 10);
+      endDate.textContent = historyDate.format(lastDate);
+    }
+    const dateLabel =
+      historyDate.format(firstDate) + " to " + historyDate.format(lastDate);
+    startDate?.parentElement?.setAttribute("aria-label", dateLabel);
+    chart.setAttribute(
+      "aria-label",
+      (figure.dataset.historyName || "Portfolio") +
+        " portfolio value from " +
+        historyDate.format(firstDate) +
+        ", " +
+        historyMoney.format(firstValue) +
+        ", to " +
+        historyDate.format(lastDate) +
+        ", " +
+        historyMoney.format(lastValue) +
+        ". Use the arrow keys to inspect daily values.",
+    );
+    figure.dataset.historyRange = requestedRange;
+    figure
+      .querySelectorAll("[data-portfolio-history-range]")
+      .forEach((button) => {
+        button.setAttribute(
+          "aria-selected",
+          String(button.getAttribute("data-portfolio-history-range") === requestedRange),
+        );
+      });
   };
   const showPortfolioHistoryAtPointer = (chart, clientX) => {
     const history = readPortfolioHistory(chart);
@@ -1592,6 +1744,24 @@ export const browserScript = `
     const totalToggle = element?.closest("[data-portfolio-total-toggle]");
     if (totalToggle instanceof HTMLButtonElement) {
       setPortfolioTotalsVisible(!portfolioTotalsVisible);
+      return;
+    }
+    const historyRange = element?.closest("[data-portfolio-history-range]");
+    if (historyRange instanceof HTMLButtonElement) {
+      const requestedRange = historyRange.dataset.portfolioHistoryRange;
+      if (requestedRange && requestedRange in portfolioHistoryRanges) {
+        portfolioHistoryRange = requestedRange;
+        setPortfolioHistoryRange(
+          historyRange.closest("[data-portfolio-history]"),
+          requestedRange,
+        );
+        try {
+          localStorage.setItem(
+            portfolioHistoryRangeStorageKey,
+            portfolioHistoryRange,
+          );
+        } catch {}
+      }
       return;
     }
     const portfolioTab = element?.closest("[data-portfolio-tab]");

@@ -502,6 +502,15 @@ describe("durable ingestion and publication", () => {
     expect(edition!.html).toContain("Value · 2 days");
     expect(edition!.html).toContain('class="portfolio-history-line"');
     expect(edition!.html).toContain('data-history-values="1690,1750"');
+    expect(edition!.html).toContain(
+      'data-portfolio-history-range="1w" aria-selected="false">1W</button>',
+    );
+    expect(edition!.html).toContain(
+      'data-portfolio-history-range="1m" aria-selected="false">1M</button>',
+    );
+    expect(edition!.html).toContain(
+      'data-portfolio-history-range="3m" aria-selected="true">3M</button>',
+    );
     expect(edition!.html).toContain("data-history-cursor");
     expect(edition!.html).toContain("data-history-tooltip");
     expect(edition!.html).toContain('data-history-chart');

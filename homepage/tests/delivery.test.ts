@@ -43,6 +43,8 @@ describe("private delivery", () => {
     expect(script).toContain('addEventListener("pointermove"');
     expect(script).toContain('"ArrowLeft", "ArrowRight", "Home", "End"');
     expect(script).toContain("data-history-tooltip-change");
+    expect(script).toContain("portfolioHistoryRangeStorageKey");
+    expect(() => new Function(script)).not.toThrow();
     const legacy = await handleRequest(request("/assets/home.js?v=old"), env);
     expect(legacy.headers.get("cache-control")).toBe(
       "public, max-age=0, must-revalidate",
