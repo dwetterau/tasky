@@ -59,6 +59,30 @@ function formatPercent(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function formatCompactSignedCurrency(value: number): string {
+  const absoluteValue = Math.abs(value);
+  const maximumFractionDigits =
+    absoluteValue < 10 ? 2 : absoluteValue < 100 ? 1 : 0;
+  const formatted = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: absoluteValue >= 1_000 ? "compact" : "standard",
+    maximumFractionDigits,
+  }).format(absoluteValue);
+  return `${value >= 0 ? "+" : "-"}${formatted}`;
+}
+
+function formatReturnLabel(
+  returnPercent: number | null,
+  dayReturn?: number | null,
+): string {
+  const percentLabel = formatPercent(returnPercent);
+  if (returnPercent === null || dayReturn == null) {
+    return percentLabel;
+  }
+  return `${percentLabel} (${formatCompactSignedCurrency(dayReturn)})`;
+}
+
 function shiftDate(date: string, horizon: Exclude<Horizon, "1d" | "total">) {
   const shifted = new Date(`${date}T12:00:00.000Z`);
   if (horizon === "1w") shifted.setUTCDate(shifted.getUTCDate() - 7);
@@ -77,15 +101,21 @@ function PortfolioTile(node: TreemapNode) {
   const ticker = typeof node.ticker === "string" ? node.ticker : node.name;
   const returnPercent =
     typeof node.returnPercent === "number" ? node.returnPercent : null;
+  const dayReturn =
+    typeof node.dayReturn === "number" ? node.dayReturn : undefined;
   const fill = typeof node.fill === "string" ? node.fill : "#475569";
   const value = typeof node.value === "number" ? node.value : 0;
-  const returnLabel = formatPercent(returnPercent);
+  const returnLabel = formatReturnLabel(returnPercent, dayReturn);
   const valueLabel = formatCurrency(value);
+  const returnFontSize = Math.min(
+    12,
+    Math.max(9, (node.width - 16) / (returnLabel.length * 0.58)),
+  );
   const showTicker =
     node.width >= Math.max(42, ticker.length * 9 + 16) && node.height >= 24;
   const showReturn =
     showTicker &&
-    node.width >= returnLabel.length * 7 + 16 &&
+    node.width >= returnLabel.length * 5.25 + 16 &&
     node.height >= 46;
   const showValue =
     showReturn &&
@@ -95,7 +125,7 @@ function PortfolioTile(node: TreemapNode) {
   return (
     <g>
       <title>
-        {ticker}: {formatCurrency(value)} · {formatPercent(returnPercent)}
+        {ticker}: {formatCurrency(value)} · {returnLabel}
       </title>
       <rect
         x={node.x + 0.5}
@@ -128,7 +158,7 @@ function PortfolioTile(node: TreemapNode) {
           textAnchor="middle"
           dominantBaseline="middle"
           fill="rgba(255,255,255,0.92)"
-          fontSize={12}
+          fontSize={returnFontSize}
           fontWeight={650}
           pointerEvents="none"
         >
@@ -346,9 +376,10 @@ function PortfolioContent() {
         ticker: holding.ticker || "Cash",
         value: holding.currentValue,
         returnPercent,
+        dayReturn: horizon === "1d" ? holding.dayReturn : null,
         fill: colorForReturn(returnPercent),
       })),
-    [holdingsWithReturns],
+    [holdingsWithReturns, horizon],
   );
 
   const weightedReturn = useMemo(() => {
@@ -663,7 +694,10 @@ function PortfolioContent() {
                       : "text-red-600 dark:text-red-400"
                   }`}
                 >
-                  {formatPercent(weightedReturn)}
+                  {formatReturnLabel(
+                    weightedReturn,
+                    horizon === "1d" ? snapshot.summary.dayReturn : null,
+                  )}
                 </p>
                 <p className="mt-1 text-xs text-(--muted)">
                   {horizonDescription}
@@ -768,7 +802,12 @@ function PortfolioContent() {
                           : "text-red-600 dark:text-red-400"
                       }`}
                     >
-                      {formatPercent(activeEntry.returnPercent)}
+                      {formatReturnLabel(
+                        activeEntry.returnPercent,
+                        horizon === "1d"
+                          ? activeEntry.holding.dayReturn
+                          : null,
+                      )}
                     </p>
                   </div>
                 </div>
