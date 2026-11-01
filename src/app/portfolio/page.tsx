@@ -74,13 +74,13 @@ function formatCompactSignedCurrency(value: number): string {
 
 function formatReturnLabel(
   returnPercent: number | null,
-  dayReturn?: number | null,
+  returnAmount?: number | null,
 ): string {
   const percentLabel = formatPercent(returnPercent);
-  if (returnPercent === null || dayReturn == null) {
+  if (returnPercent === null || returnAmount == null) {
     return percentLabel;
   }
-  return `${percentLabel} (${formatCompactSignedCurrency(dayReturn)})`;
+  return `${percentLabel} (${formatCompactSignedCurrency(returnAmount)})`;
 }
 
 function shiftDate(date: string, horizon: Exclude<Horizon, "1d" | "total">) {
@@ -101,11 +101,11 @@ function PortfolioTile(node: TreemapNode) {
   const ticker = typeof node.ticker === "string" ? node.ticker : node.name;
   const returnPercent =
     typeof node.returnPercent === "number" ? node.returnPercent : null;
-  const dayReturn =
-    typeof node.dayReturn === "number" ? node.dayReturn : undefined;
+  const returnAmount =
+    typeof node.returnAmount === "number" ? node.returnAmount : undefined;
   const fill = typeof node.fill === "string" ? node.fill : "#475569";
   const value = typeof node.value === "number" ? node.value : 0;
-  const returnLabel = formatReturnLabel(returnPercent, dayReturn);
+  const returnLabel = formatReturnLabel(returnPercent, returnAmount);
   const valueLabel = formatCurrency(value);
   const returnFontSize = Math.min(
     12,
@@ -337,14 +337,25 @@ function PortfolioContent() {
       .filter((holding) => holding.currentValue > 0)
       .map((holding) => {
         let returnPercent: number | null;
+        let returnAmount: number | null;
+        let returnBasis: number | null;
         if (horizon === "1d") {
           returnPercent = holding.dayReturnPercent ?? null;
+          returnAmount = holding.dayReturn ?? null;
+          returnBasis =
+            returnAmount === null ? null : holding.currentValue - returnAmount;
         } else if (horizon === "total") {
           returnPercent = holding.gainLossPercent;
+          returnAmount = holding.gainLoss;
+          returnBasis = holding.costBasis;
         } else if (!holding.ticker) {
           returnPercent = 0;
+          returnAmount = 0;
+          returnBasis = holding.currentValue;
         } else {
-          const baseline = baselineByTicker.get(holding.ticker);
+          const baseline = baselineByTicker.get(
+            holding.ticker.trim().toUpperCase(),
+          );
           const currentPrice =
             holding.currentPrice ??
             (holding.shares > 0
@@ -354,12 +365,25 @@ function PortfolioContent() {
             baseline && baseline.quantity > 0
               ? baseline.value / baseline.quantity
               : null;
-          returnPercent =
-            currentPrice !== null && baselinePrice !== null && baselinePrice > 0
-              ? ((currentPrice - baselinePrice) / baselinePrice) * 100
-              : null;
+          if (
+            currentPrice !== null &&
+            baselinePrice !== null &&
+            baselinePrice > 0
+          ) {
+            // Apply the price move to today's shares so quantity changes are
+            // not themselves counted as return and dollars match the percent.
+            returnBasis = baselinePrice * holding.shares;
+            returnAmount =
+              (currentPrice - baselinePrice) * holding.shares;
+            returnPercent =
+              returnBasis > 0 ? (returnAmount / returnBasis) * 100 : null;
+          } else {
+            returnPercent = null;
+            returnAmount = null;
+            returnBasis = null;
+          }
         }
-        return { holding, returnPercent };
+        return { holding, returnPercent, returnAmount, returnBasis };
       })
       .sort(
         (a, b) =>
@@ -370,37 +394,53 @@ function PortfolioContent() {
 
   const treemapData = useMemo(
     () =>
-      holdingsWithReturns.map(({ holding, returnPercent }) => ({
+      holdingsWithReturns.map(({ holding, returnPercent, returnAmount }) => ({
         id: holding.id,
         name: holding.ticker || "Cash",
         ticker: holding.ticker || "Cash",
         value: holding.currentValue,
         returnPercent,
-        dayReturn: horizon === "1d" ? holding.dayReturn : null,
+        returnAmount,
         fill: colorForReturn(returnPercent),
       })),
-    [holdingsWithReturns, horizon],
+    [holdingsWithReturns],
   );
 
-  const weightedReturn = useMemo(() => {
-    if (snapshot?.status !== "ok") return null;
-    if (horizon === "1d") return snapshot.summary.dayReturnPercent;
-    if (horizon === "total") return snapshot.summary.gainLossPercent;
+  const selectedReturn = useMemo(() => {
+    if (snapshot?.status !== "ok") {
+      return { percent: null, amount: null };
+    }
+    if (horizon === "1d") {
+      return {
+        percent: snapshot.summary.dayReturnPercent,
+        amount: snapshot.summary.dayReturn,
+      };
+    }
+    if (horizon === "total") {
+      return {
+        percent: snapshot.summary.gainLossPercent,
+        amount: snapshot.summary.gainLoss,
+      };
+    }
     const included = holdingsWithReturns.filter(
-      (entry): entry is typeof entry & { returnPercent: number } =>
-        entry.returnPercent !== null,
+      (
+        entry,
+      ): entry is typeof entry & {
+        returnAmount: number;
+        returnBasis: number;
+      } => entry.returnAmount !== null && entry.returnBasis !== null,
     );
-    const weight = included.reduce(
-      (sum, entry) => sum + entry.holding.currentValue,
+    const amount = included.reduce(
+      (sum, entry) => sum + entry.returnAmount,
       0,
     );
-    return weight > 0
-      ? included.reduce(
-          (sum, entry) =>
-            sum + entry.returnPercent * entry.holding.currentValue,
-          0,
-        ) / weight
-      : null;
+    const basis = included.reduce((sum, entry) => sum + entry.returnBasis, 0);
+    return included.length > 0
+      ? {
+          percent: basis > 0 ? (amount / basis) * 100 : null,
+          amount,
+        }
+      : { percent: null, amount: null };
   }, [holdingsWithReturns, horizon, snapshot]);
 
   const activeEntry =
@@ -689,14 +729,14 @@ function PortfolioContent() {
                 </p>
                 <p
                   className={`mt-1 text-xl font-bold tabular-nums ${
-                    (weightedReturn ?? 0) >= 0
+                    (selectedReturn.percent ?? 0) >= 0
                       ? "text-emerald-600 dark:text-emerald-400"
                       : "text-red-600 dark:text-red-400"
                   }`}
                 >
                   {formatReturnLabel(
-                    weightedReturn,
-                    horizon === "1d" ? snapshot.summary.dayReturn : null,
+                    selectedReturn.percent,
+                    selectedReturn.amount,
                   )}
                 </p>
                 <p className="mt-1 text-xs text-(--muted)">
@@ -804,9 +844,7 @@ function PortfolioContent() {
                     >
                       {formatReturnLabel(
                         activeEntry.returnPercent,
-                        horizon === "1d"
-                          ? activeEntry.holding.dayReturn
-                          : null,
+                        activeEntry.returnAmount,
                       )}
                     </p>
                   </div>

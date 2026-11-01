@@ -30,6 +30,7 @@ type MapHolding = {
   shares: number;
   currentPrice: number | null;
   currentValue: number;
+  gainLoss: number;
   gainLossPercent: number;
   dayReturn?: number | null;
   dayReturnPercent?: number | null;
@@ -47,6 +48,7 @@ type HistoryPoint = {
 type MapEntry = {
   holding: MapHolding;
   returnPercent: number | null;
+  returnAmount: number | null;
 };
 
 const HORIZONS: { value: Horizon; label: string }[] = [
@@ -106,14 +108,13 @@ function formatCompactSignedCurrency(value: number): string {
 
 function formatReturnLabel(
   returnPercent: number | null,
-  horizon: Horizon,
-  dayReturn: number | null | undefined,
+  returnAmount: number | null | undefined,
 ): string {
   const percentLabel = formatPercent(returnPercent);
-  if (horizon !== "1d" || returnPercent === null || dayReturn == null) {
+  if (returnPercent === null || returnAmount == null) {
     return percentLabel;
   }
-  return `${percentLabel} (${formatCompactSignedCurrency(dayReturn)})`;
+  return `${percentLabel} (${formatCompactSignedCurrency(returnAmount)})`;
 }
 
 function shiftDate(
@@ -178,14 +179,20 @@ export function PortfolioMap({
       .filter((holding) => holding.currentValue > 0)
       .map((holding) => {
         let returnPercent: number | null;
+        let returnAmount: number | null;
         if (horizon === "1d") {
           returnPercent = holding.dayReturnPercent ?? null;
+          returnAmount = holding.dayReturn ?? null;
         } else if (horizon === "total") {
           returnPercent = holding.gainLossPercent;
+          returnAmount = holding.gainLoss;
         } else if (!holding.ticker) {
           returnPercent = 0;
+          returnAmount = 0;
         } else {
-          const baseline = baselineByTicker.get(holding.ticker);
+          const baseline = baselineByTicker.get(
+            holding.ticker.trim().toUpperCase(),
+          );
           const currentPrice =
             holding.currentPrice ??
             (holding.shares > 0
@@ -195,12 +202,23 @@ export function PortfolioMap({
             baseline && baseline.quantity > 0
               ? baseline.value / baseline.quantity
               : null;
-          returnPercent =
-            currentPrice !== null && baselinePrice !== null && baselinePrice > 0
-              ? ((currentPrice - baselinePrice) / baselinePrice) * 100
-              : null;
+          if (
+            currentPrice !== null &&
+            baselinePrice !== null &&
+            baselinePrice > 0
+          ) {
+            // Apply the price move to today's shares so quantity changes are
+            // not themselves counted as return and dollars match the percent.
+            returnAmount =
+              (currentPrice - baselinePrice) * holding.shares;
+            returnPercent =
+              ((currentPrice - baselinePrice) / baselinePrice) * 100;
+          } else {
+            returnPercent = null;
+            returnAmount = null;
+          }
         }
-        return { holding, returnPercent };
+        return { holding, returnPercent, returnAmount };
       })
       .sort(
         (a, b) =>
@@ -298,8 +316,7 @@ export function PortfolioMap({
           const ticker = item.holding.ticker || "Cash";
           const returnLabel = formatReturnLabel(
             item.returnPercent,
-            horizon,
-            item.holding.dayReturn,
+            item.returnAmount,
           );
           const valueLabel = formatCurrency(item.holding.currentValue);
           const showTicker =
@@ -396,8 +413,7 @@ export function PortfolioMap({
               label="Return"
               value={formatReturnLabel(
                 selectedEntry.returnPercent,
-                horizon,
-                selectedEntry.holding.dayReturn,
+                selectedEntry.returnAmount,
               )}
             />
           </View>
