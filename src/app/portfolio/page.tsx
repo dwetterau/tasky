@@ -59,6 +59,13 @@ function formatPercent(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function formatSnapshotDateTime(value: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 function formatCompactSignedCurrency(value: number): string {
   const absoluteValue = Math.abs(value);
   const maximumFractionDigits =
@@ -577,17 +584,41 @@ function PortfolioContent() {
               horizon.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void handleSync()}
-            disabled={isSyncing}
-            className="inline-flex min-w-32 items-center justify-center gap-2 self-start rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-(--accent-hover) disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSyncing ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+          <div className="flex flex-col items-start gap-1.5 xl:items-end">
+            <button
+              type="button"
+              onClick={() => void handleSync()}
+              disabled={isSyncing}
+              className="inline-flex min-w-32 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-(--accent-hover) disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSyncing ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : null}
+              {isSyncing ? "Syncing…" : "Sync snapshots"}
+            </button>
+            {snapshot?.status === "ok" ? (
+              <p className="text-xs text-(--muted)">
+                {snapshot.summary.snapshotCapturedAt === null ? (
+                  "Snapshot time unavailable"
+                ) : (
+                  <>
+                    Snapshot captured{" "}
+                    <time
+                      dateTime={new Date(
+                        snapshot.summary.snapshotCapturedAt,
+                      ).toISOString()}
+                      title="When the displayed portfolio snapshot was captured"
+                      className="font-medium text-foreground"
+                    >
+                      {formatSnapshotDateTime(
+                        snapshot.summary.snapshotCapturedAt,
+                      )}
+                    </time>
+                  </>
+                )}
+              </p>
             ) : null}
-            {isSyncing ? "Syncing…" : "Sync snapshots"}
-          </button>
+          </div>
         </div>
 
         <section className="mb-4 rounded-xl border border-(--card-border) bg-(--card-bg) p-4">

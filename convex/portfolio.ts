@@ -1028,6 +1028,7 @@ export const getSnapshot = action({
       gainLoss: v.number(),
       gainLossPercent: v.number(),
       holdingsCount: v.number(),
+      snapshotCapturedAt: v.union(v.number(), v.null()),
       latestPriceDate: v.union(v.string(), v.null()),
       dayReturnDate: v.union(v.string(), v.null()),
       dayReturn: v.union(v.number(), v.null()),
@@ -1083,6 +1084,7 @@ export async function readPortfolioSnapshot(
         gainLoss: 0,
         gainLossPercent: 0,
         holdingsCount: 0,
+        snapshotCapturedAt: null,
         latestPriceDate: null,
         dayReturnDate: null,
         dayReturn: null,
@@ -1101,6 +1103,7 @@ export async function readPortfolioSnapshot(
       records.flatMap((record) => linkedRecordIds(record.fields.Account)),
     );
     let latestSnapshotDate: string | null = null;
+    let latestSnapshotCapturedAt: number | null = null;
     let previousSnapshotDate: string | null = null;
     let previousPortfolioValue: number | null = null;
     const previousValuesByTicker = new Map<string, number>();
@@ -1117,6 +1120,11 @@ export async function readPortfolioSnapshot(
         const latestDay = completeDays[completeDays.length - 1];
         const previousDay = completeDays[completeDays.length - 2];
         latestSnapshotDate = latestDay?.date ?? null;
+        latestSnapshotCapturedAt = latestDay
+          ? Math.max(
+              ...latestDay.snapshots.map((snapshot) => snapshot.capturedAt),
+            )
+          : null;
         previousSnapshotDate = previousDay?.date ?? null;
         const latestPositions =
           latestDay?.snapshots.flatMap((snapshot) => snapshot.positions) ?? [];
@@ -1220,6 +1228,7 @@ export async function readPortfolioSnapshot(
         gainLoss,
         gainLossPercent: totalCost > 0 ? (gainLoss / totalCost) * 100 : 0,
         holdingsCount: visibleHoldings.length,
+        snapshotCapturedAt: latestSnapshotCapturedAt,
         latestPriceDate: latestSnapshotDate,
         dayReturnDate: latestSnapshotDate,
         dayReturn,
@@ -1245,6 +1254,7 @@ export async function readPortfolioSnapshot(
         gainLoss: 0,
         gainLossPercent: 0,
         holdingsCount: 0,
+        snapshotCapturedAt: null,
         latestPriceDate: null,
         dayReturnDate: null,
         dayReturn: null,
