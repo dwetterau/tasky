@@ -18,6 +18,7 @@ import {
   RETURN_LEGEND,
 } from "@/lib/portfolioMapColors";
 import { useAuthSession } from "@/lib/useAuthSession";
+import { ReturnBars, type ChartDatum } from "./ReturnBars";
 
 type Portfolio = FunctionReturnType<typeof api.portfolios.list>[number];
 type Snapshot = FunctionReturnType<typeof api.portfolio.getSnapshot>;
@@ -26,6 +27,12 @@ type SnapshotArgs = FunctionArgs<typeof api.portfolio.getSnapshot>;
 type HistoryArgs = FunctionArgs<typeof api.portfolio.getSnapshotHistory>;
 type ScopeMode = "all" | "single" | "custom";
 type Horizon = "1d" | "1w" | "1m" | "3m" | "ytd" | "total";
+type ChartView = "map" | "bars";
+
+const CHART_VIEWS: Array<{ value: ChartView; label: string }> = [
+  { value: "map", label: "Map" },
+  { value: "bars", label: "Bars" },
+];
 
 const HORIZONS: Array<{ value: Horizon; label: string }> = [
   { value: "1d", label: "1D" },
@@ -206,6 +213,7 @@ function PortfolioContent() {
   const [singleId, setSingleId] = useState<string | null>(null);
   const [customIds, setCustomIds] = useState<Set<string>>(() => new Set());
   const [horizon, setHorizon] = useState<Horizon>("1d");
+  const [chartView, setChartView] = useState<ChartView>("map");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [history, setHistory] = useState<History | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -399,10 +407,10 @@ function PortfolioContent() {
       );
   }, [baselinePoint, horizon, snapshot]);
 
-  const treemapData = useMemo(
+  const chartData = useMemo<ChartDatum[]>(
     () =>
       holdingsWithReturns.map(({ holding, returnPercent, returnAmount }) => ({
-        id: holding.id,
+        id: String(holding.id),
         name: holding.ticker || "Cash",
         ticker: holding.ticker || "Cash",
         value: holding.currentValue,
@@ -580,8 +588,9 @@ function PortfolioContent() {
           <div>
             <h1 className="text-2xl font-bold">Portfolio map</h1>
             <p className="mt-1 text-sm text-(--muted)">
-              Area shows position value. Color shows return for the selected
-              horizon.
+              {chartView === "map"
+                ? "Area shows position value. Color shows return for the selected horizon."
+                : "Width shows position value. Height and color show return for the selected horizon, sorted from worst to best."}
             </p>
           </div>
           <div className="flex flex-col items-start gap-1.5 xl:items-end">
@@ -797,7 +806,31 @@ function PortfolioContent() {
 
             <section className="overflow-hidden rounded-xl border border-(--card-border) bg-(--card-bg)">
               <div className="flex flex-col gap-3 border-b border-(--card-border) px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="font-semibold">Holdings</h2>
+                <div className="flex items-center gap-3">
+                  <h2 className="font-semibold">Holdings</h2>
+                  <div
+                    className="inline-flex rounded-lg border border-(--card-border) bg-background p-0.5"
+                    role="tablist"
+                    aria-label="Chart view"
+                  >
+                    {CHART_VIEWS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="tab"
+                        aria-selected={chartView === option.value}
+                        onClick={() => setChartView(option.value)}
+                        className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                          chartView === option.value
+                            ? "bg-(--accent)/15 text-accent"
+                            : "text-(--muted) hover:text-foreground"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5 text-xs text-(--muted)">
                   {RETURN_LEGEND.map((bucket) => (
                     <span
@@ -820,18 +853,29 @@ function PortfolioContent() {
                     Refreshing
                   </div>
                 ) : null}
-                <ResponsiveContainer width="100%" height="100%">
-                  <Treemap
-                    data={treemapData}
-                    dataKey="value"
-                    nameKey="name"
-                    aspectRatio={4 / 3}
-                    content={PortfolioTile}
-                    isAnimationActive={false}
-                    onMouseEnter={(node) => setHoveredId(String(node.id ?? ""))}
-                    onMouseLeave={() => setHoveredId(null)}
+                {chartView === "map" ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <Treemap
+                      data={chartData}
+                      dataKey="value"
+                      nameKey="name"
+                      aspectRatio={4 / 3}
+                      content={PortfolioTile}
+                      isAnimationActive={false}
+                      onMouseEnter={(node) => setHoveredId(String(node.id ?? ""))}
+                      onMouseLeave={() => setHoveredId(null)}
+                    />
+                  </ResponsiveContainer>
+                ) : (
+                  <ReturnBars
+                    data={chartData}
+                    hoveredId={hoveredId}
+                    onHover={setHoveredId}
+                    getTitle={(datum) =>
+                      `${datum.ticker}: ${formatCurrency(datum.value)} · ${formatReturnLabel(datum.returnPercent, datum.returnAmount)}`
+                    }
                   />
-                </ResponsiveContainer>
+                )}
               </div>
               {activeEntry ? (
                 <div className="grid grid-cols-2 gap-3 border-t border-(--card-border) px-4 py-4 sm:grid-cols-5">
