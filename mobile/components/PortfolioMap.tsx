@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
+  type ColorValue,
   LayoutChangeEvent,
   ScrollView,
   StyleSheet,
@@ -19,6 +20,7 @@ import {
   radius,
   sharedStyles,
   spacing,
+  tone,
 } from "@/lib/theme";
 
 type Horizon = "1d" | "1w" | "1m" | "3m" | "ytd" | "total";
@@ -49,6 +51,9 @@ type MapEntry = {
   holding: MapHolding;
   returnPercent: number | null;
   returnAmount: number | null;
+  perShareChange: number | null;
+  allocation: number | null;
+  allocationChange: number | null;
 };
 
 const HORIZONS: { value: Horizon; label: string }[] = [
@@ -106,15 +111,21 @@ function formatCompactSignedCurrency(value: number): string {
   return `${value >= 0 ? "+" : "-"}${formatted}`;
 }
 
-function formatReturnLabel(
-  returnPercent: number | null,
-  returnAmount: number | null | undefined,
-): string {
-  const percentLabel = formatPercent(returnPercent);
-  if (returnPercent === null || returnAmount == null) {
-    return percentLabel;
-  }
-  return `${percentLabel} (${formatCompactSignedCurrency(returnAmount)})`;
+function formatSignedCurrency(value: number): string {
+  const formatted = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0,
+  }).format(Math.abs(value));
+  return `${value >= 0 ? "+" : "-"}${formatted}`;
+}
+
+function formatSignedSharePrice(value: number): string {
+  return `${value >= 0 ? "+" : "-"}${formatSharePrice(Math.abs(value))}`;
+}
+
+function formatPointChange(value: number): string {
+  return `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(2)} pp`;
 }
 
 function shiftDate(
@@ -168,7 +179,7 @@ export function PortfolioMap({
     );
   }, [historyPoints, horizon, latestPriceDate]);
 
-  const entries = useMemo<MapEntry[]>(() => {
+  const returns = useMemo(() => {
     const baselineByTicker = new Map(
       baselinePoint?.holdings.map((holding) => [
         holding.ticker.trim().toUpperCase(),
@@ -234,6 +245,35 @@ export function PortfolioMap({
           a.holding.ticker.localeCompare(b.holding.ticker),
       );
   }, [baselinePoint, holdings, horizon]);
+
+  const entries = useMemo<MapEntry[]>(() => {
+    const startTotalValue =
+      totalValue -
+      returns.reduce((sum, entry) => sum + (entry.returnAmount ?? 0), 0);
+    return returns.map(({ holding, returnPercent, returnAmount }) => {
+      const allocation =
+        totalValue > 0 ? (holding.currentValue / totalValue) * 100 : null;
+      const startAllocation =
+        startTotalValue > 0
+          ? ((holding.currentValue - (returnAmount ?? 0)) / startTotalValue) *
+            100
+          : null;
+      return {
+        holding,
+        returnPercent,
+        returnAmount,
+        perShareChange:
+          holding.ticker && holding.shares > 0 && returnAmount !== null
+            ? returnAmount / holding.shares
+            : null,
+        allocation,
+        allocationChange:
+          allocation !== null && startAllocation !== null
+            ? allocation - startAllocation
+            : null,
+      };
+    });
+  }, [returns, totalValue]);
 
   const layout = useMemo(
     () =>
@@ -322,19 +362,27 @@ export function PortfolioMap({
       >
         {layout.map(({ item, x, y, width, height }) => {
           const ticker = item.holding.ticker || "Cash";
-          const returnLabel = formatReturnLabel(
-            item.returnPercent,
-            item.returnAmount,
-          );
-          const valueLabel = formatCurrency(item.holding.currentValue);
+          const returnLabel = formatPercent(item.returnPercent);
+          const plainValueLabel = formatCurrency(item.holding.currentValue);
+          const valueWithChangeLabel =
+            item.returnAmount === null
+              ? plainValueLabel
+              : `${plainValueLabel} (${formatCompactSignedCurrency(item.returnAmount)})`;
           const showTicker =
             width >= Math.max(42, ticker.length * 8 + 14) && height >= 24;
           const showReturn =
             showTicker &&
             width >= returnLabel.length * 5.25 + 14 &&
             height >= 45;
-          const showValue =
-            showReturn && width >= valueLabel.length * 6 + 14 && height >= 66;
+          const fitsValue = (label: string) => width >= label.length * 6 + 14;
+          const valueLabel =
+            showReturn && height >= 66
+              ? fitsValue(valueWithChangeLabel)
+                ? valueWithChangeLabel
+                : fitsValue(plainValueLabel)
+                  ? plainValueLabel
+                  : null
+              : null;
           const selected = selectedEntry?.holding.id === item.holding.id;
           return (
             <TouchableOpacity
@@ -343,7 +391,7 @@ export function PortfolioMap({
               hitSlop={4}
               onPress={() => setSelectedId(item.holding.id)}
               accessibilityRole="button"
-              accessibilityLabel={`${ticker}, ${valueLabel}, ${returnLabel}`}
+              accessibilityLabel={`${ticker}, ${valueWithChangeLabel}, ${returnLabel}`}
               style={[
                 styles.tile,
                 {
@@ -376,7 +424,7 @@ export function PortfolioMap({
                   {returnLabel}
                 </Text>
               ) : null}
-              {showValue ? (
+              {valueLabel !== null ? (
                 <Text style={styles.tileValue} numberOfLines={1}>
                   {valueLabel}
                 </Text>
@@ -404,25 +452,45 @@ export function PortfolioMap({
             <Detail
               label="Value"
               value={formatCurrency(selectedEntry.holding.currentValue)}
+              change={
+                selectedEntry.returnAmount === null
+                  ? null
+                  : formatSignedCurrency(selectedEntry.returnAmount)
+              }
+              changeColor={tone(selectedEntry.returnAmount ?? 0)}
             />
             <Detail
               label="Per share"
               value={formatSharePrice(selectedEntry.holding.currentPrice)}
+              change={
+                selectedEntry.perShareChange === null
+                  ? null
+                  : formatSignedSharePrice(selectedEntry.perShareChange)
+              }
+              changeColor={tone(selectedEntry.perShareChange ?? 0)}
             />
             <Detail
               label="Allocation"
               value={
-                totalValue > 0
-                  ? `${((selectedEntry.holding.currentValue / totalValue) * 100).toFixed(2)}%`
-                  : "—"
+                selectedEntry.allocation === null
+                  ? "—"
+                  : `${selectedEntry.allocation.toFixed(2)}%`
               }
+              change={
+                selectedEntry.allocationChange === null
+                  ? null
+                  : formatPointChange(selectedEntry.allocationChange)
+              }
+              changeColor={colors.secondaryLabel}
             />
             <Detail
               label="Return"
-              value={formatReturnLabel(
-                selectedEntry.returnPercent,
-                selectedEntry.returnAmount,
-              )}
+              value={formatPercent(selectedEntry.returnPercent)}
+              valueColor={
+                selectedEntry.returnPercent === null
+                  ? undefined
+                  : tone(selectedEntry.returnPercent)
+              }
             />
           </View>
         </View>
@@ -431,12 +499,34 @@ export function PortfolioMap({
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({
+  label,
+  value,
+  valueColor,
+  change,
+  changeColor,
+}: {
+  label: string;
+  value: string;
+  valueColor?: ColorValue;
+  change?: string | null;
+  changeColor?: ColorValue;
+}) {
   return (
     <View style={styles.detail}>
       <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue} numberOfLines={1}>
+      <Text
+        style={[styles.detailValue, valueColor ? { color: valueColor } : null]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+      >
         {value}
+        {change ? (
+          <Text style={[styles.detailChange, { color: changeColor }]}>
+            {` (${change})`}
+          </Text>
+        ) : null}
       </Text>
     </View>
   );
@@ -592,5 +682,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.label,
     fontVariant: ["tabular-nums"],
+  },
+  detailChange: {
+    fontWeight: "600",
   },
 });

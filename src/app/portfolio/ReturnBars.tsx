@@ -10,6 +10,7 @@ export type ChartDatum = {
   returnPercent: number | null;
   returnAmount: number | null;
   fill: string;
+  title: string;
 };
 
 const BAR_MARGIN = { top: 24, right: 12, bottom: 28, left: 52 };
@@ -57,12 +58,10 @@ export function ReturnBars({
   data,
   hoveredId,
   onHover,
-  getTitle,
 }: {
   data: ChartDatum[];
   hoveredId: string | null;
   onHover: (id: string | null) => void;
-  getTitle: (datum: ChartDatum) => string;
 }) {
   const [containerRef, { width, height }] = useElementSize<HTMLDivElement>();
 
@@ -186,7 +185,7 @@ export function ReturnBars({
                 onMouseEnter={() => onHover(datum.id)}
                 opacity={dimmed ? 0.55 : 1}
               >
-                <title>{getTitle(datum)}</title>
+                <title>{datum.title}</title>
                 <rect
                   x={x}
                   y={BAR_MARGIN.top}

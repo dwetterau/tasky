@@ -86,15 +86,93 @@ function formatCompactSignedCurrency(value: number): string {
   return `${value >= 0 ? "+" : "-"}${formatted}`;
 }
 
-function formatReturnLabel(
-  returnPercent: number | null,
-  returnAmount?: number | null,
-): string {
-  const percentLabel = formatPercent(returnPercent);
-  if (returnPercent === null || returnAmount == null) {
-    return percentLabel;
-  }
-  return `${percentLabel} (${formatCompactSignedCurrency(returnAmount)})`;
+function formatSignedCurrency(value: number): string {
+  const formatted = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0,
+  }).format(Math.abs(value));
+  return `${value >= 0 ? "+" : "-"}${formatted}`;
+}
+
+function formatSignedSharePrice(value: number): string {
+  return `${value >= 0 ? "+" : "-"}${formatSharePrice(Math.abs(value))}`;
+}
+
+function formatPointChange(value: number): string {
+  return `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(2)} pp`;
+}
+
+function toneClass(value: number | null): string {
+  if (value === null || value === 0) return "text-(--muted)";
+  return value > 0
+    ? "text-emerald-600 dark:text-emerald-400"
+    : "text-red-600 dark:text-red-400";
+}
+
+type HoldingDetail = {
+  id: string;
+  ticker: string;
+  companyName: string;
+  value: number;
+  sharePrice: number | null;
+  returnPercent: number | null;
+  returnAmount: number | null;
+  perShareChange: number | null;
+  allocation: number | null;
+  allocationChange: number | null;
+};
+
+function withChange(base: string, change: string | null): string {
+  return change === null ? base : `${base} (${change})`;
+}
+
+function formatHoldingTitle(detail: HoldingDetail): string {
+  return [
+    detail.companyName
+      ? `${detail.ticker} · ${detail.companyName}`
+      : detail.ticker,
+    `Value: ${withChange(
+      formatCurrency(detail.value),
+      detail.returnAmount === null
+        ? null
+        : formatSignedCurrency(detail.returnAmount),
+    )}`,
+    `Per share: ${withChange(
+      formatSharePrice(detail.sharePrice),
+      detail.perShareChange === null
+        ? null
+        : formatSignedSharePrice(detail.perShareChange),
+    )}`,
+    `Allocation: ${withChange(
+      detail.allocation === null ? "—" : `${detail.allocation.toFixed(2)}%`,
+      detail.allocationChange === null
+        ? null
+        : formatPointChange(detail.allocationChange),
+    )}`,
+    `Return: ${formatPercent(detail.returnPercent)}`,
+  ].join("\n");
+}
+
+function ValueWithChange({
+  value,
+  change,
+  tone,
+}: {
+  value: string;
+  change: string | null;
+  tone: string;
+}) {
+  return (
+    <p className="font-semibold tabular-nums">
+      {value}
+      {change === null ? null : (
+        <span className={`ml-1.5 text-sm font-medium ${tone}`}>
+          ({change})
+        </span>
+      )}
+    </p>
+  );
 }
 
 function shiftDate(date: string, horizon: Exclude<Horizon, "1d" | "total">) {
@@ -119,8 +197,13 @@ function PortfolioTile(node: TreemapNode) {
     typeof node.returnAmount === "number" ? node.returnAmount : undefined;
   const fill = typeof node.fill === "string" ? node.fill : "#475569";
   const value = typeof node.value === "number" ? node.value : 0;
-  const returnLabel = formatReturnLabel(returnPercent, returnAmount);
-  const valueLabel = formatCurrency(value);
+  const title = typeof node.title === "string" ? node.title : ticker;
+  const returnLabel = formatPercent(returnPercent);
+  const plainValueLabel = formatCurrency(value);
+  const valueWithChangeLabel =
+    returnAmount === undefined
+      ? plainValueLabel
+      : `${plainValueLabel} (${formatCompactSignedCurrency(returnAmount)})`;
   const returnFontSize = Math.min(
     12,
     Math.max(9, (node.width - 16) / (returnLabel.length * 0.58)),
@@ -131,16 +214,19 @@ function PortfolioTile(node: TreemapNode) {
     showTicker &&
     node.width >= returnLabel.length * 5.25 + 16 &&
     node.height >= 46;
-  const showValue =
-    showReturn &&
-    node.width >= valueLabel.length * 6.5 + 16 &&
-    node.height >= 68;
+  const fitsValue = (label: string) => node.width >= label.length * 6 + 16;
+  const valueLabel =
+    showReturn && node.height >= 68
+      ? fitsValue(valueWithChangeLabel)
+        ? valueWithChangeLabel
+        : fitsValue(plainValueLabel)
+          ? plainValueLabel
+          : null
+      : null;
 
   return (
     <g>
-      <title>
-        {ticker}: {formatCurrency(value)} · {returnLabel}
-      </title>
+      <title>{title}</title>
       <rect
         x={node.x + 0.5}
         y={node.y + 0.5}
@@ -179,7 +265,7 @@ function PortfolioTile(node: TreemapNode) {
           {returnLabel}
         </text>
       ) : null}
-      {showValue ? (
+      {valueLabel !== null ? (
         <text
           x={node.x + node.width / 2}
           y={node.y + node.height / 2 + 29}
@@ -415,18 +501,60 @@ function PortfolioContent() {
       );
   }, [baselinePoint, horizon, snapshot]);
 
+  const holdingDetails = useMemo<HoldingDetail[]>(() => {
+    const totalValue =
+      snapshot?.status === "ok" ? snapshot.summary.totalCurrentValue : 0;
+    const startTotalValue =
+      totalValue -
+      holdingsWithReturns.reduce(
+        (sum, entry) => sum + (entry.returnAmount ?? 0),
+        0,
+      );
+    return holdingsWithReturns.map(
+      ({ holding, returnPercent, returnAmount }) => {
+        const allocation =
+          totalValue > 0 ? (holding.currentValue / totalValue) * 100 : null;
+        const startAllocation =
+          startTotalValue > 0
+            ? ((holding.currentValue - (returnAmount ?? 0)) /
+                startTotalValue) *
+              100
+            : null;
+        return {
+          id: String(holding.id),
+          ticker: holding.ticker || "Cash",
+          companyName: holding.companyName,
+          value: holding.currentValue,
+          sharePrice: holding.currentPrice,
+          returnPercent,
+          returnAmount,
+          perShareChange:
+            holding.ticker && holding.shares > 0 && returnAmount !== null
+              ? returnAmount / holding.shares
+              : null,
+          allocation,
+          allocationChange:
+            allocation !== null && startAllocation !== null
+              ? allocation - startAllocation
+              : null,
+        };
+      },
+    );
+  }, [holdingsWithReturns, snapshot]);
+
   const chartData = useMemo<ChartDatum[]>(
     () =>
-      holdingsWithReturns.map(({ holding, returnPercent, returnAmount }) => ({
-        id: String(holding.id),
-        name: holding.ticker || "Cash",
-        ticker: holding.ticker || "Cash",
-        value: holding.currentValue,
-        returnPercent,
-        returnAmount,
-        fill: colorForReturn(returnPercent),
+      holdingDetails.map((detail) => ({
+        id: detail.id,
+        name: detail.ticker,
+        ticker: detail.ticker,
+        value: detail.value,
+        returnPercent: detail.returnPercent,
+        returnAmount: detail.returnAmount,
+        fill: colorForReturn(detail.returnPercent),
+        title: formatHoldingTitle(detail),
       })),
-    [holdingsWithReturns],
+    [holdingDetails],
   );
 
   const selectedReturn = useMemo(() => {
@@ -476,9 +604,8 @@ function PortfolioContent() {
   }, [holdingsWithReturns, horizon, snapshot]);
 
   const activeEntry =
-    holdingsWithReturns.find(
-      ({ holding }) => String(holding.id) === hoveredId,
-    ) ?? holdingsWithReturns[0];
+    holdingDetails.find((detail) => detail.id === hoveredId) ??
+    holdingDetails[0];
 
   const selectAll = () => {
     setScopeMode("all");
@@ -778,6 +905,13 @@ function PortfolioContent() {
                 </p>
                 <p className="mt-1 text-xl font-bold tabular-nums">
                   {formatCurrency(snapshot.summary.totalCurrentValue)}
+                  {selectedReturn.amount === null ? null : (
+                    <span
+                      className={`ml-2 text-base font-semibold ${toneClass(selectedReturn.amount)}`}
+                    >
+                      ({formatSignedCurrency(selectedReturn.amount)})
+                    </span>
+                  )}
                 </p>
               </div>
               <div className="rounded-xl border border-(--card-border) bg-(--card-bg) p-4">
@@ -791,10 +925,7 @@ function PortfolioContent() {
                       : "text-red-600 dark:text-red-400"
                   }`}
                 >
-                  {formatReturnLabel(
-                    selectedReturn.percent,
-                    selectedReturn.amount,
-                  )}
+                  {formatPercent(selectedReturn.percent)}
                 </p>
                 <p className="mt-1 text-xs text-(--muted)">
                   {horizonDescription}
@@ -888,9 +1019,6 @@ function PortfolioContent() {
                     data={chartData}
                     hoveredId={hoveredId}
                     onHover={setHoveredId}
-                    getTitle={(datum) =>
-                      `${datum.ticker}: ${formatCurrency(datum.value)} · ${formatReturnLabel(datum.returnPercent, datum.returnAmount)}`
-                    }
                   />
                 )}
               </div>
@@ -898,32 +1026,50 @@ function PortfolioContent() {
                 <div className="grid grid-cols-2 gap-3 border-t border-(--card-border) px-4 py-4 sm:grid-cols-5">
                   <div>
                     <p className="text-xs text-(--muted)">Holding</p>
-                    <p className="font-bold">
-                      {activeEntry.holding.ticker || "Cash"}
-                    </p>
+                    <p className="font-bold">{activeEntry.ticker}</p>
                     <p className="truncate text-xs text-(--muted)">
-                      {activeEntry.holding.companyName}
+                      {activeEntry.companyName}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-(--muted)">Value</p>
-                    <p className="font-semibold tabular-nums">
-                      {formatCurrency(activeEntry.holding.currentValue)}
-                    </p>
+                    <ValueWithChange
+                      value={formatCurrency(activeEntry.value)}
+                      change={
+                        activeEntry.returnAmount === null
+                          ? null
+                          : formatSignedCurrency(activeEntry.returnAmount)
+                      }
+                      tone={toneClass(activeEntry.returnAmount)}
+                    />
                   </div>
                   <div>
                     <p className="text-xs text-(--muted)">Per share</p>
-                    <p className="font-semibold tabular-nums">
-                      {formatSharePrice(activeEntry.holding.currentPrice)}
-                    </p>
+                    <ValueWithChange
+                      value={formatSharePrice(activeEntry.sharePrice)}
+                      change={
+                        activeEntry.perShareChange === null
+                          ? null
+                          : formatSignedSharePrice(activeEntry.perShareChange)
+                      }
+                      tone={toneClass(activeEntry.perShareChange)}
+                    />
                   </div>
                   <div>
                     <p className="text-xs text-(--muted)">Allocation</p>
-                    <p className="font-semibold tabular-nums">
-                      {snapshot.summary.totalCurrentValue > 0
-                        ? `${((activeEntry.holding.currentValue / snapshot.summary.totalCurrentValue) * 100).toFixed(2)}%`
-                        : "—"}
-                    </p>
+                    <ValueWithChange
+                      value={
+                        activeEntry.allocation === null
+                          ? "—"
+                          : `${activeEntry.allocation.toFixed(2)}%`
+                      }
+                      change={
+                        activeEntry.allocationChange === null
+                          ? null
+                          : formatPointChange(activeEntry.allocationChange)
+                      }
+                      tone="text-(--muted)"
+                    />
                   </div>
                   <div>
                     <p className="text-xs text-(--muted)">Return</p>
@@ -934,10 +1080,7 @@ function PortfolioContent() {
                           : "text-red-600 dark:text-red-400"
                       }`}
                     >
-                      {formatReturnLabel(
-                        activeEntry.returnPercent,
-                        activeEntry.returnAmount,
-                      )}
+                      {formatPercent(activeEntry.returnPercent)}
                     </p>
                   </div>
                 </div>
