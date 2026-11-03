@@ -355,10 +355,18 @@ function PortfolioContent() {
         let returnAmount: number | null;
         let returnBasis: number | null;
         if (horizon === "1d") {
-          returnPercent = holding.dayReturnPercent ?? null;
-          returnAmount = holding.dayReturn ?? null;
-          returnBasis =
-            returnAmount === null ? null : holding.currentValue - returnAmount;
+          if (
+            holding.dayReturnPercent != null &&
+            holding.dayReturn != null
+          ) {
+            returnPercent = holding.dayReturnPercent;
+            returnAmount = holding.dayReturn;
+            returnBasis = holding.currentValue - holding.dayReturn;
+          } else {
+            returnPercent = holding.gainLossPercent;
+            returnAmount = holding.gainLoss;
+            returnBasis = holding.costBasis;
+          }
         } else if (horizon === "total") {
           returnPercent = holding.gainLossPercent;
           returnAmount = holding.gainLoss;
@@ -393,9 +401,9 @@ function PortfolioContent() {
             returnPercent =
               returnBasis > 0 ? (returnAmount / returnBasis) * 100 : null;
           } else {
-            returnPercent = null;
-            returnAmount = null;
-            returnBasis = null;
+            returnPercent = holding.gainLossPercent;
+            returnAmount = holding.gainLoss;
+            returnBasis = holding.costBasis;
           }
         }
         return { holding, returnPercent, returnAmount, returnBasis };
@@ -426,10 +434,16 @@ function PortfolioContent() {
       return { percent: null, amount: null };
     }
     if (horizon === "1d") {
-      return {
-        percent: snapshot.summary.dayReturnPercent,
-        amount: snapshot.summary.dayReturn,
-      };
+      return snapshot.summary.dayReturnPercent !== null &&
+        snapshot.summary.dayReturn !== null
+        ? {
+            percent: snapshot.summary.dayReturnPercent,
+            amount: snapshot.summary.dayReturn,
+          }
+        : {
+            percent: snapshot.summary.gainLossPercent,
+            amount: snapshot.summary.gainLoss,
+          };
     }
     if (horizon === "total") {
       return {
@@ -450,12 +464,15 @@ function PortfolioContent() {
       0,
     );
     const basis = included.reduce((sum, entry) => sum + entry.returnBasis, 0);
-    return included.length > 0
+    return included.length > 0 && basis > 0
       ? {
-          percent: basis > 0 ? (amount / basis) * 100 : null,
+          percent: (amount / basis) * 100,
           amount,
         }
-      : { percent: null, amount: null };
+      : {
+          percent: snapshot.summary.gainLossPercent,
+          amount: snapshot.summary.gainLoss,
+        };
   }, [holdingsWithReturns, horizon, snapshot]);
 
   const activeEntry =

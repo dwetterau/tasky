@@ -181,8 +181,16 @@ export function PortfolioMap({
         let returnPercent: number | null;
         let returnAmount: number | null;
         if (horizon === "1d") {
-          returnPercent = holding.dayReturnPercent ?? null;
-          returnAmount = holding.dayReturn ?? null;
+          if (
+            holding.dayReturnPercent != null &&
+            holding.dayReturn != null
+          ) {
+            returnPercent = holding.dayReturnPercent;
+            returnAmount = holding.dayReturn;
+          } else {
+            returnPercent = holding.gainLossPercent;
+            returnAmount = holding.gainLoss;
+          }
         } else if (horizon === "total") {
           returnPercent = holding.gainLossPercent;
           returnAmount = holding.gainLoss;
@@ -214,8 +222,8 @@ export function PortfolioMap({
             returnPercent =
               ((currentPrice - baselinePrice) / baselinePrice) * 100;
           } else {
-            returnPercent = null;
-            returnAmount = null;
+            returnPercent = holding.gainLossPercent;
+            returnAmount = holding.gainLoss;
           }
         }
         return { holding, returnPercent, returnAmount };
