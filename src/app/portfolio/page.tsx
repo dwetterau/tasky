@@ -132,6 +132,7 @@ function formatHoldingTitle(detail: HoldingDetail): string {
     detail.companyName
       ? `${detail.ticker} · ${detail.companyName}`
       : detail.ticker,
+    `Return: ${formatPercent(detail.returnPercent)}`,
     `Value: ${withChange(
       formatCurrency(detail.value),
       detail.returnAmount === null
@@ -150,7 +151,6 @@ function formatHoldingTitle(detail: HoldingDetail): string {
         ? null
         : formatPointChange(detail.allocationChange),
     )}`,
-    `Return: ${formatPercent(detail.returnPercent)}`,
   ].join("\n");
 }
 
@@ -1032,6 +1032,18 @@ function PortfolioContent() {
                     </p>
                   </div>
                   <div>
+                    <p className="text-xs text-(--muted)">Return</p>
+                    <p
+                      className={`font-semibold tabular-nums ${
+                        (activeEntry.returnPercent ?? 0) >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-red-600 dark:text-red-400"
+                      }`}
+                    >
+                      {formatPercent(activeEntry.returnPercent)}
+                    </p>
+                  </div>
+                  <div>
                     <p className="text-xs text-(--muted)">Value</p>
                     <ValueWithChange
                       value={formatCurrency(activeEntry.value)}
@@ -1070,18 +1082,6 @@ function PortfolioContent() {
                       }
                       tone="text-(--muted)"
                     />
-                  </div>
-                  <div>
-                    <p className="text-xs text-(--muted)">Return</p>
-                    <p
-                      className={`font-semibold tabular-nums ${
-                        (activeEntry.returnPercent ?? 0) >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-red-600 dark:text-red-400"
-                      }`}
-                    >
-                      {formatPercent(activeEntry.returnPercent)}
-                    </p>
                   </div>
                 </div>
               ) : null}

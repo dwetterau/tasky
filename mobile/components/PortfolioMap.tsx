@@ -450,6 +450,15 @@ export function PortfolioMap({
           </View>
           <View style={styles.detailGrid}>
             <Detail
+              label="Return"
+              value={formatPercent(selectedEntry.returnPercent)}
+              valueColor={
+                selectedEntry.returnPercent === null
+                  ? undefined
+                  : tone(selectedEntry.returnPercent)
+              }
+            />
+            <Detail
               label="Value"
               value={formatCurrency(selectedEntry.holding.currentValue)}
               change={
@@ -482,15 +491,6 @@ export function PortfolioMap({
                   : formatPointChange(selectedEntry.allocationChange)
               }
               changeColor={colors.secondaryLabel}
-            />
-            <Detail
-              label="Return"
-              value={formatPercent(selectedEntry.returnPercent)}
-              valueColor={
-                selectedEntry.returnPercent === null
-                  ? undefined
-                  : tone(selectedEntry.returnPercent)
-              }
             />
           </View>
         </View>
