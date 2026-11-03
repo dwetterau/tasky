@@ -14,6 +14,33 @@ export type ChartDatum = {
 };
 
 const BAR_MARGIN = { top: 24, right: 12, bottom: 28, left: 52 };
+const MIN_BAR_WIDTH = 6;
+const WEIGHT_TICKS = [0, 25, 50, 75, 100];
+
+function barWidths(values: number[], plotWidth: number): number[] {
+  if (values.length === 0) return [];
+  const floor = Math.min(MIN_BAR_WIDTH, plotWidth / values.length);
+  const pinned = new Set<number>();
+  for (;;) {
+    const freeValue = values.reduce(
+      (sum, value, index) => (pinned.has(index) ? sum : sum + value),
+      0,
+    );
+    const freeWidth = plotWidth - pinned.size * floor;
+    const widths = values.map((value, index) =>
+      pinned.has(index) || freeValue <= 0
+        ? floor
+        : (value / freeValue) * freeWidth,
+    );
+    const newlyPinned = widths.filter(
+      (barWidth, index) => !pinned.has(index) && barWidth < floor,
+    );
+    if (newlyPinned.length === 0) return widths;
+    widths.forEach((barWidth, index) => {
+      if (barWidth < floor) pinned.add(index);
+    });
+  }
+}
 
 function niceTicks(min: number, max: number, targetCount = 6): number[] {
   const span = max - min;
@@ -98,22 +125,51 @@ export function ReturnBars({
           ) / totalValue
         : 0;
 
-    const scaleX = totalValue > 0 ? plotWidth / totalValue : 0;
-    const bars = [];
+    const widths = barWidths(
+      sorted.map((datum) => datum.value),
+      plotWidth,
+    );
+    const bars: Array<{
+      datum: ChartDatum;
+      x: number;
+      width: number;
+      startShare: number;
+      share: number;
+      top: number;
+      bottom: number;
+      percent: number;
+    }> = [];
     let x = BAR_MARGIN.left;
-    for (const datum of sorted) {
-      const barWidth = datum.value * scaleX;
+    let startShare = 0;
+    for (const [index, datum] of sorted.entries()) {
+      const barWidth = widths[index]!;
       const percent = datum.returnPercent ?? 0;
+      const share = totalValue > 0 ? (datum.value / totalValue) * 100 : 0;
       bars.push({
         datum,
         x,
         width: barWidth,
+        startShare,
+        share,
         top: yFor(Math.max(0, percent)),
         bottom: yFor(Math.min(0, percent)),
         percent,
       });
       x += barWidth;
+      startShare += share;
     }
+
+    // Minimum widths stretch small bars, so weight ticks follow the bars
+    // rather than a linear scale.
+    const xForShare = (target: number) => {
+      const bar = bars.find(
+        (candidate) => candidate.startShare + candidate.share >= target,
+      );
+      if (!bar) return BAR_MARGIN.left + plotWidth;
+      const within =
+        bar.share > 0 ? (target - bar.startShare) / bar.share : 0;
+      return bar.x + Math.min(1, Math.max(0, within)) * bar.width;
+    };
 
     return {
       plotWidth,
@@ -122,6 +178,10 @@ export function ReturnBars({
       zeroY: yFor(0),
       averageReturn,
       averageY: yFor(averageReturn),
+      weightTicks: WEIGHT_TICKS.map((share) => ({
+        share,
+        x: xForShare(share),
+      })),
       ticks: niceTicks(domain[0]!, domain[1]!).map((tick) => ({
         value: tick,
         y: yFor(tick),
@@ -161,10 +221,10 @@ export function ReturnBars({
               </text>
             </g>
           ))}
-          {[0, 25, 50, 75, 100].map((share) => (
+          {layout.weightTicks.map(({ share, x }) => (
             <text
               key={share}
-              x={BAR_MARGIN.left + (share / 100) * layout.plotWidth}
+              x={x}
               y={height - BAR_MARGIN.bottom + 18}
               textAnchor={share === 0 ? "start" : share === 100 ? "end" : "middle"}
               fill="var(--muted)"
