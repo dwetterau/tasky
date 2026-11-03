@@ -91,6 +91,14 @@ export function ReturnBars({
       BAR_MARGIN.top +
       ((domain[1]! - percent) / (domain[1]! - domain[0]!)) * plotHeight;
 
+    const averageReturn =
+      totalValue > 0
+        ? data.reduce(
+            (sum, datum) => sum + datum.value * (datum.returnPercent ?? 0),
+            0,
+          ) / totalValue
+        : 0;
+
     const scaleX = totalValue > 0 ? plotWidth / totalValue : 0;
     const bars = [];
     let x = BAR_MARGIN.left;
@@ -113,6 +121,8 @@ export function ReturnBars({
       plotHeight,
       bars,
       zeroY: yFor(0),
+      averageReturn,
+      averageY: yFor(averageReturn),
       ticks: niceTicks(domain[0]!, domain[1]!).map((tick) => ({
         value: tick,
         y: yFor(tick),
@@ -217,6 +227,33 @@ export function ReturnBars({
             strokeWidth={1}
             pointerEvents="none"
           />
+          <g pointerEvents="none">
+            <line
+              x1={BAR_MARGIN.left}
+              x2={BAR_MARGIN.left + layout.plotWidth}
+              y1={layout.averageY}
+              y2={layout.averageY}
+              stroke="var(--foreground)"
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+            />
+            {/* Bars sort ascending, so the leftmost never rises above the average and the rightmost never drops below it. */}
+            <text
+              x={
+                layout.averageReturn >= 0
+                  ? BAR_MARGIN.left + 6
+                  : BAR_MARGIN.left + layout.plotWidth - 6
+              }
+              y={layout.averageY + (layout.averageReturn >= 0 ? -6 : 6)}
+              textAnchor={layout.averageReturn >= 0 ? "start" : "end"}
+              dominantBaseline={layout.averageReturn >= 0 ? "auto" : "hanging"}
+              fill="var(--foreground)"
+              fontSize={11}
+              fontWeight={700}
+            >
+              {`Weighted avg ${layout.averageReturn >= 0 ? "+" : ""}${layout.averageReturn.toFixed(2)}%`}
+            </text>
+          </g>
         </svg>
       ) : null}
     </div>
