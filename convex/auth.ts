@@ -8,6 +8,7 @@ import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
 import { homepageOidc } from "./lib/homepageOidc";
+import { assertSignupEmailAllowed } from "./lib/authAllowlist";
 import { isolateHomepageFromMcp } from "./lib/mcp";
 
 // Convex runtime may not expose URL.canParse yet. Better Auth OAuth/MCP uses it.
@@ -65,6 +66,18 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     baseURL: convexSiteUrl,
     trustedOrigins: [siteUrl, convexSiteUrl, mobileAppOrigin],
     database: authComponent.adapter(ctx),
+    databaseHooks: {
+      user: {
+        create: {
+          before: async (user) => {
+            assertSignupEmailAllowed(
+              user.email,
+              process.env.AUTH_ALLOWED_EMAILS,
+            );
+          },
+        },
+      },
+    },
     plugins: [
       jwt({
         // Convex stores RSA keys without an `alg` field. Match its signer
