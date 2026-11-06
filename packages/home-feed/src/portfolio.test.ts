@@ -38,3 +38,20 @@ it("bounds pre-rendered portfolio history to ninety points", () => {
     }).success,
   ).toBe(false);
 });
+
+it("rejects holdings without a total return percentage", () => {
+  expect(
+    namedPortfolioSchema.safeParse({
+      ...portfolio,
+      holdingsCount: 1,
+      holdings: [
+        {
+          ticker: "TEST",
+          name: "Test Holding",
+          value: 350,
+          allocation: 0.35,
+        },
+      ],
+    }).success,
+  ).toBe(false);
+});

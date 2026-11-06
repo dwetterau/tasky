@@ -120,7 +120,7 @@ const portfolioHoldingSchema = z
     costBasis: z.number().optional(),
     dayReturn: z.number().nullable().optional(),
     dayReturnPercent: z.number().nullable().optional(),
-    gainLossPercent: z.number().optional(),
+    gainLossPercent: z.number(),
   })
   .strict();
 const portfolioHistorySchema = z

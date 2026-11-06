@@ -145,7 +145,7 @@ function renderPortfolio(data: NamedPortfolio) {
   });
   const rows = holdings
     .map((holding) => {
-      const totalPercent = holding.gainLossPercent ?? holding.allocation * 100;
+      const totalPercent = holding.gainLossPercent;
       return `<tr
         data-sort-ticker="${e(holding.ticker.toLowerCase())}"
         data-sort-day-dollar="${holding.dayReturn ?? ""}"
