@@ -27,6 +27,7 @@ import {
   formatSignalQuantity,
   getSignalPeriodBounds,
   getSignalQueryTime,
+  isScaleWeightSignal,
   parseActivityMeasurements,
   SIGNAL_SOON_WINDOW_MS,
   type ActivityMeasurementDraft,
@@ -582,6 +583,13 @@ export default function SignalHistoryPage() {
                   loading={isSaving}
                   disabled={!taskyAuth.convexAuthenticated}
                 />
+                {isScaleWeightSignal(signal.data) ? (
+                  <PillButton
+                    label="Weigh in with scale"
+                    onPress={() => router.push("/scale_page" as Href)}
+                    disabled={isSaving}
+                  />
+                ) : null}
               </View>
             ) : (
               <View style={styles.actionCard}>

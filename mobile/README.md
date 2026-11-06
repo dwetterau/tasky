@@ -34,7 +34,8 @@ Debug device builds also set `ios.buildReactNativeFromSource` in
 
 ## YUNMAI Mini scale
 
-From the home screen, open Weight. Tap Connect, wake the scale, and step on.
+From the home screen (or the Weight signal's "Weigh in with scale" button), open
+Weight. Tap Connect, wake the scale, and step on.
 The first time, select the scale; later Connect reconnects to the last one. An
 unfinished weigh-in times out after 30 seconds of inactivity. Save writes pounds
 to the uniquely named Weight activity signal (weight measurement only). The home
@@ -45,8 +46,11 @@ scale remains available.
 notifications, protocol version via `FFE5/FFE9`). Bluetooth permission lives in
 `app.config.js` and the checked-in iOS Info.plist.
 
-Only a completed packet preceded by a live reading in the current session can
-be saved. Phone receipt time is used because the scale clock may be wrong.
+A completed packet is only accepted when preceded by a live reading in the
+current session. The scale sometimes never sends one, so the last weight it held
+steady stays on screen through timeouts and reconnects and can be saved
+unconfirmed (noted on the entry). Saving it ends the Bluetooth session. Phone
+receipt time is used because the scale clock may be wrong.
 Retries use the same backend idempotency key. Leaving or backgrounding the
 screen stops Bluetooth. Body-composition estimates are not written.
 

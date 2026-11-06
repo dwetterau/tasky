@@ -18,6 +18,7 @@ class ScaleNativeModule extends NativeModule<{ onScaleEvent: (event: ScaleEvent)
 const native = Platform.OS === "ios" ? requireOptionalNativeModule<ScaleNativeModule>("TaskyScale") : null;
 const LAST_DEVICE_KEY = "lastDeviceId";
 const SESSION_IDLE_MS = 30_000;
+const STEADY_KG = 0.2;
 const storage = Platform.OS === "ios" ? new MMKV({ id: "tasky-scale" }) : null;
 
 export type CapturedReading = ScaleReading & { receivedAt: number; key: string };
@@ -30,7 +31,9 @@ export function useYunmaiScale() {
   const [lastDeviceId, setLastDeviceId] = useState<string | null>(
     () => storage?.getString(LAST_DEVICE_KEY) ?? null,
   );
-  const lastLive = useRef<{ timestamp: number; receivedAt: number } | null>(null);
+  const lastLive = useRef<{ timestamp: number; receivedAt: number; kg: number } | null>(null);
+  const holdingSteady = useRef(false);
+  const hasReading = useRef(false);
   const accepting = useRef(false);
   const selectedId = useRef<string | null>(null);
   const lastDeviceIdRef = useRef(lastDeviceId);
@@ -63,9 +66,10 @@ export function useYunmaiScale() {
     clearIdleTimer();
     accepting.current = false;
     try { await native?.stop(); } catch { /* keep the timeout message even if BLE stop fails */ }
-    setReading(current => current?.final ? current : null);
     setState("idle");
-    setMessage("Weigh-in timed out. Connect again when you're ready.");
+    setMessage(hasReading.current
+      ? "The scale stopped responding. You can save the last weight below or connect again."
+      : "Weigh-in timed out. Connect again when you're ready.");
   }, [clearIdleTimer]);
   const armIdleTimer = useCallback(() => {
     clearIdleTimer();
@@ -76,6 +80,7 @@ export function useYunmaiScale() {
     accepting.current = true;
     selectedId.current = id;
     lastLive.current = null;
+    holdingSteady.current = false;
     rememberDevice(id);
     setState("connecting");
     try { await native?.connect(id); } catch (error) { accepting.current = false; reportError(error); }
@@ -84,7 +89,6 @@ export function useYunmaiScale() {
     clearIdleTimer();
     ignoringIdleStatus.current = false;
     setDevices([]);
-    setReading(null);
     lastLive.current = null;
     accepting.current = false;
     selectedId.current = null;
@@ -111,8 +115,13 @@ export function useYunmaiScale() {
         const parsed = parseYunmaiPacket(event.hex);
         if (!parsed) return;
         if (!parsed.final) {
-          lastLive.current = { timestamp: parsed.scaleTimestamp, receivedAt: event.receivedAt };
+          const steady = lastLive.current !== null && Math.abs(parsed.kg - lastLive.current.kg) <= STEADY_KG;
+          lastLive.current = { timestamp: parsed.scaleTimestamp, receivedAt: event.receivedAt, kg: parsed.kg };
           armIdleTimer();
+          // Once the weight has held steady, ignore moving values so stepping
+          // off cannot replace it with a falling number.
+          if (!steady && holdingSteady.current) return;
+          if (steady) holdingSteady.current = true;
         } else {
           // An old scale clock is fine; require a live reading from this session
           // so cached historical notifications cannot be saved as today's weight.
@@ -126,6 +135,7 @@ export function useYunmaiScale() {
           accepting.current = false;
           void native?.stop().catch(reportError);
         }
+        hasReading.current = true;
         setReading({ ...parsed, receivedAt: event.receivedAt, key: scaleEntryKey(event.id, parsed) });
       }
     });

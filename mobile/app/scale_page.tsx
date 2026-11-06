@@ -6,6 +6,7 @@ import { automaticKeyboardInsets } from "@/lib/headerItems";
 import {
   getSignalPeriodBounds,
   getSignalQueryTime,
+  isScaleWeightSignal,
   SIGNAL_SOON_WINDOW_MS,
   useSignalClock,
 } from "@/lib/signals";
@@ -33,7 +34,7 @@ export default function ScalePage() {
   );
   const matches = signals.data?.filter(signal => signal.name === "Weight") ?? [];
   const signal = matches.length === 1 ? matches[0] : undefined;
-  const compatible = signal?.model.kind === "activity" && signal.model.measurementFields?.length === 1 && signal.model.measurementFields[0] === "weight";
+  const compatible = signal !== undefined && isScaleWeightSignal(signal);
   const record = useTaskyMutation(taskyApi.signals.record);
   const savingRef = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -41,7 +42,9 @@ export default function ScalePage() {
   const [error, setError] = useState<string | null>(null);
   const busy = ["scanning", "connecting", "connected"].includes(scale.state);
   const saved = scale.reading !== null && savedKey === scale.reading.key;
-  const readingInProgress = scale.state === "connected" && !scale.reading?.final;
+  const readingTitle = scale.reading?.final
+    ? "Completed reading"
+    : scale.state === "connected" ? "Live weight" : "Last weight";
   const setupMessage = compatible
     ? null
     : !auth.isAuthenticated
@@ -59,16 +62,18 @@ export default function ScalePage() {
 
   async function save() {
     const reading = scale.reading;
-    if (!reading?.final || !signal || !compatible || !enabled || savingRef.current || saved) return;
+    if (!reading || !signal || !compatible || !enabled || savingRef.current || saved) return;
     savingRef.current = true;
     setSaving(true);
     setError(null);
+    if (!reading.final && busy) await scale.stop();
     try {
       await record({
         signalId: signal.id,
         idempotencyKey: reading.key,
         operation: { type: "activity.occurred", occurredAt: reading.receivedAt,
-          measurements: { weight: weightInPounds(reading.kg) }, note: "YUNMAI Mini Bluetooth weigh-in" },
+          measurements: { weight: weightInPounds(reading.kg) },
+          note: reading.final ? "YUNMAI Mini Bluetooth weigh-in" : "YUNMAI Mini Bluetooth weigh-in (unconfirmed by scale)" },
         soonWindowMs: SIGNAL_SOON_WINDOW_MS,
         periodBounds: getSignalPeriodBounds(Date.now()),
       });
@@ -97,13 +102,14 @@ export default function ScalePage() {
         {connectChoices.map(device => <PillButton key={device.id} label={`Connect to ${device.name}`} onPress={() => void scale.connect(device.id)} />)}
       </View>
       <View style={sharedStyles.card}>
-        <Text style={sharedStyles.sectionTitle}>{scale.reading?.final ? "Completed reading" : "Live weight"}</Text>
+        <Text style={sharedStyles.sectionTitle}>{readingTitle}</Text>
         <Text style={styles.weight}>{scale.reading ? `${weightInPounds(scale.reading.kg).toFixed(2)} lb` : "—"}</Text>
         {scale.reading && <Text style={sharedStyles.muted}>{scale.reading.kg.toFixed(2)} kg · {new Date(scale.reading.receivedAt).toLocaleTimeString()}</Text>}
+        {scale.reading && !scale.reading.final && !saved && <Text style={sharedStyles.muted}>Not confirmed by the scale yet. You can still save it.</Text>}
         {setupMessage && <Text style={styles.body}>{setupMessage}</Text>}
         {signals.error && <Text style={sharedStyles.error}>{signals.error}</Text>}
         {error && <Text style={sharedStyles.error}>{error}</Text>}
-        <PillButton variant="primary" label={saved ? "Saved" : "Save"} loading={saving || readingInProgress} disabled={!scale.reading?.final || !compatible || !enabled || saved} onPress={() => void save()} />
+        <PillButton variant="primary" label={saved ? "Saved" : "Save"} loading={saving} disabled={!scale.reading || !compatible || !enabled || saved} onPress={() => void save()} />
         {signal && <PillButton label="View Weight history" disabled={saving} onPress={() => router.push({ pathname: "/signal_history_page", params: { signalId: signal.id } } as Href)} />}
       </View>
     </ScrollView>

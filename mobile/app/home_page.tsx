@@ -47,6 +47,7 @@ import {
   createSignalIdempotencyKey,
   getSignalPeriodBounds,
   getSignalQueryTime,
+  isScaleWeightSignal,
   loggedTodaySignals,
   SIGNAL_SOON_WINDOW_MS,
   type SignalDashboardItem,
@@ -641,9 +642,8 @@ function SignalsCard() {
   const weightSignal =
     weightSignals.length === 1 ? weightSignals[0] : undefined;
   const showScaleCard =
-    weightSignal?.model.kind === "activity" &&
-    weightSignal.model.measurementFields?.length === 1 &&
-    weightSignal.model.measurementFields[0] === "weight" &&
+    weightSignal !== undefined &&
+    isScaleWeightSignal(weightSignal) &&
     !weightSignal.evaluation.isComplete;
   const actionableSignals = (signals.data ?? [])
     .filter(

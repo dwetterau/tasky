@@ -409,6 +409,18 @@ export function signalActionabilityUiRank(
   return ACTIONABILITY_UI_RANK[signalActionabilityUiTier(tier)];
 }
 
+// The scale saves to the activity signal named "Weight" that records only weight.
+export function isScaleWeightSignal(
+  signal: Pick<SignalDashboardItem, "name" | "model">,
+): boolean {
+  return (
+    signal.name === "Weight" &&
+    signal.model.kind === "activity" &&
+    signal.model.measurementFields?.length === 1 &&
+    signal.model.measurementFields[0] === "weight"
+  );
+}
+
 export function lastLoggedAt(signal: SignalDashboardItem): number | undefined {
   return signal.model.kind === "activity"
     ? signal.model.lastOccurredAt
