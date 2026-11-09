@@ -62,7 +62,7 @@ convex/
 ## Data model (convex/schema.ts)
 
 - **captures**: `userId`, `text`, `completed`, `statusUpdatedAt`
-- **tasks**: `userId`, `content` (markdown), `tagIds[]`, `status` (not_started/in_progress/blocked/closed), `priority` (triage/low/medium/high), `dueDate`, `completedAt`, `statusUpdatedAt`, `createdFromCaptureId`
+- **tasks**: `userId`, `content` (markdown), `tagIds[]`, `orderKey` (fractional manual order), `status` (not_started/in_progress/blocked/closed), `priority` (triage/low/medium/high), `dueDate`, `completedAt`, `statusUpdatedAt`, `createdFromCaptureId`
 - **notes**: `userId`, `content` (markdown), `tagIds[]`, `createdFromCaptureId`
 - **events**: `userId`, `timestamp`, `entityId` (string), `action` (discriminated union by `type` e.g. `"task.status_changed"` with `from`/`to`), `tagIds[]` (snapshot at event time)
 - **tags**: `userId`, `name`, `parentId`, `color`, `childrenRecursive[]` (denormalized descendant IDs)

@@ -2,6 +2,7 @@ import { Migrations } from "@convex-dev/migrations";
 import { components, internal } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
 import { legacyCalendarSchedule } from "./lib/recurrence";
+import { generateKeyBetween } from "fractional-indexing";
 
 const migrations = new Migrations<DataModel>(components.migrations);
 
@@ -61,6 +62,26 @@ export const backfillTaskTagLinksAndHasTags = migrations.define({
     }
 
     return Object.keys(patch).length > 0 ? patch : undefined;
+  },
+});
+
+export const backfillTaskOrderKeys = migrations.define({
+  table: "tasks",
+  batchSize: 50,
+  migrateOne: async (ctx, task) => {
+    if (task.orderKey !== undefined) {
+      return;
+    }
+    const firstOrderedTask = await ctx.db
+      .query("tasks")
+      .withIndex("by_user_order", (q) =>
+        q.eq("userId", task.userId).gt("orderKey", "")
+      )
+      .order("asc")
+      .first();
+    return {
+      orderKey: generateKeyBetween(null, firstOrderedTask?.orderKey ?? null),
+    };
   },
 });
 
@@ -183,6 +204,7 @@ export const run = migrations.runner();
 export const runAll = migrations.runner([
   internal.migrations.backfillTaskStatusUpdatedAt,
   internal.migrations.backfillTaskTagLinksAndHasTags,
+  internal.migrations.backfillTaskOrderKeys,
   internal.migrations.backfillScorecardMemberType,
   internal.migrations.backfillUserTimezoneFromHomepage,
   internal.migrations.backfillScorecardSchedules,

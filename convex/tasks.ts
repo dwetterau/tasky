@@ -7,8 +7,65 @@ import { insertEvent } from "./events";
 import { parseGitHubPullRequestUrl } from "./pullRequests";
 import { parseLinearIssueUrl } from "./linearIssues";
 import { extractCursorAgentExternalId } from "./cursorAgentUrl";
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 
 const CLOSED_TASK_RETENTION_MS = 32 * 24 * 60 * 60 * 1000;
+
+function compareTaskOrder(
+  left: Pick<Doc<"tasks">, "orderKey" | "_creationTime">,
+  right: Pick<Doc<"tasks">, "orderKey" | "_creationTime">
+): number {
+  if (left.orderKey !== undefined && right.orderKey !== undefined) {
+    return left.orderKey < right.orderKey ? -1 : left.orderKey > right.orderKey ? 1 : 0;
+  }
+  if (left.orderKey !== undefined) return -1;
+  if (right.orderKey !== undefined) return 1;
+  return right._creationTime - left._creationTime;
+}
+
+async function getFirstTaskOrderKey(
+  ctx: QueryCtx | MutationCtx,
+  userId: string
+): Promise<string | null> {
+  const first = await ctx.db
+    .query("tasks")
+    .withIndex("by_user_order", (q) => q.eq("userId", userId).gt("orderKey", ""))
+    .order("asc")
+    .first();
+  return first?.orderKey ?? null;
+}
+
+async function initializeMissingTaskOrderKeys(
+  ctx: MutationCtx,
+  userId: string
+): Promise<Doc<"tasks">[]> {
+  const tasks = await ctx.db
+    .query("tasks")
+    .withIndex("by_user_order", (q) => q.eq("userId", userId))
+    .collect();
+  const orderedTasks = tasks.sort(compareTaskOrder);
+  const missingTasks = orderedTasks.filter((task) => task.orderKey === undefined);
+  if (missingTasks.length === 0) {
+    return orderedTasks;
+  }
+
+  const lastExistingKey =
+    orderedTasks.findLast((task) => task.orderKey !== undefined)?.orderKey ?? null;
+  const generatedKeys = generateNKeysBetween(lastExistingKey, null, missingTasks.length);
+  const generatedKeyById = new Map<Id<"tasks">, string>();
+  for (const [index, task] of missingTasks.entries()) {
+    const orderKey = generatedKeys[index];
+    generatedKeyById.set(task._id, orderKey);
+    await ctx.db.patch(task._id, { orderKey });
+  }
+
+  return orderedTasks
+    .map((task) => ({
+      ...task,
+      orderKey: task.orderKey ?? generatedKeyById.get(task._id),
+    }))
+    .sort(compareTaskOrder);
+}
 
 function filterStaleClosedTasks<
   T extends {
@@ -76,6 +133,48 @@ async function getOwnedMcpTagScopeIds(
   }
 
   return new Set([tagRootId, ...(rootTag.childrenRecursive ?? [])]);
+}
+
+async function moveTaskForMcp(args: {
+  ctx: MutationCtx;
+  userId: string;
+  task: Doc<"tasks">;
+  beforeTaskId?: Id<"tasks">;
+  afterTaskId?: Id<"tasks">;
+  tagScopeIds?: Set<Id<"tags">>;
+}): Promise<string | undefined> {
+  const targetTaskId = args.beforeTaskId ?? args.afterTaskId;
+  if (!targetTaskId) return undefined;
+  if (targetTaskId === args.task._id) {
+    throw new Error("A task cannot be positioned relative to itself");
+  }
+
+  const orderedTasks = await initializeMissingTaskOrderKeys(args.ctx, args.userId);
+  const targetTask = orderedTasks.find((task) => task._id === targetTaskId);
+  if (!targetTask) {
+    throw new Error("Position target task not found or access denied");
+  }
+  if (
+    args.tagScopeIds &&
+    !targetTask.tagIds.some((tagId) => args.tagScopeIds?.has(tagId))
+  ) {
+    throw new Error("Position target task is outside the allowed tag scope");
+  }
+
+  const withoutMovingTask = orderedTasks.filter((task) => task._id !== args.task._id);
+  const targetIndex = withoutMovingTask.findIndex((task) => task._id === targetTaskId);
+  const insertionIndex = args.beforeTaskId ? targetIndex : targetIndex + 1;
+  const currentIndex = orderedTasks.findIndex((task) => task._id === args.task._id);
+  if (currentIndex === insertionIndex) {
+    return undefined;
+  }
+  const lowerKey = withoutMovingTask[insertionIndex - 1]?.orderKey ?? null;
+  const upperKey = withoutMovingTask[insertionIndex]?.orderKey ?? null;
+  const orderKey = generateKeyBetween(lowerKey, upperKey);
+  if (orderKey === args.task.orderKey) {
+    return undefined;
+  }
+  return orderKey;
 }
 
 async function resolveMcpTaskTagIds(
@@ -701,17 +800,13 @@ export const listForMcp = internalQuery({
       tasks = await loadTasksByIds(ctx, args.userId, scopedTaskIds);
       tasks = filterStaleClosedTasks(tasks.filter((task) => statusSet.has(task.status)));
     } else {
-      const taskGroups = await Promise.all(
-        statuses.map((status) =>
-          ctx.db
-            .query("tasks")
-            .withIndex("by_user_status", (q) => q.eq("userId", args.userId).eq("status", status))
-            .collect()
-        )
-      );
-      tasks = filterStaleClosedTasks(taskGroups.flat());
+      tasks = await ctx.db
+        .query("tasks")
+        .withIndex("by_user_order", (q) => q.eq("userId", args.userId))
+        .collect();
+      tasks = filterStaleClosedTasks(tasks.filter((task) => statusSet.has(task.status)));
     }
-    const sortedTasks = tasks.sort((a, b) => b._creationTime - a._creationTime);
+    const sortedTasks = tasks.sort(compareTaskOrder);
 
     return await Promise.all(
       sortedTasks.map(async (task) => {
@@ -725,6 +820,7 @@ export const listForMcp = internalQuery({
           dueDate: task.dueDate,
           completedAt: task.completedAt,
           statusUpdatedAt: task.statusUpdatedAt,
+          orderKey: task.orderKey,
           tags: task.tagIds
             .map((tagId) => tagNameById.get(tagId))
             .filter((tagName): tagName is string => Boolean(tagName)),
@@ -747,6 +843,8 @@ export const updateFromMcp = internalMutation({
     status: v.optional(taskStatus),
     priority: v.optional(taskPriority),
     dueDate: v.optional(v.union(v.string(), v.null())),
+    beforeTaskId: v.optional(v.id("tasks")),
+    afterTaskId: v.optional(v.id("tasks")),
     addAgent: v.optional(v.string()),
     removeAgentById: v.optional(v.id("agents")),
     addPullRequestByUrl: v.optional(v.string()),
@@ -758,6 +856,9 @@ export const updateFromMcp = internalMutation({
     const task = await ctx.db.get(args.id);
     if (!task || task.userId !== args.userId) {
       throw new Error("Task not found or access denied");
+    }
+    if (args.beforeTaskId !== undefined && args.afterTaskId !== undefined) {
+      throw new Error("Set only one of beforeTaskId or afterTaskId");
     }
 
     const tagScopeIds = await getOwnedMcpTagScopeIds(ctx, args.userId, args.tagRootId);
@@ -776,6 +877,14 @@ export const updateFromMcp = internalMutation({
     );
     const tagsChanged =
       nextTagIds !== undefined && !haveSameTaskTagIds(task.tagIds, nextTagIds);
+    const orderKey = await moveTaskForMcp({
+      ctx,
+      userId: args.userId,
+      task,
+      beforeTaskId: args.beforeTaskId,
+      afterTaskId: args.afterTaskId,
+      tagScopeIds,
+    });
 
     const now = Date.now();
     const updates: {
@@ -785,6 +894,7 @@ export const updateFromMcp = internalMutation({
       status?: typeof args.status;
       priority?: typeof args.priority;
       dueDate?: string | undefined;
+      orderKey?: string;
       statusUpdatedAt?: number;
       completedAt?: number | undefined;
     } = {};
@@ -814,6 +924,9 @@ export const updateFromMcp = internalMutation({
         updates.dueDate = normalizedDueDate;
       }
     }
+    if (orderKey !== undefined) {
+      updates.orderKey = orderKey;
+    }
 
     if (Object.keys(updates).length > 0) {
       await ctx.db.patch(args.id, updates);
@@ -829,7 +942,9 @@ export const updateFromMcp = internalMutation({
       args.tagNames !== undefined ||
       args.status !== undefined ||
       args.priority !== undefined ||
-      args.dueDate !== undefined;
+      args.dueDate !== undefined ||
+      args.beforeTaskId !== undefined ||
+      args.afterTaskId !== undefined;
     if (hasPrimaryTaskFieldInRequest) {
       await insertEvent(ctx, {
         userId: args.userId,
@@ -1004,6 +1119,7 @@ export const updateFromMcp = internalMutation({
         status: updates.status !== undefined,
         priority: updates.priority !== undefined,
         dueDate: updates.dueDate !== undefined || (args.dueDate === null && task.dueDate !== undefined),
+        order: orderKey !== undefined,
       },
       addedAgent,
       removedAgent,
@@ -1042,11 +1158,16 @@ export const createFromMcp = internalMutation({
 
     const now = Date.now();
     const status = args.status ?? "not_started";
+    const orderKey = generateKeyBetween(
+      null,
+      await getFirstTaskOrderKey(ctx, args.userId)
+    );
     const taskId = await ctx.db.insert("tasks", {
       userId: args.userId,
       content: args.content,
       tagIds,
       hasTags: tagIds.length > 0,
+      orderKey,
       status,
       priority: args.priority ?? "triage",
       dueDate: args.dueDate ?? undefined,
@@ -1131,11 +1252,16 @@ export const create = mutation({
     const tagIds = await assertOwnedTaskTagIds(ctx, userId, args.tagIds);
     const now = Date.now();
     const status = args.status ?? "not_started";
+    const orderKey = generateKeyBetween(
+      null,
+      await getFirstTaskOrderKey(ctx, userId)
+    );
     const taskId = await ctx.db.insert("tasks", {
       userId,
       content: args.content,
       tagIds,
       hasTags: tagIds.length > 0,
+      orderKey,
       status,
       priority: args.priority ?? "triage",
       dueDate: args.dueDate,
@@ -1290,6 +1416,10 @@ export const createFromCapture = mutation({
     const tagIds = await assertOwnedTaskTagIds(ctx, userId, args.tagIds);
 
     const now = Date.now();
+    const orderKey = generateKeyBetween(
+      null,
+      await getFirstTaskOrderKey(ctx, userId)
+    );
 
     // Create a task with the capture text as initial content
     const taskId = await ctx.db.insert("tasks", {
@@ -1297,6 +1427,7 @@ export const createFromCapture = mutation({
       content: capture.text,
       tagIds,
       hasTags: tagIds.length > 0,
+      orderKey,
       status: "not_started",
       priority: args.priority ?? "triage",
       createdFromCaptureId: args.captureId,

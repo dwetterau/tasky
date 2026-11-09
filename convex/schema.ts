@@ -368,6 +368,7 @@ export default defineSchema({
     content: v.string(), // Task description (Markdown)
     tagIds: v.array(v.id("tags")),
     hasTags: v.optional(v.boolean()),
+    orderKey: v.optional(v.string()), // Fractional index for user-defined ordering
     status: taskStatus,
     priority: taskPriority,
     dueDate: v.optional(v.string()), // ISO date string (YYYY-MM-DD)
@@ -376,6 +377,7 @@ export default defineSchema({
     statusUpdatedAt: v.optional(v.number()), // Unix timestamp (ms) of last status change
   })
     .index("by_user", ["userId"])
+    .index("by_user_order", ["userId", "orderKey"])
     .index("by_user_has_tags", ["userId", "hasTags"])
     .index("by_user_status", ["userId", "status"])
     .index("by_user_status_priority", ["userId", "status", "priority"])

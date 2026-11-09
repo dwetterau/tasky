@@ -73,6 +73,8 @@ type ParsedTaskMutationArgs = {
   status?: TaskStatus;
   priority?: TaskPriority;
   dueDate?: string | null;
+  beforeTaskId?: Id<"tasks">;
+  afterTaskId?: Id<"tasks">;
   addAgent?: string;
   removeAgentById?: Id<"agents">;
   addPullRequestByUrl?: string;
@@ -95,6 +97,7 @@ type UpdateTaskFromMcpResult = {
     status: boolean;
     priority: boolean;
     dueDate: boolean;
+    order: boolean;
   };
   addedAgent?: {
     id: Id<"agents">;
@@ -189,6 +192,8 @@ function parseTaskMutationArgs(
   ]);
   if (options.requireTaskId) {
     allowedKeys.add("taskId");
+    allowedKeys.add("beforeTaskId");
+    allowedKeys.add("afterTaskId");
   }
   if (options.allowRemoveFields) {
     allowedKeys.add("removeAgentById");
@@ -208,6 +213,8 @@ function parseTaskMutationArgs(
     status?: unknown;
     priority?: unknown;
     dueDate?: unknown;
+    beforeTaskId?: unknown;
+    afterTaskId?: unknown;
     addAgent?: unknown;
     removeAgentById?: unknown;
     addPullRequestByUrl?: unknown;
@@ -219,6 +226,16 @@ function parseTaskMutationArgs(
   const taskId = typeof args.taskId === "string" ? (args.taskId as Id<"tasks">) : undefined;
   if (options.requireTaskId && !taskId) {
     return { error: mcpError(rpcId, -32602, "taskId is required") };
+  }
+
+  if (args.beforeTaskId !== undefined && typeof args.beforeTaskId !== "string") {
+    return { error: mcpError(rpcId, -32602, "beforeTaskId must be a string") };
+  }
+  if (args.afterTaskId !== undefined && typeof args.afterTaskId !== "string") {
+    return { error: mcpError(rpcId, -32602, "afterTaskId must be a string") };
+  }
+  if (args.beforeTaskId !== undefined && args.afterTaskId !== undefined) {
+    return { error: mcpError(rpcId, -32602, "Set only one of beforeTaskId or afterTaskId") };
   }
 
   if (options.requireContent) {
@@ -298,6 +315,8 @@ function parseTaskMutationArgs(
       status,
       priority,
       dueDate,
+      beforeTaskId: args.beforeTaskId as Id<"tasks"> | undefined,
+      afterTaskId: args.afterTaskId as Id<"tasks"> | undefined,
       addAgent: args.addAgent as string | undefined,
       removeAgentById: args.removeAgentById as Id<"agents"> | undefined,
       addPullRequestByUrl: args.addPullRequestByUrl as string | undefined,
@@ -374,6 +393,8 @@ async function handleUpdateTaskTool(
     status?: "not_started" | "in_progress" | "agent_running" | "blocked" | "closed";
     priority?: "triage" | "low" | "medium" | "high" | "urgent";
     dueDate?: string | null;
+    beforeTaskId?: Id<"tasks">;
+    afterTaskId?: Id<"tasks">;
     addAgent?: string;
     removeAgentById?: Id<"agents">;
     addPullRequestByUrl?: string;
@@ -406,6 +427,8 @@ async function handleUpdateTaskTool(
     parsed.status !== undefined ||
     parsed.priority !== undefined ||
     parsed.dueDate !== undefined ||
+    parsed.beforeTaskId !== undefined ||
+    parsed.afterTaskId !== undefined ||
     parsed.addAgent !== undefined ||
     parsed.removeAgentById !== undefined ||
     parsed.addPullRequestByUrl !== undefined ||
@@ -416,7 +439,7 @@ async function handleUpdateTaskTool(
     return mcpError(
       rpcId,
       -32602,
-      "No updates provided. Set at least one of content/tags/status/priority/dueDate/add*/remove*."
+      "No updates provided. Set at least one task field, ordering field, or attachment operation."
     );
   }
 
@@ -430,6 +453,8 @@ async function handleUpdateTaskTool(
       status: parsed.status,
       priority: parsed.priority,
       dueDate: parsed.dueDate,
+      beforeTaskId: parsed.beforeTaskId,
+      afterTaskId: parsed.afterTaskId,
       addAgent: parsed.addAgent,
       removeAgentById: parsed.removeAgentById,
       addPullRequestByUrl: parsed.addPullRequestByUrl,
@@ -643,7 +668,7 @@ function getToolsList() {
     {
       name: "readTasks",
       description:
-        "Return tasks for the authenticated user. By default, only non-closed tasks are returned. Supports optional full-text search via searchQuery and tag filtering via filterTag.",
+        "Return tasks for the authenticated user in manual order. By default, only non-closed tasks are returned. Supports optional full-text search via searchQuery and tag filtering via filterTag.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -754,7 +779,7 @@ function getToolsList() {
     {
       name: "updateTask",
       description:
-        "Partially update a task. Supports replacing tags by existing tag name, content/status/priority, and attachment changes.",
+        "Partially update or manually reorder a task. Supports replacing tags by existing tag name, content/status/priority, and attachment changes.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -780,6 +805,16 @@ function getToolsList() {
             description:
               "Due date in local ISO format YYYY-MM-DD. Pass null to clear an existing due date.",
             oneOf: [{ type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, { type: "null" }],
+          },
+          beforeTaskId: {
+            type: "string",
+            description:
+              "Move this task immediately before the referenced task. Mutually exclusive with afterTaskId.",
+          },
+          afterTaskId: {
+            type: "string",
+            description:
+              "Move this task immediately after the referenced task. Mutually exclusive with beforeTaskId.",
           },
           addAgent: { type: "string" },
           removeAgentById: { type: "string" },
