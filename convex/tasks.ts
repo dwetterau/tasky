@@ -49,8 +49,14 @@ async function initializeMissingTaskOrderKeys(
     return orderedTasks;
   }
 
-  const lastExistingKey =
-    orderedTasks.findLast((task) => task.orderKey !== undefined)?.orderKey ?? null;
+  let lastExistingKey: string | null = null;
+  for (let index = orderedTasks.length - 1; index >= 0; index -= 1) {
+    const orderKey = orderedTasks[index].orderKey;
+    if (orderKey !== undefined) {
+      lastExistingKey = orderKey;
+      break;
+    }
+  }
   const generatedKeys = generateNKeysBetween(lastExistingKey, null, missingTasks.length);
   const generatedKeyById = new Map<Id<"tasks">, string>();
   for (const [index, task] of missingTasks.entries()) {
