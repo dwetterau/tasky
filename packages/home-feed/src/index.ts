@@ -208,6 +208,16 @@ export const exportSchema = z
       (value.widgets?.length ?? 0),
     "Widget modules must have unique ids",
   );
+/** Re-asserts that the accepted export at `sourceRevision` is still current. */
+export const confirmationSchema = z
+  .object({
+    schemaVersion: z.literal(VERSION),
+    userId: identitySchema,
+    timezone: timezoneSchema,
+    sourceRevision: revision,
+    confirmedAt: timestamp,
+  })
+  .strict();
 
 export const feedSchema = z
   .object({
@@ -229,6 +239,7 @@ export const editionSchema = z
   .strict();
 export type TaskyPayload = z.infer<typeof taskyPayloadSchema>;
 export type TaskyExport = z.infer<typeof exportSchema>;
+export type TaskyConfirmation = z.infer<typeof confirmationSchema>;
 export type ModuleSnapshot = z.infer<typeof moduleSchema>;
 export type Feed = z.infer<typeof feedSchema>;
 export type Edition = z.infer<typeof editionSchema>;

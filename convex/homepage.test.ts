@@ -178,6 +178,92 @@ describe("homepage projection and durable outbox", () => {
       (await t.query(internal.homepage.pending, { id }))!.pendingExportId,
     ).toBe(next!.pendingExportId);
   });
+  it("confirms unchanged content instead of re-sending the export", async () => {
+    vi.stubEnv("HOMEPAGE_EXPORT_INTERVAL_MS", undefined);
+    const t = convexTest(schema, modules);
+    const id = await t.run((ctx) =>
+      ctx.db.insert("homepageEnrollments", {
+        userId: "a",
+        timezone: "America/New_York",
+        enabled: true,
+        revision: 0,
+        nextRunAt: 0,
+        attempt: 0,
+      }),
+    );
+    await t.mutation(internal.homepage.freeze, { id });
+    const first = await t.query(internal.homepage.pending, { id });
+    await t.mutation(internal.homepage.deliveryResult, {
+      id,
+      exportId: first!.pendingExportId!,
+      ok: true,
+      permanent: false,
+      revisionConflict: false,
+    });
+    const delivered = await t.query(internal.homepage.pending, { id });
+    expect(delivered!.deliveredHash).toBe(first!.pendingHash);
+    expect(delivered!.pendingHash).toBeUndefined();
+
+    await t.run((ctx) => ctx.db.patch(id, { nextRunAt: 0 }));
+    const confirmedAt = Date.now();
+    await t.mutation(internal.homepage.freeze, { id });
+    const confirmed = await t.query(internal.homepage.pending, { id });
+    expect(confirmed!.revision).toBe(1);
+    expect(confirmed!.pendingBody).toBeUndefined();
+    expect(confirmed!.nextRunAt).toBeGreaterThanOrEqual(confirmedAt + 600_000);
+
+    // A stale failure for an older revision is ignored.
+    await t.mutation(internal.homepage.confirmFailed, { id, sourceRevision: 0 });
+    expect((await t.query(internal.homepage.pending, { id }))!.deliveredHash).toBe(
+      first!.pendingHash,
+    );
+    await t.mutation(internal.homepage.confirmFailed, { id, sourceRevision: 1 });
+    const fallback = await t.query(internal.homepage.pending, { id });
+    expect(fallback!.deliveredHash).toBeUndefined();
+    expect(fallback!.nextRunAt).toBeLessThanOrEqual(Date.now());
+    await t.mutation(internal.homepage.freeze, { id });
+    const resent = await t.query(internal.homepage.pending, { id });
+    expect(resent!.revision).toBe(2);
+    expect(resent!.pendingHash).toBe(first!.pendingHash);
+  });
+  it("re-sends instead of confirming a failed portfolio collection", async () => {
+    const t = convexTest(schema, modules);
+    const id = await t.run((ctx) =>
+      ctx.db.insert("homepageEnrollments", {
+        userId: "a",
+        timezone: "America/New_York",
+        enabled: true,
+        revision: 0,
+        nextRunAt: 0,
+        attempt: 0,
+      }),
+    );
+    const portfolioSnapshot = JSON.stringify({
+      id: "portfolio",
+      schemaVersion: 1,
+      scope: "user",
+      sourceDataAt: null,
+      collectedAt: null,
+      freshForMs: 900_000,
+      maxAgeMs: 3600_000,
+      status: "unavailable",
+      error: "collection_failed",
+      payload: null,
+    });
+    for (const revision of [1, 2]) {
+      await t.run((ctx) => ctx.db.patch(id, { nextRunAt: 0 }));
+      await t.mutation(internal.homepage.freeze, { id, portfolioSnapshot });
+      const row = await t.query(internal.homepage.pending, { id });
+      expect(row!.revision).toBe(revision);
+      await t.mutation(internal.homepage.deliveryResult, {
+        id,
+        exportId: row!.pendingExportId!,
+        ok: true,
+        permanent: false,
+        revisionConflict: false,
+      });
+    }
+  });
   it("abandons a conflicted envelope and advances to a fresh revision", async () => {
     const t = convexTest(schema, modules);
     const id = await t.run((ctx) =>

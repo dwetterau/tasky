@@ -1,4 +1,5 @@
 import {
+  confirmationSchema,
   editionSchema,
   exportSchema,
   LIMITS,
@@ -175,6 +176,28 @@ export async function handleRequest(
       );
     }
     return json(result, 202);
+  }
+  if (request.method === "POST" && url.pathname === "/internal/tasky/confirm") {
+    const body = await limitedBody(request, 2048);
+    if (!(await verifyRequest(request, body, env.INGESTION_SECRET)))
+      return json({ error: "Unauthorized ingestion" }, 401);
+    const parsed = confirmationSchema.safeParse(JSON.parse(body));
+    if (!parsed.success) return json({ error: "Invalid confirmation" }, 400);
+    try {
+      return json(
+        await objectCall(
+          env.PUBLISHERS,
+          parsed.data.userId,
+          "/confirm-tasky",
+          parsed.data,
+        ),
+        202,
+      );
+    } catch (error) {
+      if (!(error instanceof HttpError) || error.status !== 403) throw error;
+      // Only a full export can restore a missing publisher; ask for one.
+      return json({ error: "Export required" }, 409);
+    }
   }
   if (request.method === "GET" && url.pathname === "/auth/sign-in") {
     return privateResponse(

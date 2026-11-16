@@ -302,6 +302,9 @@ export default defineSchema({
     userId: v.string(), timezone: v.string(), enabled: v.boolean(),
     revision: v.number(), nextRunAt: v.number(), attempt: v.number(),
     pendingBody: v.optional(v.string()), pendingExportId: v.optional(v.string()),
+    // Content hashes ignore per-run timestamps, so an unchanged export can be
+    // confirmed instead of re-sent.
+    pendingHash: v.optional(v.string()), deliveredHash: v.optional(v.string()),
     lastSuccessAt: v.optional(v.number()),
     lastError: v.optional(v.string()),
     portfolioSnapshot: v.optional(v.string()),

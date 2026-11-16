@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import {
+  confirmationSchema,
   editionSchema,
   exportSchema,
   feedSchema,
@@ -153,6 +154,45 @@ export class UserPublisher extends DurableObject<Env> {
             await transaction.put("state", state!);
           });
           return Response.json({ accepted: true });
+        }
+        if (path === "/confirm-tasky") {
+          const confirmation = confirmationSchema.parse(await request.json());
+          if (
+            confirmation.userId !== state.userId ||
+            confirmation.timezone !== state.timezone
+          )
+            throw new HttpError(403, "Wrong enrollment");
+          if (confirmation.confirmedAt > Date.now() + 60_000)
+            throw new HttpError(400, "Future confirmation");
+          if (confirmation.sourceRevision !== state.sourceRevision)
+            throw new HttpError(409, "Revision mismatch");
+          const at = confirmation.confirmedAt;
+          // Refresh exactly the timestamps a re-sent identical export would.
+          state.modules = state.modules.map((module) => {
+            if (module.id === "tasky")
+              return {
+                ...module,
+                sourceDataAt: Math.max(module.sourceDataAt ?? 0, at),
+                collectedAt: Date.now(),
+              };
+            if (module.collectedAt === null || module.collectedAt >= at)
+              return module;
+            return {
+              ...module,
+              collectedAt: at,
+              ...(module.id === "portfolio" &&
+              module.sourceDataAt !== null &&
+              !module.error
+                ? { sourceDataAt: at }
+                : {}),
+            };
+          });
+          state.dirty = true;
+          await this.ctx.storage.setAlarm(
+            Math.max(Date.now() + 1000, state.lastPublishedAt + 1100),
+          );
+          await this.ctx.storage.put("state", state);
+          return Response.json({ confirmed: true });
         }
         if (path === "/status") {
           const lastError =

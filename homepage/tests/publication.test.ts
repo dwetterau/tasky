@@ -35,6 +35,27 @@ async function send(envelope = fixtureExport(), key = env.INGESTION_SECRET) {
     env,
   );
 }
+async function confirm(sourceRevision: number, userId = "user-a") {
+  const body = JSON.stringify({
+    schemaVersion: 1,
+    userId,
+    timezone: "America/New_York",
+    sourceRevision,
+    confirmedAt: Date.now(),
+  });
+  return worker.fetch(
+    new Request(`${env.HOME_ORIGIN}/internal/tasky/confirm`, {
+      method: "POST",
+      headers: await signedHeaders(
+        env.INGESTION_SECRET,
+        "/internal/tasky/confirm",
+        body,
+      ),
+      body,
+    }),
+    env,
+  );
+}
 const stub = (userId = "user-a") =>
   env.PUBLISHERS.get(env.PUBLISHERS.idFromName(userId));
 async function tick() {
@@ -562,6 +583,54 @@ describe("durable ingestion and publication", () => {
       '<span class="forecast-location">Philadelphia, PA</span>',
     );
     expect(edition!.html).not.toContain('action="/api/refresh"');
+  });
+  it("refreshes an unchanged export's timestamps from a confirmation", async () => {
+    await enroll();
+    const exportedAt = Date.now() - 20 * 60_000;
+    const envelope = fixtureExport("user-a", 2, exportedAt);
+    envelope.widgets = [fixtureWeather(exportedAt)];
+    envelope.portfolio = {
+      id: "portfolio",
+      schemaVersion: 1,
+      scope: "user",
+      status: "available",
+      sourceDataAt: exportedAt,
+      collectedAt: exportedAt,
+      freshForMs: 900_000,
+      maxAgeMs: 3600_000,
+      payload: {
+        currency: "USD",
+        totalValue: 100,
+        gainLoss: 0,
+        gainLossPercent: 0,
+        holdingsCount: 0,
+        holdings: [],
+      },
+    };
+    await send(envelope);
+    await tick();
+    const before = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    expect(before!.feed.modules.find((m) => m.id === "tasky")!.status).toBe(
+      "stale",
+    );
+
+    const confirmedAt = Date.now();
+    expect((await confirm(1)).status).toBe(409);
+    expect((await confirm(2, "user-b")).status).toBe(409);
+    expect((await confirm(2)).status).toBe(202);
+    await tick();
+    const after = await env.EDITIONS.get<Edition>("edition:user-a", "json");
+    const byId = (id: string) => after!.feed.modules.find((m) => m.id === id)!;
+    expect(after!.feed.revision).toBeGreaterThan(before!.feed.revision);
+    expect(byId("tasky")).toMatchObject({
+      status: "available",
+      sourceRevision: 2,
+    });
+    expect(byId("tasky").sourceDataAt).toBeGreaterThanOrEqual(confirmedAt);
+    expect(byId("portfolio").status).toBe("available");
+    expect(byId("portfolio").sourceDataAt).toBeGreaterThanOrEqual(confirmedAt);
+    expect(byId("weather").collectedAt).toBeGreaterThanOrEqual(confirmedAt);
+    expect(byId("weather").sourceDataAt).toBe(exportedAt);
   });
   it("serializes concurrent exports so a delayed older event cannot overwrite a newer one", async () => {
     await enroll();

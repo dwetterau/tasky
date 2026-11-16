@@ -11,10 +11,12 @@ import {
 import { internal } from "./_generated/api";
 import { authComponent } from "./auth";
 import {
+  confirmationSchema,
   exportSchema,
   identitySchema,
   timezoneSchema,
   LIMITS,
+  type TaskyExport,
 } from "../packages/home-feed/src/index";
 import { projectHomepage } from "./lib/homepageProjection";
 import { collectHomepagePortfolio } from "./lib/homepagePortfolio";
@@ -40,6 +42,47 @@ function interval() {
       Number(process.env.HOMEPAGE_EXPORT_INTERVAL_MS) || 600_000,
     ),
   );
+}
+
+async function contentHash(envelope: TaskyExport) {
+  const content = JSON.stringify({
+    timezone: envelope.timezone,
+    payload: envelope.payload,
+    widgets: envelope.widgets?.map((widget) => ({
+      ...widget,
+      collectedAt: null,
+    })),
+    portfolio: envelope.portfolio && {
+      ...envelope.portfolio,
+      sourceDataAt: null,
+      collectedAt: null,
+    },
+  });
+  return Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content)),
+    ),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+async function postToHomepage(path: string, body: string) {
+  const home = new URL(process.env.HOMEPAGE_ORIGIN!);
+  if (home.protocol !== "https:" || home.origin !== process.env.HOMEPAGE_ORIGIN)
+    throw new Error("Invalid homepage origin");
+  const response = await fetch(`${home.origin}${path}`, {
+    method: "POST",
+    redirect: "error",
+    headers: await homepageHeaders(
+      process.env.HOMEPAGE_INGESTION_SECRET!,
+      path,
+      body,
+    ),
+    body,
+    signal: AbortSignal.timeout(20_000),
+  });
+  await response.body?.cancel();
+  return response;
 }
 
 export const enroll = internalMutation({
@@ -151,12 +194,36 @@ export const freeze = internalMutation({
           ? { portfolio: JSON.parse(portfolioSnapshot) }
           : {}),
       });
+      const hash = await contentHash(envelope);
+      // A failed portfolio collection re-sends cached data with its old
+      // timestamps, which a confirmation would wrongly refresh.
+      if (hash === row.deliveredHash && !envelope.portfolio?.error) {
+        await ctx.db.patch(id, { nextRunAt: now + interval() });
+        await ctx.scheduler.runAfter(0, internal.homepage.confirm, {
+          id,
+          sourceRevision: row.revision,
+          body: JSON.stringify(
+            confirmationSchema.parse({
+              schemaVersion: 1,
+              userId: row.userId,
+              timezone: row.timezone,
+              sourceRevision: row.revision,
+              confirmedAt: now,
+            }),
+          ),
+        });
+        await ctx.scheduler.runAfter(interval(), internal.homepage.prepare, {
+          id,
+        });
+        return;
+      }
       const body = JSON.stringify(envelope);
       if (new TextEncoder().encode(body).length > LIMITS.bytes)
         throw new Error("Homepage export exceeds limit");
       await ctx.db.patch(id, {
         pendingBody: body,
         pendingExportId: exportId,
+        pendingHash: hash,
         revision: sourceRevision,
         attempt: 0,
         ...(portfolioSnapshot ? { portfolioSnapshot } : {}),
@@ -223,6 +290,8 @@ export const deliveryResult = internalMutation({
         ? {
             pendingBody: undefined,
             pendingExportId: undefined,
+            pendingHash: undefined,
+            deliveredHash: args.ok ? row.pendingHash : undefined,
             exportRequested: undefined,
           }
         : {}),
@@ -242,31 +311,13 @@ export const deliver = internalAction({
     let permanent = false;
     let revisionConflict = false;
     try {
-      const home = new URL(process.env.HOMEPAGE_ORIGIN!);
-      if (
-        home.protocol !== "https:" ||
-        home.origin !== process.env.HOMEPAGE_ORIGIN
-      )
-        throw new Error("Invalid homepage origin");
-      const path = "/internal/tasky";
-      const response = await fetch(`${home.origin}${path}`, {
-        method: "POST",
-        redirect: "error",
-        headers: await homepageHeaders(
-          process.env.HOMEPAGE_INGESTION_SECRET!,
-          path,
-          row.pendingBody,
-        ),
-        body: row.pendingBody,
-        signal: AbortSignal.timeout(20_000),
-      });
+      const response = await postToHomepage("/internal/tasky", row.pendingBody);
       ok = response.ok;
       revisionConflict = response.status === 409;
       permanent =
         response.status >= 400 &&
         response.status < 500 &&
         response.status !== 429;
-      await response.body?.cancel();
     } catch {
       /* Record a coarse code only; never log source data or credentials. */
     }
@@ -277,6 +328,38 @@ export const deliver = internalAction({
       permanent,
       revisionConflict,
     });
+  },
+});
+export const confirm = internalAction({
+  args: {
+    id: v.id("homepageEnrollments"),
+    sourceRevision: v.number(),
+    body: v.string(),
+  },
+  handler: async (ctx, { id, sourceRevision, body }) => {
+    let ok = false;
+    try {
+      ok = (await postToHomepage("/internal/tasky/confirm", body)).ok;
+    } catch {
+      /* Never log source data or credentials. */
+    }
+    if (!ok)
+      await ctx.runMutation(internal.homepage.confirmFailed, {
+        id,
+        sourceRevision,
+      });
+  },
+});
+export const confirmFailed = internalMutation({
+  args: { id: v.id("homepageEnrollments"), sourceRevision: v.number() },
+  handler: async (ctx, { id, sourceRevision }) => {
+    const row = await ctx.db.get(id);
+    if (!row?.enabled || row.revision !== sourceRevision || row.pendingBody)
+      return;
+    // A full export re-establishes the homepage's copy or enters the normal
+    // delivery backoff.
+    await ctx.db.patch(id, { deliveredHash: undefined, nextRunAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.homepage.prepare, { id });
   },
 });
 
