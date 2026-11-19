@@ -10,6 +10,7 @@ import authConfig from "./auth.config";
 import { homepageOidc } from "./lib/homepageOidc";
 import { assertSignupEmailAllowed } from "./lib/authAllowlist";
 import { isolateHomepageFromMcp } from "./lib/mcp";
+import { oauthCallbackDiagnostics } from "./lib/oauthCallbackDiagnostics";
 
 // Convex runtime may not expose URL.canParse yet. Better Auth OAuth/MCP uses it.
 const urlWithCanParse = URL as unknown as {
@@ -79,6 +80,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       },
     },
     plugins: [
+      oauthCallbackDiagnostics(),
       jwt({
         // Convex stores RSA keys without an `alg` field. Match its signer
         // instead of Better Auth's default EdDSA algorithm.
