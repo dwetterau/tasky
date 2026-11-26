@@ -2,23 +2,16 @@
 
 import { useAction, useQuery } from "convex/react";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
-import {
-  useEffect,
-  useMemo,
-  useState,
-  type MouseEvent,
-} from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { ResponsiveContainer, Treemap } from "recharts";
 import type { TreemapNode } from "recharts/types/chart/Treemap";
 import { api } from "../../../convex/_generated/api";
 import { Navigation } from "@/components/Navigation";
 import { SignIn } from "@/components/SignIn";
-import {
-  colorForReturn,
-  RETURN_LEGEND,
-} from "@/lib/portfolioMapColors";
+import { colorForReturn, RETURN_LEGEND } from "@/lib/portfolioMapColors";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { ReturnBars, type ChartDatum } from "./ReturnBars";
+import { ValueOverTime } from "./ValueOverTime";
 
 type Portfolio = FunctionReturnType<typeof api.portfolios.list>[number];
 type Snapshot = FunctionReturnType<typeof api.portfolio.getSnapshot>;
@@ -27,11 +20,12 @@ type SnapshotArgs = FunctionArgs<typeof api.portfolio.getSnapshot>;
 type HistoryArgs = FunctionArgs<typeof api.portfolio.getSnapshotHistory>;
 type ScopeMode = "all" | "single" | "custom";
 type Horizon = "1d" | "1w" | "1m" | "3m" | "ytd" | "total";
-type ChartView = "map" | "bars";
+type ChartView = "map" | "bars" | "time";
 
 const CHART_VIEWS: Array<{ value: ChartView; label: string }> = [
   { value: "map", label: "Map" },
   { value: "bars", label: "Bars" },
+  { value: "time", label: "Over time" },
 ];
 
 const HORIZONS: Array<{ value: Horizon; label: string }> = [
@@ -167,9 +161,7 @@ function ValueWithChange({
     <p className="font-semibold tabular-nums">
       {value}
       {change === null ? null : (
-        <span className={`ml-1.5 text-sm font-medium ${tone}`}>
-          ({change})
-        </span>
+        <span className={`ml-1.5 text-sm font-medium ${tone}`}>({change})</span>
       )}
     </p>
   );
@@ -184,6 +176,13 @@ function shiftDate(date: string, horizon: Exclude<Horizon, "1d" | "total">) {
     shifted.setUTCMonth(0, 1);
   }
   return shifted.toISOString().slice(0, 10);
+}
+
+function localToday(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
 }
 
 function PortfolioTile(node: TreemapNode) {
@@ -311,10 +310,16 @@ function PortfolioContent() {
   } | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [hiddenTickers, setHiddenTickers] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [today] = useState(localToday);
 
   useEffect(() => {
     if (!portfolios || portfolios.length === 0) return;
-    const validIds = new Set(portfolios.map((portfolio) => String(portfolio._id)));
+    const validIds = new Set(
+      portfolios.map((portfolio) => String(portfolio._id)),
+    );
     setSingleId((current) =>
       current && validIds.has(current)
         ? current
@@ -346,7 +351,11 @@ function PortfolioContent() {
     snapshot: SnapshotArgs;
     history: HistoryArgs;
   } | null>(() => {
-    if (!portfolios || portfolios.length === 0 || selectedPortfolios.length === 0) {
+    if (
+      !portfolios ||
+      portfolios.length === 0 ||
+      selectedPortfolios.length === 0
+    ) {
       return null;
     }
     if (scopeMode === "all") {
@@ -441,10 +450,7 @@ function PortfolioContent() {
         let returnAmount: number | null;
         let returnBasis: number | null;
         if (horizon === "1d") {
-          if (
-            holding.dayReturnPercent != null &&
-            holding.dayReturn != null
-          ) {
+          if (holding.dayReturnPercent != null && holding.dayReturn != null) {
             returnPercent = holding.dayReturnPercent;
             returnAmount = holding.dayReturn;
             returnBasis = holding.currentValue - holding.dayReturn;
@@ -467,9 +473,7 @@ function PortfolioContent() {
           );
           const currentPrice =
             holding.currentPrice ??
-            (holding.shares > 0
-              ? holding.currentValue / holding.shares
-              : null);
+            (holding.shares > 0 ? holding.currentValue / holding.shares : null);
           const baselinePrice =
             baseline && baseline.quantity > 0
               ? baseline.value / baseline.quantity
@@ -482,8 +486,7 @@ function PortfolioContent() {
             // Apply the price move to today's shares so quantity changes are
             // not themselves counted as return and dollars match the percent.
             returnBasis = baselinePrice * holding.shares;
-            returnAmount =
-              (currentPrice - baselinePrice) * holding.shares;
+            returnAmount = (currentPrice - baselinePrice) * holding.shares;
             returnPercent =
               returnBasis > 0 ? (returnAmount / returnBasis) * 100 : null;
           } else {
@@ -516,8 +519,7 @@ function PortfolioContent() {
           totalValue > 0 ? (holding.currentValue / totalValue) * 100 : null;
         const startAllocation =
           startTotalValue > 0
-            ? ((holding.currentValue - (returnAmount ?? 0)) /
-                startTotalValue) *
+            ? ((holding.currentValue - (returnAmount ?? 0)) / startTotalValue) *
               100
             : null;
         return {
@@ -587,10 +589,7 @@ function PortfolioContent() {
         returnBasis: number;
       } => entry.returnAmount !== null && entry.returnBasis !== null,
     );
-    const amount = included.reduce(
-      (sum, entry) => sum + entry.returnAmount,
-      0,
-    );
+    const amount = included.reduce((sum, entry) => sum + entry.returnAmount, 0);
     const basis = included.reduce((sum, entry) => sum + entry.returnBasis, 0);
     return included.length > 0 && basis > 0
       ? {
@@ -602,6 +601,31 @@ function PortfolioContent() {
           amount: snapshot.summary.gainLoss,
         };
   }, [holdingsWithReturns, horizon, snapshot]);
+
+  // A single day is not a trend, so the 1D horizon charts the past week.
+  const timeWindowStart =
+    horizon === "total"
+      ? null
+      : shiftDate(today, horizon === "1d" ? "1w" : horizon);
+  const timeWindowLabel =
+    horizon === "total"
+      ? "all recorded snapshots"
+      : horizon === "1d"
+        ? "the past week (1D is too short to chart)"
+        : `snapshots since ${timeWindowStart}`;
+
+  const hoverTicker = (ticker: string | null) => {
+    if (ticker === null) {
+      setHoveredId(null);
+      return;
+    }
+    const label = ticker || "Cash";
+    setHoveredId(
+      holdingDetails.find(
+        (detail) => detail.ticker.toUpperCase() === label.toUpperCase(),
+      )?.id ?? null,
+    );
+  };
 
   const activeEntry =
     holdingDetails.find((detail) => detail.id === hoveredId) ??
@@ -648,7 +672,9 @@ function PortfolioContent() {
 
   const selectCustom = () => {
     if (scopeMode === "all" && portfolios) {
-      setCustomIds(new Set(portfolios.map((portfolio) => String(portfolio._id))));
+      setCustomIds(
+        new Set(portfolios.map((portfolio) => String(portfolio._id))),
+      );
     } else if (scopeMode === "single" && singleId) {
       setCustomIds(new Set([singleId]));
     }
@@ -734,7 +760,9 @@ function PortfolioContent() {
             <p className="mt-1 text-sm text-(--muted)">
               {chartView === "map"
                 ? "Area shows position value. Color shows return for the selected horizon."
-                : "Width shows position value. Height and color show return for the selected horizon, sorted from worst to best."}
+                : chartView === "time"
+                  ? `Each band is one holding's value, stacked to the total. Showing ${timeWindowLabel}.`
+                  : "Width shows position value. Height and color show return for the selected horizon, sorted from worst to best."}
             </p>
           </div>
           <div className="flex flex-col items-start gap-1.5 xl:items-end">
@@ -947,7 +975,9 @@ function PortfolioContent() {
                   {selectedPortfolios.length}
                 </p>
                 <p className="mt-1 truncate text-xs text-(--muted)">
-                  {selectedPortfolios.map((portfolio) => portfolio.name).join(", ")}
+                  {selectedPortfolios
+                    .map((portfolio) => portfolio.name)
+                    .join(", ")}
                 </p>
               </div>
             </div>
@@ -979,7 +1009,11 @@ function PortfolioContent() {
                     ))}
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5 text-xs text-(--muted)">
+                <div
+                  className={`flex-wrap items-center justify-end gap-x-3 gap-y-1.5 text-xs text-(--muted) ${
+                    chartView === "time" ? "hidden" : "flex"
+                  }`}
+                >
                   {RETURN_LEGEND.map((bucket) => (
                     <span
                       key={bucket.label}
@@ -994,34 +1028,55 @@ function PortfolioContent() {
                   ))}
                 </div>
               </div>
-              <div className="relative h-[58vh] min-h-[420px] w-full">
-                {isLoading ? (
-                  <div className="absolute right-4 top-4 z-10 flex items-center gap-2 rounded-lg bg-background/90 px-3 py-2 text-xs text-(--muted) shadow">
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                    Refreshing
-                  </div>
-                ) : null}
-                {chartView === "map" ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <Treemap
-                      data={chartData}
-                      dataKey="value"
-                      nameKey="name"
-                      aspectRatio={4 / 3}
-                      content={PortfolioTile}
-                      isAnimationActive={false}
-                      onMouseEnter={(node) => setHoveredId(String(node.id ?? ""))}
-                      onMouseLeave={() => setHoveredId(null)}
-                    />
-                  </ResponsiveContainer>
-                ) : (
-                  <ReturnBars
-                    data={chartData}
-                    hoveredId={hoveredId}
-                    onHover={setHoveredId}
+              {chartView === "time" ? (
+                history?.status === "ok" ? (
+                  <ValueOverTime
+                    points={history.points}
+                    windowStart={timeWindowStart}
+                    today={today}
+                    hidden={hiddenTickers}
+                    onHiddenChange={setHiddenTickers}
+                    onHoverTicker={hoverTicker}
                   />
-                )}
-              </div>
+                ) : (
+                  <div className="flex h-[52vh] min-h-[380px] items-center justify-center px-6 text-center text-sm text-(--muted)">
+                    {history
+                      ? (history.message ?? "Snapshot history is unavailable.")
+                      : "Loading snapshot history…"}
+                  </div>
+                )
+              ) : (
+                <div className="relative h-[58vh] min-h-[420px] w-full">
+                  {isLoading ? (
+                    <div className="absolute right-4 top-4 z-10 flex items-center gap-2 rounded-lg bg-background/90 px-3 py-2 text-xs text-(--muted) shadow">
+                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                      Refreshing
+                    </div>
+                  ) : null}
+                  {chartView === "map" ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <Treemap
+                        data={chartData}
+                        dataKey="value"
+                        nameKey="name"
+                        aspectRatio={4 / 3}
+                        content={PortfolioTile}
+                        isAnimationActive={false}
+                        onMouseEnter={(node) =>
+                          setHoveredId(String(node.id ?? ""))
+                        }
+                        onMouseLeave={() => setHoveredId(null)}
+                      />
+                    </ResponsiveContainer>
+                  ) : (
+                    <ReturnBars
+                      data={chartData}
+                      hoveredId={hoveredId}
+                      onHover={setHoveredId}
+                    />
+                  )}
+                </div>
+              )}
               {activeEntry ? (
                 <div className="grid grid-cols-2 gap-3 border-t border-(--card-border) px-4 py-4 sm:grid-cols-5">
                   <div>
@@ -1087,7 +1142,9 @@ function PortfolioContent() {
               ) : null}
             </section>
 
-            {history?.status !== "ok" && horizon !== "1d" && horizon !== "total" ? (
+            {history?.status !== "ok" &&
+            horizon !== "1d" &&
+            horizon !== "total" ? (
               <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
                 {history?.message ?? "Snapshot history is unavailable."}
               </p>

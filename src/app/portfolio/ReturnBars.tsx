@@ -42,7 +42,7 @@ function barWidths(values: number[], plotWidth: number): number[] {
   }
 }
 
-function niceTicks(min: number, max: number, targetCount = 6): number[] {
+export function niceTicks(min: number, max: number, targetCount = 6): number[] {
   const span = max - min;
   if (span <= 0) return [min];
   const roughStep = span / targetCount;
@@ -62,7 +62,7 @@ function niceTicks(min: number, max: number, targetCount = 6): number[] {
   return ticks;
 }
 
-function useElementSize<T extends HTMLElement>() {
+export function useElementSize<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
