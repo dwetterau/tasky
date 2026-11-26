@@ -449,8 +449,11 @@ function PortfolioContent() {
       snapshot?.summary.latestPriceDate ??
       history.points[history.points.length - 1]!.date;
     const targetDate = shiftDate(latestDate, horizon);
+    // When the period starts before the first snapshot, measure from the
+    // earliest one rather than silently falling back to cost basis.
     return (
-      history.points.filter((point) => point.date <= targetDate).at(-1) ?? null
+      history.points.filter((point) => point.date <= targetDate).at(-1) ??
+      history.points[0]!
     );
   }, [history, horizon, snapshot?.summary.latestPriceDate]);
 
