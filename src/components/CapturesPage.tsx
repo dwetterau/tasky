@@ -65,7 +65,7 @@ export function CaptureList() {
   return (
     <>
       <Navigation />
-      <div className="min-h-screen pt-24 pb-12 px-4">
+      <div className="min-h-screen pt-(--page-top-roomy) pb-12 px-4">
         <div className="max-w-xl mx-auto">
           <div className="mb-6 flex items-center justify-between">
             <p className="text-(--muted) text-sm">

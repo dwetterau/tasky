@@ -239,7 +239,7 @@ function NotesList() {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <Navigation />
-      <div className="flex-1 flex pt-16 min-h-0">
+      <div className="flex-1 flex pt-(--nav-height) min-h-0">
         <div className="flex-1 overflow-y-auto pt-8 pb-12 px-4">
           <div className="max-w-2xl mx-auto">
           {/* Search UI */}

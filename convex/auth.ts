@@ -52,6 +52,7 @@ export const oauthScopes = [
   "widgets:write",
   "journal:read",
   "journal:sync",
+  "portfolio:read",
 ] as const;
 
 export const authComponent = createClient<DataModel>(components.betterAuth);

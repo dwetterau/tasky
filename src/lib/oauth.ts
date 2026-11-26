@@ -84,6 +84,7 @@ export function oauthPermissionDescriptions(scopes: string[]) {
 
   if (requested.has("journal:read")) descriptions.push("Search and read your private journal entries, including their full text");
   if (requested.has("journal:sync")) descriptions.push("Synchronize your configured journal source and generate embeddings");
+  if (requested.has("portfolio:read")) descriptions.push("Read your portfolio snapshots, including holdings, quantities and values");
   const knownScopes = new Set([
     ...identityScopes,
     "offline_access",
@@ -95,6 +96,7 @@ export function oauthPermissionDescriptions(scopes: string[]) {
     "widgets:write",
     "journal:read",
     "journal:sync",
+    "portfolio:read",
   ]);
   descriptions.push(...scopes.filter((scope) => !knownScopes.has(scope)));
   return descriptions;

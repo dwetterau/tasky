@@ -145,7 +145,7 @@ function SettingsContent() {
   };
 
   return (
-    <div className="min-h-screen pt-20 pb-10 px-4">
+    <div className="min-h-screen pt-(--page-top) pb-10 px-4">
       <div className="max-w-3xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-semibold mb-2">Settings</h1>

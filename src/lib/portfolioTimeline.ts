@@ -2,8 +2,21 @@ const DAY_MS = 86_400_000;
 
 export type TimelineInputPoint = {
   date: string;
-  holdings: Array<{ ticker: string; name: string; value: number }>;
+  holdings: Array<{
+    ticker: string;
+    name: string;
+    value: number;
+    quantity?: number;
+  }>;
 };
+
+/**
+ * What a band's height means. `value` is what was actually held. The other two
+ * isolate one cause of change by holding the other still: `price` values the
+ * latest share count at each day's price, and `shares` values each day's share
+ * count at the latest price.
+ */
+export type TimelineMode = "value" | "price" | "shares";
 
 export type TimelineSeries = {
   /** Upper-cased ticker; the empty string is cash. */
@@ -19,6 +32,8 @@ export type TimelineSeries = {
   slot: number | null;
   /** One value per in-window snapshot date. */
   values: number[];
+  /** Share count on each in-window snapshot date. */
+  quantities: number[];
 };
 
 export type TimelineGap = {
@@ -90,6 +105,46 @@ function makeGap(
 }
 
 /**
+ * A series' band heights for a chart mode.
+ *
+ * Days on which the holding was not held have no price of their own, so they
+ * borrow the nearest known one. Cash and holdings without a share count have no
+ * price at all: every change in them is a change in the amount held.
+ */
+export function seriesValuesFor(
+  series: Pick<TimelineSeries, "key" | "values" | "quantities">,
+  mode: TimelineMode,
+): number[] {
+  if (mode === "value" || series.values.length === 0) return series.values;
+  const prices: Array<number | null> = series.values.map((value, index) => {
+    const quantity = series.quantities[index] ?? 0;
+    return series.key !== "" && quantity > 0 && value > 0
+      ? value / quantity
+      : null;
+  });
+  if (prices.every((price) => price === null)) {
+    return mode === "shares"
+      ? series.values
+      : series.values.map(() => series.values.at(-1)!);
+  }
+  let carried: number | null = null;
+  for (let index = 0; index < prices.length; index += 1) {
+    carried = prices[index] ?? carried;
+    prices[index] = carried;
+  }
+  for (let index = prices.length - 1; index >= 0; index -= 1) {
+    carried = prices[index] ?? carried;
+    prices[index] = carried;
+  }
+  if (mode === "price") {
+    const latestQuantity = series.quantities.at(-1) ?? 0;
+    return prices.map((price) => latestQuantity * price!);
+  }
+  const latestPrice = prices.at(-1)!;
+  return series.quantities.map((quantity) => quantity * latestPrice);
+}
+
+/**
  * Shapes snapshot history for a stacked value-over-time chart.
  *
  * Snapshots are only expected on weekdays, so a weekend between two snapshots
@@ -108,6 +163,17 @@ export function buildTimeline(
       values.set(key, (values.get(key) ?? 0) + Math.max(0, holding.value));
     }
     return values;
+  });
+  const quantitiesByPoint = sorted.map((point) => {
+    const quantities = new Map<string, number>();
+    for (const holding of point.holdings) {
+      const key = holding.ticker.trim().toUpperCase();
+      quantities.set(
+        key,
+        (quantities.get(key) ?? 0) + Math.max(0, holding.quantity ?? 0),
+      );
+    }
+    return quantities;
   });
 
   const meta = new Map<string, { name: string; peak: number }>();
@@ -138,6 +204,8 @@ export function buildTimeline(
     : 0;
   const inWindow = firstIndex < 0 ? [] : sorted.slice(firstIndex);
   const windowValues = firstIndex < 0 ? [] : valuesByPoint.slice(firstIndex);
+  const windowQuantities =
+    firstIndex < 0 ? [] : quantitiesByPoint.slice(firstIndex);
   const dates = inWindow.map((point) => point.date);
   const days = dates.map(dayNumber);
 
@@ -148,6 +216,9 @@ export function buildTimeline(
     latestValue: latest.get(key) ?? 0,
     slot: index < ownSlots ? index : null,
     values: windowValues.map((values) => values.get(key) ?? 0),
+    quantities: windowQuantities.map(
+      (quantities) => quantities.get(key) ?? 0,
+    ),
   }));
 
   if (days.length === 0) {

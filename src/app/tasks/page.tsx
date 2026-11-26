@@ -1248,7 +1248,7 @@ function TasksList({ startAgentStorageKeySuffix }: { startAgentStorageKeySuffix:
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <Navigation />
-      <div className="flex-1 flex pt-16 min-h-0">
+      <div className="flex-1 flex pt-(--nav-height) min-h-0">
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="max-w-376 mx-auto px-4 sm:px-6 lg:px-8 w-full flex-1 flex flex-col min-h-0 pt-8">
           {/* Search UI */}

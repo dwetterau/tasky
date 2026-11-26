@@ -28,6 +28,12 @@ const CHART_VIEWS: Array<{ value: ChartView; label: string }> = [
   { value: "time", label: "Over time" },
 ];
 
+const PILL =
+  "rounded-md px-2 py-0.5 text-xs font-medium transition-colors";
+const PILL_ON = "bg-(--accent)/15 text-accent";
+const PILL_OFF = "text-(--muted) hover:bg-(--hover) hover:text-foreground";
+const STAT_LABEL = "text-[11px] uppercase tracking-wide text-(--muted)";
+
 const HORIZONS: Array<{ value: Horizon; label: string }> = [
   { value: "1d", label: "1D" },
   { value: "1w", label: "1W" },
@@ -614,19 +620,6 @@ function PortfolioContent() {
         ? "the past week (1D is too short to chart)"
         : `snapshots since ${timeWindowStart}`;
 
-  const hoverTicker = (ticker: string | null) => {
-    if (ticker === null) {
-      setHoveredId(null);
-      return;
-    }
-    const label = ticker || "Cash";
-    setHoveredId(
-      holdingDetails.find(
-        (detail) => detail.ticker.toUpperCase() === label.toUpperCase(),
-      )?.id ?? null,
-    );
-  };
-
   const activeEntry =
     holdingDetails.find((detail) => detail.id === hoveredId) ??
     holdingDetails[0];
@@ -721,7 +714,7 @@ function PortfolioContent() {
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
-        <main className="mx-auto max-w-4xl px-4 pb-12 pt-24 sm:px-6">
+        <main className="mx-auto max-w-4xl px-4 pb-12 pt-(--page-top-roomy) sm:px-6">
           <div className="rounded-xl border border-(--card-border) bg-(--card-bg) p-8 text-center">
             <h1 className="text-xl font-bold">No portfolios configured</h1>
             <p className="mt-2 text-sm text-(--muted)">
@@ -753,37 +746,53 @@ function PortfolioContent() {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      <main className="mx-auto max-w-[1600px] px-4 pb-12 pt-20 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Portfolio map</h1>
-            <p className="mt-1 text-sm text-(--muted)">
-              {chartView === "map"
-                ? "Area shows position value. Color shows return for the selected horizon."
-                : chartView === "time"
-                  ? `Each band is one holding's value, stacked to the total. Showing ${timeWindowLabel}.`
-                  : "Width shows position value. Height and color show return for the selected horizon, sorted from worst to best."}
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-1.5 xl:items-end">
+      <main className="mx-auto max-w-[1800px] px-3 pb-10 pt-(--page-top) sm:px-5">
+        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h1 className="text-base font-semibold">Portfolio</h1>
+          <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
-              onClick={() => void handleSync()}
-              disabled={isSyncing}
-              className="inline-flex min-w-32 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-(--accent-hover) disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={selectAll}
+              className={`${PILL} ${scopeMode === "all" ? PILL_ON : PILL_OFF}`}
             >
-              {isSyncing ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              ) : null}
-              {isSyncing ? "Syncing…" : "Sync snapshots"}
+              All
             </button>
+            {portfolios.map((portfolio) => {
+              const id = String(portfolio._id);
+              const selected =
+                (scopeMode === "single" && singleId === id) ||
+                (scopeMode === "custom" && customIds.has(id));
+              return (
+                <button
+                  key={portfolio._id}
+                  type="button"
+                  onClick={(event) => selectPortfolio(event, portfolio)}
+                  aria-pressed={selected}
+                  title="Click to view only this portfolio; Shift-click to add or remove it"
+                  className={`${PILL} ${selected ? PILL_ON : PILL_OFF}`}
+                >
+                  {portfolio.name}
+                </button>
+              );
+            })}
+            {portfolios.length > 1 ? (
+              <button
+                type="button"
+                onClick={selectCustom}
+                className={`${PILL} ${scopeMode === "custom" ? PILL_ON : PILL_OFF}`}
+              >
+                Custom
+              </button>
+            ) : null}
+          </div>
+          <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
             {snapshot?.status === "ok" ? (
               <p className="text-xs text-(--muted)">
                 {snapshot.summary.snapshotCapturedAt === null ? (
                   "Snapshot time unavailable"
                 ) : (
                   <>
-                    Snapshot captured{" "}
+                    Snapshot{" "}
                     <time
                       dateTime={new Date(
                         snapshot.summary.snapshotCapturedAt,
@@ -799,118 +808,66 @@ function PortfolioContent() {
                 )}
               </p>
             ) : null}
-          </div>
-        </div>
-
-        <section className="mb-4 rounded-xl border border-(--card-border) bg-(--card-bg) p-4">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-(--muted)">
-                Portfolio scope
-              </p>
-              <div className="flex flex-wrap gap-2">
+            <div
+              className="inline-flex rounded-md border border-(--card-border) bg-(--card-bg) p-0.5"
+              role="tablist"
+              aria-label="Return horizon"
+            >
+              {HORIZONS.map((option) => (
                 <button
+                  key={option.value}
                   type="button"
-                  onClick={selectAll}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    scopeMode === "all"
+                  role="tab"
+                  aria-selected={horizon === option.value}
+                  onClick={() => setHorizon(option.value)}
+                  className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                    horizon === option.value
                       ? "bg-(--accent)/15 text-accent"
-                      : "bg-background text-(--muted) hover:text-foreground"
+                      : "text-(--muted) hover:text-foreground"
                   }`}
                 >
-                  All portfolios
+                  {option.label}
                 </button>
-                {portfolios.map((portfolio) => {
-                  const id = String(portfolio._id);
-                  const selected =
-                    (scopeMode === "single" && singleId === id) ||
-                    (scopeMode === "custom" && customIds.has(id));
-                  return (
-                    <button
-                      key={portfolio._id}
-                      type="button"
-                      onClick={(event) => selectPortfolio(event, portfolio)}
-                      aria-pressed={selected}
-                      title="Click to view only this portfolio; Shift-click to add or remove it"
-                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                        selected
-                          ? "bg-(--accent)/15 text-accent"
-                          : "bg-background text-(--muted) hover:text-foreground"
-                      }`}
-                    >
-                      {portfolio.name}
-                    </button>
-                  );
-                })}
-                {portfolios.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={selectCustom}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                      scopeMode === "custom"
-                        ? "bg-(--accent)/15 text-accent"
-                        : "bg-background text-(--muted) hover:text-foreground"
-                    }`}
-                  >
-                    Custom
-                  </button>
-                ) : null}
-              </div>
+              ))}
             </div>
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-(--muted)">
-                Return horizon
-              </p>
-              <div
-                className="inline-flex flex-wrap rounded-lg border border-(--card-border) bg-background p-1"
-                role="tablist"
-                aria-label="Return horizon"
-              >
-                {HORIZONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="tab"
-                    aria-selected={horizon === option.value}
-                    onClick={() => setHorizon(option.value)}
-                    className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-                      horizon === option.value
-                        ? "bg-(--accent)/15 text-accent"
-                        : "text-(--muted) hover:text-foreground"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => void handleSync()}
+              disabled={isSyncing}
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-accent px-2.5 text-xs font-semibold text-white transition-colors hover:bg-(--accent-hover) disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSyncing ? (
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : null}
+              {isSyncing ? "Syncing…" : "Sync"}
+            </button>
           </div>
-          {scopeMode === "custom" ? (
-            <div className="mt-4 flex flex-wrap gap-3 border-t border-(--card-border) pt-4">
-              {portfolios.map((portfolio) => {
-                const checked = customIds.has(String(portfolio._id));
-                return (
-                  <label
-                    key={portfolio._id}
-                    className="flex cursor-pointer items-center gap-2 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleCustomPortfolio(portfolio)}
-                      className="h-4 w-4 accent-(--accent)"
-                    />
-                    {portfolio.name}
-                  </label>
-                );
-              })}
-            </div>
-          ) : null}
-        </section>
+        </div>
+        {scopeMode === "custom" ? (
+          <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1.5 rounded-md border border-(--card-border) bg-(--card-bg) px-3 py-2">
+            {portfolios.map((portfolio) => {
+              const checked = customIds.has(String(portfolio._id));
+              return (
+                <label
+                  key={portfolio._id}
+                  className="flex cursor-pointer items-center gap-1.5 text-xs"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleCustomPortfolio(portfolio)}
+                    className="h-3.5 w-3.5 accent-(--accent)"
+                  />
+                  {portfolio.name}
+                </label>
+              );
+            })}
+          </div>
+        ) : null}
 
         {syncMessage ? (
           <div
-            className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+            className={`mb-2 rounded-md border px-3 py-2 text-xs ${
               syncMessage.success
                 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                 : "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
@@ -921,73 +878,72 @@ function PortfolioContent() {
         ) : null}
 
         {error && !snapshot ? (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-red-700 dark:text-red-300">
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-300">
             {error}
           </div>
         ) : snapshot?.status === "ok" ? (
           <>
-            <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <div className="rounded-xl border border-(--card-border) bg-(--card-bg) p-4">
-                <p className="text-xs uppercase tracking-wide text-(--muted)">
-                  Value
-                </p>
-                <p className="mt-1 text-xl font-bold tabular-nums">
+            <dl className="mb-2 grid grid-cols-2 divide-(--card-border) overflow-hidden rounded-lg border border-(--card-border) bg-(--card-bg) max-lg:divide-y lg:grid-cols-4 lg:divide-x">
+              <div className="px-3 py-2">
+                <dt className={STAT_LABEL}>Value</dt>
+                <dd className="text-lg font-semibold leading-tight tabular-nums">
                   {formatCurrency(snapshot.summary.totalCurrentValue)}
                   {selectedReturn.amount === null ? null : (
                     <span
-                      className={`ml-2 text-base font-semibold ${toneClass(selectedReturn.amount)}`}
+                      className={`ml-1.5 text-sm font-medium ${toneClass(selectedReturn.amount)}`}
                     >
-                      ({formatSignedCurrency(selectedReturn.amount)})
+                      {formatSignedCurrency(selectedReturn.amount)}
                     </span>
                   )}
-                </p>
+                </dd>
               </div>
-              <div className="rounded-xl border border-(--card-border) bg-(--card-bg) p-4">
-                <p className="text-xs uppercase tracking-wide text-(--muted)">
-                  Selected return
-                </p>
-                <p
-                  className={`mt-1 text-xl font-bold tabular-nums ${
-                    (selectedReturn.percent ?? 0) >= 0
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-red-600 dark:text-red-400"
-                  }`}
-                >
-                  {formatPercent(selectedReturn.percent)}
-                </p>
-                <p className="mt-1 text-xs text-(--muted)">
-                  {horizonDescription}
-                </p>
+              <div className="px-3 py-2">
+                <dt className={STAT_LABEL}>
+                  {HORIZONS.find((option) => option.value === horizon)!.label}{" "}
+                  return
+                </dt>
+                <dd className="flex items-baseline gap-2">
+                  <span
+                    className={`text-lg font-semibold leading-tight tabular-nums ${
+                      (selectedReturn.percent ?? 0) >= 0
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {formatPercent(selectedReturn.percent)}
+                  </span>
+                  <span className="truncate text-xs text-(--muted)">
+                    {horizonDescription}
+                  </span>
+                </dd>
               </div>
-              <div className="rounded-xl border border-(--card-border) bg-(--card-bg) p-4">
-                <p className="text-xs uppercase tracking-wide text-(--muted)">
-                  Positions
-                </p>
-                <p className="mt-1 text-xl font-bold tabular-nums">
+              <div className="px-3 py-2">
+                <dt className={STAT_LABEL}>Positions</dt>
+                <dd className="text-lg font-semibold leading-tight tabular-nums">
                   {snapshot.summary.holdingsCount}
-                </p>
+                </dd>
               </div>
-              <div className="rounded-xl border border-(--card-border) bg-(--card-bg) p-4">
-                <p className="text-xs uppercase tracking-wide text-(--muted)">
-                  Portfolios
-                </p>
-                <p className="mt-1 text-xl font-bold tabular-nums">
-                  {selectedPortfolios.length}
-                </p>
-                <p className="mt-1 truncate text-xs text-(--muted)">
-                  {selectedPortfolios
-                    .map((portfolio) => portfolio.name)
-                    .join(", ")}
-                </p>
+              <div className="min-w-0 px-3 py-2">
+                <dt className={STAT_LABEL}>Portfolios</dt>
+                <dd className="flex items-baseline gap-2">
+                  <span className="text-lg font-semibold leading-tight tabular-nums">
+                    {selectedPortfolios.length}
+                  </span>
+                  <span className="truncate text-xs text-(--muted)">
+                    {selectedPortfolios
+                      .map((portfolio) => portfolio.name)
+                      .join(", ")}
+                  </span>
+                </dd>
               </div>
-            </div>
+            </dl>
 
-            <section className="overflow-hidden rounded-xl border border-(--card-border) bg-(--card-bg)">
-              <div className="flex flex-col gap-3 border-b border-(--card-border) px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                  <h2 className="font-semibold">Holdings</h2>
+            <section className="overflow-hidden rounded-lg border border-(--card-border) bg-(--card-bg)">
+              <div className="flex flex-col gap-2 border-b border-(--card-border) px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <h2 className="text-sm font-semibold">Holdings</h2>
                   <div
-                    className="inline-flex rounded-lg border border-(--card-border) bg-background p-0.5"
+                    className="inline-flex shrink-0 rounded-md border border-(--card-border) bg-background p-0.5"
                     role="tablist"
                     aria-label="Chart view"
                   >
@@ -998,7 +954,7 @@ function PortfolioContent() {
                         role="tab"
                         aria-selected={chartView === option.value}
                         onClick={() => setChartView(option.value)}
-                        className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                        className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
                           chartView === option.value
                             ? "bg-(--accent)/15 text-accent"
                             : "text-(--muted) hover:text-foreground"
@@ -1008,9 +964,16 @@ function PortfolioContent() {
                       </button>
                     ))}
                   </div>
+                  <p className="hidden min-w-0 truncate text-xs text-(--muted) md:block">
+                    {chartView === "map"
+                      ? "Area is position value; colour is return for the horizon."
+                      : chartView === "time"
+                        ? `Showing ${timeWindowLabel}.`
+                        : "Width is position value; height and colour are return, worst to best."}
+                  </p>
                 </div>
                 <div
-                  className={`flex-wrap items-center justify-end gap-x-3 gap-y-1.5 text-xs text-(--muted) ${
+                  className={`shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1.5 text-xs text-(--muted) ${
                     chartView === "time" ? "hidden" : "flex"
                   }`}
                 >
@@ -1036,7 +999,6 @@ function PortfolioContent() {
                     today={today}
                     hidden={hiddenTickers}
                     onHiddenChange={setHiddenTickers}
-                    onHoverTicker={hoverTicker}
                   />
                 ) : (
                   <div className="flex h-[52vh] min-h-[380px] items-center justify-center px-6 text-center text-sm text-(--muted)">
@@ -1077,7 +1039,7 @@ function PortfolioContent() {
                   )}
                 </div>
               )}
-              {activeEntry ? (
+              {activeEntry && chartView !== "time" ? (
                 <div className="grid grid-cols-2 gap-3 border-t border-(--card-border) px-4 py-4 sm:grid-cols-5">
                   <div>
                     <p className="text-xs text-(--muted)">Holding</p>

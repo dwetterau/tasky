@@ -30,6 +30,10 @@ import {
   createWidgetToolHandlers,
   widgetToolDescriptors,
 } from "./mcpTools/widgets";
+import {
+  createPortfolioToolHandlers,
+  portfolioToolDescriptors,
+} from "./mcpTools/portfolio";
 
 function parseScopes(scopeString: string): ParsedMcpScopes {
   const scopeValues = new Set<string>();
@@ -885,7 +889,11 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
           jsonrpc: "2.0",
           id: rpcId,
           result: {
-            tools: [...getToolsList(), ...journalToolDescriptors(parsedScopes)],
+            tools: [
+              ...getToolsList(),
+              ...journalToolDescriptors(parsedScopes),
+              ...portfolioToolDescriptors(parsedScopes),
+            ],
           },
         });
       }
@@ -930,6 +938,10 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
             ctx.runQuery(internal.widgetData.latestForMcp, args),
           publish: (args) =>
             ctx.runMutation(internal.widgetData.publishFromMcp, args),
+        });
+        const portfolioHandlers = createPortfolioToolHandlers({
+          history: (args) =>
+            ctx.runAction(internal.portfolio.getSnapshotHistoryForMcp, args),
         });
         const journalHandlers = createJournalToolHandlers({
         search_journal: (args) =>
@@ -998,7 +1010,9 @@ const mcpServerHandler = httpAction(async (ctx, req) => {
             Object.entries({
               ...signalHandlers,
               ...scorecardHandlers,
-              ...widgetHandlers, ...journalHandlers,
+              ...widgetHandlers,
+              ...journalHandlers,
+              ...portfolioHandlers,
             }).map(
               ([name, handler]) => [
               name,

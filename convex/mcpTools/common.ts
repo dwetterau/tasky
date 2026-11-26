@@ -15,12 +15,25 @@ export function mcpError(id: unknown, code: number, message: string): Response {
   });
 }
 
-export function mcpToolResult(id: unknown, payload: unknown): Response {
+export function mcpToolResult(
+  id: unknown,
+  payload: unknown,
+  options: { compact?: boolean } = {},
+): Response {
   return jsonResponse({
     jsonrpc: "2.0",
     id,
     result: {
-      content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+      content: [
+        {
+          type: "text",
+          // Large tabular payloads skip indentation, which otherwise triples
+          // their size for the model reading them.
+          text: options.compact
+            ? JSON.stringify(payload)
+            : JSON.stringify(payload, null, 2),
+        },
+      ],
     },
   });
 }

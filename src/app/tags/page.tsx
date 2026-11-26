@@ -362,7 +362,7 @@ function TagManager() {
   return (
     <>
       <Navigation />
-      <div className="min-h-screen pt-24 pb-12 px-4">
+      <div className="min-h-screen pt-(--page-top-roomy) pb-12 px-4">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center justify-between mb-6">
             <div>

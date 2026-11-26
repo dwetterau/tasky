@@ -78,6 +78,7 @@ Supported capability scopes:
   `manageSignalEntry`, and `manageScorecard`)
 - `widgets:read` (required for `readWidgetData`)
 - `widgets:write` (required for `publishWidgetData`)
+- `portfolio:read` (required for `readPortfolioSnapshots`)
 
 Supported resource scope:
 

@@ -17,7 +17,7 @@ This document explains how Tasky's MCP server is wired today and why key design 
 - MCP support is enabled via Better Auth's `mcp` plugin.
 - `oauthScopes` declares currently supported scopes:
   - identity/session scopes: `openid`, `profile`, `email`, `offline_access`
-  - capability scopes: `tasks:read`, `tasks:write`, `signals:read`, `signals:write`, `widgets:read`, `widgets:write`
+  - capability scopes: `tasks:read`, `tasks:write`, `signals:read`, `signals:write`, `widgets:read`, `widgets:write`, `portfolio:read`
 - `defaultScope` is currently `openid offline_access tasks:read`.
 - Dynamic client registration is enabled (`allowDynamicClientRegistration: true`).
 
@@ -73,7 +73,7 @@ Why this design:
 
 Current scope model includes:
 
-- Capability scopes (`tasks:read`, `tasks:write`, `signals:read`, `signals:write`, `widgets:read`, `widgets:write`)
+- Capability scopes (`tasks:read`, `tasks:write`, `signals:read`, `signals:write`, `widgets:read`, `widgets:write`, `portfolio:read`)
 - Resource constraint scope prefix: `tag:root=<tagId>`
 
 Current behavior:
@@ -297,6 +297,29 @@ updates from leaving it.
 Returns the authenticated user's newest row for a registered widget kind, or
 `null` when none exists. The result contains the server-generated row ID,
 creation time, kind/version, and parsed data.
+
+### `readPortfolioSnapshots` (`portfolio:read`)
+
+Returns the daily account snapshots described in
+[docs/portfolio-snapshots.md](docs/portfolio-snapshots.md), combined across
+accounts. The tool is only listed for sessions that were granted
+`portfolio:read`, so existing connections must re-authorize to see it.
+
+Arguments are all optional: `startDate` and `endDate` (`YYYY-MM-DD`, defaulting
+to the 30 days ending today), `portfolio` (a portfolio name; omitted means every
+configured portfolio), `tickers` (restricts holdings and changes; `""` is cash),
+and `detail`:
+
+- `changes` (default): daily totals, plus one row per holding for the window.
+- `totals`: daily totals only.
+- `holdings`: also lists every holding on every day. This is large.
+
+Each `changes` row splits the holding's change in value into `priceEffect` (the
+price moved) and `quantityEffect` (shares were bought, sold, or otherwise
+changed). The two always sum to `endValue - startValue`. Cash and positions
+without a share count have no price, so their whole change is a
+`quantityEffect`. Only days where every account in scope has a snapshot are
+returned.
 
 ### `publishWidgetData` (`widgets:write`)
 

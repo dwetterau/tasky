@@ -6,6 +6,7 @@ export const SIGNALS_READ_SCOPE = "signals:read";
 export const SIGNALS_WRITE_SCOPE = "signals:write";
 export const WIDGETS_READ_SCOPE = "widgets:read";
 export const WIDGETS_WRITE_SCOPE = "widgets:write";
+export const PORTFOLIO_READ_SCOPE = "portfolio:read";
 export const TAG_ROOT_PREFIX = "tag:root=";
 
 export type ParsedMcpScopes = {

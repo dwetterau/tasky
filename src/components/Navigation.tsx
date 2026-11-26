@@ -18,7 +18,7 @@ const navItems = [
     href: "/captures",
     preserveTag: false,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
       </svg>
     ),
@@ -28,7 +28,7 @@ const navItems = [
     href: "/tasks",
     preserveTag: true,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
       </svg>
     ),
@@ -38,7 +38,7 @@ const navItems = [
     href: "/notes",
     preserveTag: true,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     ),
@@ -48,7 +48,7 @@ const navItems = [
     href: "/signals",
     preserveTag: true,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12h3l2-7 4 14 2-7h5" />
       </svg>
     ),
@@ -58,7 +58,7 @@ const navItems = [
     href: "/scorecards",
     preserveTag: true,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2m-4 4 2 2 4-4m-4 8h6" />
       </svg>
     ),
@@ -68,7 +68,7 @@ const navItems = [
     href: "/tags",
     preserveTag: false,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
       </svg>
     ),
@@ -78,7 +78,7 @@ const navItems = [
     href: "/portfolio",
     preserveTag: false,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h10v8H4V4zm0 12h10v4H4v-4zm14-12h2v11h-2V4zm0 15h2v1h-2v-1z" />
       </svg>
     ),
@@ -88,7 +88,7 @@ const navItems = [
     href: "/dashboard",
     preserveTag: false,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
       </svg>
     ),
@@ -157,34 +157,35 @@ export function Navigation() {
   }, [onboardingState, pathname, router]);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 bg-(--card-bg) border-b border-(--card-border) z-50">
-      <div className="px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-(--card-border) bg-(--card-bg)/90 backdrop-blur">
+      <div className="flex h-(--nav-height) items-center justify-between px-3 sm:px-5">
         {/* Logo and Nav Links */}
-        <div className="flex items-center gap-6">
+        <div className="flex h-full items-center gap-4">
           <TaskyWordmark
             href={pathname === "/captures" ? "/captures" : "/"}
             priority
             className="shrink-0"
-            imageClassName="h-[1.35rem] w-auto shrink-0"
-            textClassName="text-xl"
+            imageClassName="h-4 w-auto shrink-0"
+            textClassName="text-base"
           />
 
           {/* Desktop Navigation */}
-          <div className="hidden xl:flex items-center gap-1">
+          <div className="hidden h-full items-stretch lg:flex">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
                   key={item.name}
                   href={getNavHref(item)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  aria-current={isActive ? "page" : undefined}
+                  className={`relative flex items-center gap-1.5 px-2.5 text-[13px] font-medium transition-colors ${
                     isActive
-                      ? "bg-(--accent)/10 text-accent"
-                      : "text-(--muted) hover:text-foreground hover:bg-(--card-border)"
+                      ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent [&>svg]:text-accent"
+                      : "text-(--muted) hover:text-foreground"
                   }`}
                 >
                   {item.icon}
-                  <span className="text-sm font-medium">{item.name}</span>
+                  <span>{item.name}</span>
                 </Link>
               );
             })}
@@ -192,7 +193,7 @@ export function Navigation() {
         </div>
 
         {/* User Section */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           {/* Saving indicator */}
           {isSaving && (
             <div className="flex items-center gap-1.5 text-xs text-(--muted) animate-pulse">
@@ -207,16 +208,17 @@ export function Navigation() {
             <div className="relative hidden sm:block" ref={profileDropdownRef}>
               <button
                 onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-                className="flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors hover:bg-(--card-border)"
+                className="flex items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-(--hover)"
               >
                 <UserIdentity
                   name={user.name}
                   email={user.email}
                   image={user.image}
-                  imageSize={32}
+                  imageSize={24}
+                  compact
                 />
                 <svg
-                  className={`w-4 h-4 text-(--muted) transition-transform ${profileDropdownOpen ? "rotate-180" : ""}`}
+                  className={`h-3.5 w-3.5 text-(--muted) transition-transform ${profileDropdownOpen ? "rotate-180" : ""}`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -227,11 +229,11 @@ export function Navigation() {
 
               {/* Profile Dropdown Menu */}
               {profileDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-(--card-bg) border border-(--card-border) rounded-lg shadow-lg py-1 z-50">
+                <div className="absolute right-0 mt-1.5 w-44 bg-(--card-bg) border border-(--card-border) rounded-lg shadow-lg py-1 z-50">
                   <Link
                     href="/onboarding"
                     onClick={() => setProfileDropdownOpen(false)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[13px] text-(--muted) hover:text-foreground hover:bg-(--hover) transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
@@ -241,7 +243,7 @@ export function Navigation() {
                   <Link
                     href={getAgentsHref()}
                     onClick={() => setProfileDropdownOpen(false)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[13px] text-(--muted) hover:text-foreground hover:bg-(--hover) transition-colors"
                   >
                     <AgentsIcon className="w-4 h-4" />
                     Agents
@@ -249,7 +251,7 @@ export function Navigation() {
                   <Link
                     href="/settings"
                     onClick={() => setProfileDropdownOpen(false)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[13px] text-(--muted) hover:text-foreground hover:bg-(--hover) transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.757.426 1.757 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.757-2.924 1.757-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.757-.426-1.757-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -262,7 +264,7 @@ export function Navigation() {
                       setProfileDropdownOpen(false);
                       void handleSignOut();
                     }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-(--muted) hover:text-foreground hover:bg-(--card-border) transition-colors cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[13px] text-(--muted) hover:text-foreground hover:bg-(--hover) transition-colors cursor-pointer"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -277,9 +279,10 @@ export function Navigation() {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="xl:hidden p-2 text-(--muted) hover:text-foreground transition-colors"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            className="lg:hidden p-1.5 text-(--muted) hover:text-foreground transition-colors"
           >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               {menuOpen ? (
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               ) : (
@@ -292,8 +295,8 @@ export function Navigation() {
 
       {/* Mobile Menu */}
       {menuOpen && (
-        <div className="xl:hidden border-t border-(--card-border) bg-(--card-bg)">
-          <div className="px-4 sm:px-6 lg:px-8 py-2 space-y-1">
+        <div className="lg:hidden border-t border-(--card-border) bg-(--card-bg)">
+          <div className="px-3 sm:px-5 py-1.5 space-y-0.5">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
@@ -301,10 +304,10 @@ export function Navigation() {
                   key={item.name}
                   href={getNavHref(item)}
                   onClick={() => setMenuOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors ${
+                  className={`flex items-center gap-2.5 px-2.5 py-2 text-sm rounded-md transition-colors ${
                     isActive
                       ? "bg-(--accent)/10 text-accent"
-                      : "text-(--muted) hover:text-foreground hover:bg-(--card-border)"
+                      : "text-(--muted) hover:text-foreground hover:bg-(--hover)"
                   }`}
                 >
                   {item.icon}
@@ -315,21 +318,21 @@ export function Navigation() {
             <Link
               href={getAgentsHref()}
               onClick={() => setMenuOpen(false)}
-              className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors ${
+              className={`flex items-center gap-2.5 px-2.5 py-2 text-sm rounded-md transition-colors ${
                 pathname === "/agents"
                   ? "bg-(--accent)/10 text-accent"
-                  : "text-(--muted) hover:text-foreground hover:bg-(--card-border)"
+                  : "text-(--muted) hover:text-foreground hover:bg-(--hover)"
               }`}
             >
-              <AgentsIcon className="w-5 h-5" />
+              <AgentsIcon className="h-4 w-4 shrink-0" />
               <span className="font-medium">Agents</span>
             </Link>
             <Link
               href="/onboarding"
               onClick={() => setMenuOpen(false)}
-              className="flex items-center gap-3 px-3 py-3 text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+              className="flex items-center gap-2.5 px-2.5 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-md hover:bg-(--hover)"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
               </svg>
               <span className="font-medium">Onboarding</span>
@@ -337,9 +340,9 @@ export function Navigation() {
             <Link
               href="/settings"
               onClick={() => setMenuOpen(false)}
-              className="flex items-center gap-3 px-3 py-3 text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border)"
+              className="flex items-center gap-2.5 px-2.5 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-md hover:bg-(--hover)"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.757.426 1.757 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.757-2.924 1.757-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.757-.426-1.757-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
@@ -347,9 +350,9 @@ export function Navigation() {
             </Link>
             <button
               onClick={() => void handleSignOut()}
-              className="w-full flex items-center gap-3 px-3 py-3 text-(--muted) hover:text-foreground transition-colors rounded-lg hover:bg-(--card-border) cursor-pointer"
+              className="w-full flex items-center gap-2.5 px-2.5 py-2 text-sm text-(--muted) hover:text-foreground transition-colors rounded-md hover:bg-(--hover) cursor-pointer"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
               <span className="font-medium">Sign out</span>

@@ -1298,6 +1298,94 @@ const emptySnapshotHistory = (
   points: [],
 });
 
+const snapshotHistoryResult = v.object({
+  status: v.union(
+    v.literal("ok"),
+    v.literal("no_credentials"),
+    v.literal("airtable_error"),
+  ),
+  message: v.optional(v.string()),
+  startDate: v.union(v.string(), v.null()),
+  points: v.array(snapshotHistoryPointValidator),
+});
+
+async function loadSnapshotHistory(
+  ctx: ActionCtx,
+  userId: string,
+  portfolios: PortfolioConfiguration[],
+  requestedStartDate?: string,
+) {
+  const [apiKey, baseId] = await Promise.all([
+    getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
+    getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
+  ]);
+
+  if (!apiKey || !baseId || portfolios.length === 0) {
+    return emptySnapshotHistory(
+      "no_credentials",
+      "Add the Portfolio Airtable API Key and Base ID, then configure a portfolio in Tasky settings.",
+    );
+  }
+
+  const configuredStartDate = portfolios.reduce(
+    (earliest, portfolio) =>
+      portfolio.startDate < earliest ? portfolio.startDate : earliest,
+    portfolios[0]!.startDate,
+  );
+  const requestedStart =
+    requestedStartDate && isValidIsoDate(requestedStartDate)
+      ? requestedStartDate
+      : configuredStartDate;
+  const startDate =
+    requestedStart < configuredStartDate ? configuredStartDate : requestedStart;
+
+  try {
+    const positionRecords = await fetchPortfolioPositionRecords(
+      { apiKey, baseId },
+      portfolios,
+    );
+    const accountRecordIds = new Set(
+      positionRecords.flatMap((record) =>
+        linkedRecordIds(record.fields.Account),
+      ),
+    );
+    if (accountRecordIds.size === 0) {
+      return {
+        status: "ok" as const,
+        startDate,
+        points: [],
+      };
+    }
+    const { recordCount, snapshots } = await fetchAccountSnapshotPayloads(
+      { apiKey, baseId },
+      startDate,
+    );
+    const points = buildPortfolioSnapshotHistory(snapshots, accountRecordIds);
+
+    if (recordCount > 0 && snapshots.length === 0) {
+      return emptySnapshotHistory(
+        "airtable_error",
+        "Account snapshot rows contain invalid JSON.",
+        startDate,
+      );
+    }
+
+    return {
+      status: "ok" as const,
+      startDate,
+      points,
+    };
+  } catch (error) {
+    return emptySnapshotHistory(
+      "airtable_error",
+      error instanceof Error
+        ? error.message
+        : "Failed to fetch account snapshot history.",
+      startDate,
+    );
+  }
+}
+
 export const getSnapshotHistory = action({
   args: {
     startDate: v.optional(v.string()),
@@ -1305,94 +1393,58 @@ export const getSnapshotHistory = action({
     portfolioIds: v.optional(v.array(v.id("portfolios"))),
     allPortfolios: v.optional(v.boolean()),
   },
-  returns: v.object({
-    status: v.union(
-      v.literal("ok"),
-      v.literal("no_credentials"),
-      v.literal("airtable_error"),
-    ),
-    message: v.optional(v.string()),
-    startDate: v.union(v.string(), v.null()),
-    points: v.array(snapshotHistoryPointValidator),
-  }),
+  returns: snapshotHistoryResult,
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Not authenticated");
     }
+    const portfolios = await resolvePortfolioSelection(ctx, userId, args);
+    return await loadSnapshotHistory(ctx, userId, portfolios, args.startDate);
+  },
+});
 
-    const [apiKey, baseId, portfolios] = await Promise.all([
-      getCredential(ctx, userId, portfolioCredentialTypes.airtableApiKey),
-      getCredential(ctx, userId, portfolioCredentialTypes.airtableBaseId),
-      resolvePortfolioSelection(ctx, userId, args),
-    ]);
-
-    if (!apiKey || !baseId || portfolios.length === 0) {
-      return emptySnapshotHistory(
-        "no_credentials",
-        "Add the Portfolio Airtable API Key and Base ID, then configure a portfolio in Tasky settings.",
-      );
-    }
-
-    const configuredStartDate = portfolios.reduce(
-      (earliest, portfolio) =>
-        portfolio.startDate < earliest ? portfolio.startDate : earliest,
-      portfolios[0]!.startDate,
-    );
-    const requestedStart =
-      args.startDate && isValidIsoDate(args.startDate)
-        ? args.startDate
-        : configuredStartDate;
-    const startDate =
-      requestedStart < configuredStartDate
-        ? configuredStartDate
-        : requestedStart;
-
-    try {
-      const positionRecords = await fetchPortfolioPositionRecords(
-        { apiKey, baseId },
-        portfolios,
-      );
-      const accountRecordIds = new Set(
-        positionRecords.flatMap((record) =>
-          linkedRecordIds(record.fields.Account),
-        ),
-      );
-      if (accountRecordIds.size === 0) {
-        return {
-          status: "ok" as const,
-          startDate,
-          points: [],
-        };
-      }
-      const { recordCount, snapshots } = await fetchAccountSnapshotPayloads(
-        { apiKey, baseId },
-        startDate,
-      );
-      const points = buildPortfolioSnapshotHistory(snapshots, accountRecordIds);
-
-      if (recordCount > 0 && snapshots.length === 0) {
-        return emptySnapshotHistory(
-          "airtable_error",
-          "Account snapshot rows contain invalid JSON.",
-          startDate,
-        );
-      }
-
+/**
+ * Snapshot history for the MCP server. Portfolios are chosen by name because
+ * MCP clients never see Convex document IDs; omitting the name reads them all.
+ */
+export const getSnapshotHistoryForMcp = internalAction({
+  args: {
+    userId: v.string(),
+    startDate: v.optional(v.string()),
+    portfolioName: v.optional(v.string()),
+  },
+  returns: v.object({
+    portfolios: v.array(v.string()),
+    availablePortfolios: v.array(v.string()),
+    history: snapshotHistoryResult,
+  }),
+  handler: async (ctx, args) => {
+    const configured = await getPortfolioConfigurations(ctx, args.userId);
+    const availablePortfolios = configured.map((portfolio) => portfolio.name);
+    const wanted = args.portfolioName?.trim().toLowerCase();
+    const selected = wanted
+      ? configured.filter(
+          (portfolio) => portfolio.name.trim().toLowerCase() === wanted,
+        )
+      : configured;
+    if (wanted && selected.length === 0) {
       return {
-        status: "ok" as const,
-        startDate,
-        points,
+        portfolios: [],
+        availablePortfolios,
+        history: { status: "ok" as const, startDate: null, points: [] },
       };
-    } catch (error) {
-      return emptySnapshotHistory(
-        "airtable_error",
-        error instanceof Error
-          ? error.message
-          : "Failed to fetch account snapshot history.",
-        startDate,
-      );
     }
+    return {
+      portfolios: selected.map((portfolio) => portfolio.name),
+      availablePortfolios,
+      history: await loadSnapshotHistory(
+        ctx,
+        args.userId,
+        selected,
+        args.startDate,
+      ),
+    };
   },
 });
 

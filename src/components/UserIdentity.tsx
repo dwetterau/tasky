@@ -6,6 +6,8 @@ type UserIdentityProps = {
   image?: string | null;
   showEmail?: boolean;
   imageSize?: number;
+  /** Tighter spacing, and the name only appears on wide screens. */
+  compact?: boolean;
 };
 
 export function UserIdentity({
@@ -14,12 +16,13 @@ export function UserIdentity({
   image,
   showEmail = false,
   imageSize = 32,
+  compact = false,
 }: UserIdentityProps) {
   const label = name || email || "User";
   const initial = (label[0] ?? "U").toUpperCase();
 
   return (
-    <div className="flex items-center gap-3">
+    <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
       {image ? (
         <Image
           src={image}
@@ -37,8 +40,8 @@ export function UserIdentity({
           {initial}
         </div>
       )}
-      <div className="min-w-0">
-        <p className="text-sm text-foreground truncate">{name || "Signed in user"}</p>
+      <div className={`min-w-0 ${compact ? "hidden xl:block" : ""}`}>
+        <p className={`${compact ? "text-[13px]" : "text-sm"} text-foreground truncate`}>{name || "Signed in user"}</p>
         {showEmail && email ? (
           <p className="text-xs text-(--muted) truncate">{email}</p>
         ) : null}

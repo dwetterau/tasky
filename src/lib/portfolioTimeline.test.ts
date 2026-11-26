@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildTimeline, type TimelineInputPoint } from "./portfolioTimeline";
+import {
+  buildTimeline,
+  seriesValuesFor,
+  type TimelineInputPoint,
+} from "./portfolioTimeline";
 
 function point(
   date: string,
@@ -101,5 +105,34 @@ describe("portfolio timeline", () => {
       full.series.map((entry) => entry.slot),
     );
     expect(full.series[4]!.values).toEqual([500, 0]);
+  });
+
+  it("isolates price moves and share changes for the counterfactual modes", () => {
+    const series = {
+      key: "AAA",
+      values: [1000, 900, 540], // $10, $9, then 40 of 100 shares sold at $9
+      quantities: [100, 100, 60],
+    };
+    expect(seriesValuesFor(series, "value")).toEqual([1000, 900, 540]);
+    // Today's 60 shares at each day's price.
+    expect(seriesValuesFor(series, "price")).toEqual([600, 540, 540]);
+    // Each day's shares at today's $9.
+    expect(seriesValuesFor(series, "shares")).toEqual([900, 900, 540]);
+  });
+
+  it("borrows the nearest price for days a holding was not held", () => {
+    const series = {
+      key: "AAA",
+      values: [0, 200, 0],
+      quantities: [0, 10, 0],
+    };
+    expect(seriesValuesFor(series, "shares")).toEqual([0, 200, 0]);
+    expect(seriesValuesFor(series, "price")).toEqual([0, 0, 0]);
+  });
+
+  it("treats cash as having no price", () => {
+    const cash = { key: "", values: [100, 300], quantities: [0, 0] };
+    expect(seriesValuesFor(cash, "shares")).toEqual([100, 300]);
+    expect(seriesValuesFor(cash, "price")).toEqual([300, 300]);
   });
 });

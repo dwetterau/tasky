@@ -306,7 +306,7 @@ function ScorecardsContent({ cacheScope }: { cacheScope: string }) {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      <main className="pt-20 pb-12 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
+      <main className="pt-(--page-top) pb-12 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
         <div className="flex flex-col gap-5 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Scorecards</h1>

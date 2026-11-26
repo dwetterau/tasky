@@ -90,7 +90,7 @@ export default function OnboardingPage() {
     <>
       {hasCompletedOnboarding ? <Navigation /> : null}
       <main
-        className={`min-h-screen ${hasCompletedOnboarding ? "pt-24 pb-12 px-4" : "px-4 py-8"} bg-background`}
+        className={`min-h-screen ${hasCompletedOnboarding ? "pt-(--page-top-roomy) pb-12 px-4" : "px-4 py-8"} bg-background`}
       >
         <div className={`mx-auto ${hasCompletedOnboarding ? "max-w-5xl" : "max-w-6xl"}`}>
           <div className="rounded-2xl border border-(--card-border) bg-(--card-bg) shadow-2xl shadow-black/20 overflow-hidden">
