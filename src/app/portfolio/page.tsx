@@ -353,6 +353,19 @@ function PortfolioContent() {
     );
   }, [customIds, portfolios, scopeMode, singleId]);
 
+  // Hidden holdings belong to the set of portfolios they were hidden in:
+  // looking at a different set starts with everything shown again.
+  const scopeKey = selectedPortfolios
+    .map((portfolio) => String(portfolio._id))
+    .sort()
+    .join(",");
+  const [hiddenScopeKey, setHiddenScopeKey] = useState(scopeKey);
+  if (hiddenScopeKey !== scopeKey) {
+    setHiddenScopeKey(scopeKey);
+    // The first load goes from no portfolios to some; nothing is hidden yet.
+    if (hiddenTickers.size > 0) setHiddenTickers(new Set());
+  }
+
   const readArgs = useMemo<{
     snapshot: SnapshotArgs;
     history: HistoryArgs;

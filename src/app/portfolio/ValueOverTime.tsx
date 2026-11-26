@@ -26,7 +26,7 @@ import { niceTicks, useElementSize } from "./ReturnBars";
 const MARGIN = { top: 12, right: 56, bottom: 24, left: 52 };
 const OTHER_ID = "\u0000other";
 /** One colour per band; see the --series-N variables in globals.css. */
-const SERIES_COLORS = 10;
+const SERIES_COLORS = 20;
 const MIN_OWN_BANDS = 3;
 const DEFAULT_OWN_BANDS = 9;
 const PREFS_KEY = "tasky-portfolio-over-time";
@@ -1132,7 +1132,7 @@ export function ValueOverTime({
             >
               <span className="mr-1 text-(--muted)">Bands</span>
               {stepButton("Fewer bands", ownBands - 1, "−")}
-              <span className="w-4 text-center font-semibold">{ownBands}</span>
+              <span className="w-5 text-center font-semibold">{ownBands}</span>
               {stepButton("More bands", ownBands + 1, "+")}
             </div>
             {hiddenCount > 0 ? (

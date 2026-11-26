@@ -213,6 +213,18 @@ body {
   --series-8: #ec4647;
   --series-9: #0e8ea8;
   --series-10: #a0622d;
+  /* 11-20 repeat the hue order in a second shade: distinct from their
+     neighbours in the stack, but close to the slot ten places earlier. */
+  --series-11: #1c4fa0;
+  --series-12: #c4501a;
+  --series-13: #2f9e8f;
+  --series-14: #b88a00;
+  --series-15: #c2498a;
+  --series-16: #6aa516;
+  --series-17: #9a5fd0;
+  --series-18: #b02a3c;
+  --series-19: #4aa3d8;
+  --series-20: #7a7a1e;
   --series-other: #94a3b8;
 }
 
@@ -228,6 +240,16 @@ body {
     --series-8: #eb6263;
     --series-9: #19a3c2;
     --series-10: #b0763f;
+    --series-11: #2f6fd0;
+    --series-12: #c9602a;
+    --series-13: #2aa594;
+    --series-14: #b08a10;
+    --series-15: #c9508f;
+    --series-16: #62a81a;
+    --series-17: #a070d8;
+    --series-18: #c23a4c;
+    --series-19: #3a9fd0;
+    --series-20: #8c8c26;
     --series-other: #64748b;
   }
 }
