@@ -20,6 +20,7 @@ import {
   type AccountSnapshotPayload,
   type AccountSnapshotPosition,
 } from "./lib/accountSnapshots";
+import { isCashEquivalentTicker } from "./lib/cashEquivalents";
 import type { Id } from "./_generated/dataModel";
 
 const POSITIONS_TABLE = "Positions";
@@ -159,7 +160,7 @@ export function calculateHolding(record: AirtableRecord) {
   const currentValue = asNumber(record.fields.Value);
   const rawCostBasis = record.fields["Cost Basis"];
   const costBasis =
-    !ticker &&
+    (!ticker || isCashEquivalentTicker(ticker)) &&
     (rawCostBasis === undefined || rawCostBasis === null || rawCostBasis === "")
       ? currentValue
       : asNumber(rawCostBasis);
@@ -185,6 +186,23 @@ export function calculateHolding(record: AirtableRecord) {
 }
 
 type CalculatedHolding = ReturnType<typeof calculateHolding>;
+
+/**
+ * Money market settlement funds are shown as cash. The sync still reads the
+ * real ticker from calculateHolding so their Position values stay refreshed.
+ */
+export function foldCashEquivalent(
+  holding: CalculatedHolding,
+): CalculatedHolding {
+  if (!isCashEquivalentTicker(holding.ticker)) return holding;
+  return {
+    ...holding,
+    ticker: "",
+    companyName: "Cash",
+    shares: 0,
+    currentPrice: null,
+  };
+}
 
 export function aggregateHoldingsByTicker(
   holdings: CalculatedHolding[],
@@ -1175,7 +1193,9 @@ export async function readPortfolioSnapshot(
       }
     }
 
-    const holdings = aggregateHoldingsByTicker(records.map(calculateHolding));
+    const holdings = aggregateHoldingsByTicker(
+      records.map((record) => foldCashEquivalent(calculateHolding(record))),
+    );
     const holdingsWithPriceStatus = holdings.map((holding) => {
       const currentPrice = holding.currentPrice;
       const currentValue = holding.currentValue;

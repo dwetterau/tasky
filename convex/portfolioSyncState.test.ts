@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import {
   aggregateHoldingsByTicker,
   calculateHolding,
+  foldCashEquivalent,
   supportsMarketPriceLookup,
 } from "./portfolio";
 import { modules } from "./test.setup";
@@ -26,6 +27,35 @@ it("keeps an empty-ticker cash position in portfolio value", () => {
     costBasis: 250,
     currentPrice: null,
     currentValue: 250,
+    gainLoss: 0,
+  });
+});
+
+it("folds a money market fund into cash for display", () => {
+  const record = (id: string, fields: Record<string, unknown>) =>
+    calculateHolding({ id, fields });
+  const moneyMarket = record("mm", {
+    Ticker: "vmfxx",
+    Name: "Settlement Fund",
+    Quantity: 100,
+    Value: 100,
+  });
+  // The sync still sees the real ticker so the position keeps refreshing.
+  expect(moneyMarket).toMatchObject({ ticker: "VMFXX", costBasis: 100 });
+
+  const aggregated = aggregateHoldingsByTicker(
+    [moneyMarket, record("cash", { Ticker: "", Name: "Cash", Value: 50 })].map(
+      foldCashEquivalent,
+    ),
+  );
+  expect(aggregated).toHaveLength(1);
+  expect(aggregated[0]).toMatchObject({
+    ticker: "",
+    companyName: "Cash",
+    shares: 0,
+    currentPrice: null,
+    currentValue: 150,
+    costBasis: 150,
     gainLoss: 0,
   });
 });

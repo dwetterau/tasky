@@ -1,3 +1,5 @@
+import { isCashEquivalentTicker } from "./cashEquivalents";
+
 export const ACCOUNT_SNAPSHOT_SCHEMA_VERSION = 1 as const;
 
 export type AccountSnapshotPosition = {
@@ -71,11 +73,14 @@ function parsePosition(value: unknown): AccountSnapshotPosition | null {
   ) {
     return null;
   }
+  // Stored snapshots keep the money market ticker; readers see it as cash,
+  // which has no share count.
+  const cashEquivalent = isCashEquivalentTicker(value.ticker);
   return {
     positionRecordId: value.positionRecordId,
-    ticker: value.ticker,
-    name: value.name,
-    quantity: value.quantity,
+    ticker: cashEquivalent ? "" : value.ticker,
+    name: cashEquivalent ? "Cash" : value.name,
+    quantity: cashEquivalent ? 0 : value.quantity,
     costBasis: value.costBasis,
     value: value.value,
     ...(value.marketDate === undefined ? {} : { marketDate: value.marketDate }),

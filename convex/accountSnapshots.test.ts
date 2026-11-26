@@ -167,3 +167,31 @@ it("does not require an account before its first snapshot", () => {
     },
   ]);
 });
+
+it("reads a stored money market position as cash", () => {
+  const stored = createAccountSnapshotPayload({
+    accountRecordId: "account-a",
+    accountName: "IRA",
+    date: "2026-10-09",
+    capturedAt: 100,
+    positions: [
+      {
+        positionRecordId: "mm",
+        ticker: "VMFXX",
+        name: "Settlement Fund",
+        quantity: 100,
+        costBasis: 100,
+        value: 100,
+      },
+      position("cash", 50, 50),
+    ],
+  });
+  const parsed = parseAccountSnapshotPayload(
+    JSON.parse(JSON.stringify(stored)),
+  )!;
+
+  expect(buildPortfolioSnapshotHistory([parsed], ["account-a"])[0]!.holdings)
+    .toEqual([
+      { ticker: "", name: "Cash", quantity: 0, value: 150, costBasis: 150 },
+    ]);
+});
