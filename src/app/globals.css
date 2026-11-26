@@ -211,6 +211,8 @@ body {
   --series-6: #008a17;
   --series-7: #6a4ce2;
   --series-8: #ec4647;
+  --series-9: #0e8ea8;
+  --series-10: #a0622d;
   --series-other: #94a3b8;
 }
 
@@ -224,6 +226,8 @@ body {
     --series-6: #0aac23;
     --series-7: #9887ef;
     --series-8: #eb6263;
+    --series-9: #19a3c2;
+    --series-10: #b0763f;
     --series-other: #64748b;
   }
 }

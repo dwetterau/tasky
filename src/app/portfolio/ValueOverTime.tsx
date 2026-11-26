@@ -1,6 +1,13 @@
 "use client";
 
-import { useId, useMemo, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import {
   attributeChanges,
   type HoldingAttribution,
@@ -18,7 +25,49 @@ import { niceTicks, useElementSize } from "./ReturnBars";
 
 const MARGIN = { top: 12, right: 56, bottom: 24, left: 52 };
 const OTHER_ID = "\u0000other";
-const MAX_SLOTS = 8;
+/** One colour per band; see the --series-N variables in globals.css. */
+const SERIES_COLORS = 10;
+const MIN_OWN_BANDS = 3;
+const DEFAULT_OWN_BANDS = 9;
+const PREFS_KEY = "tasky-portfolio-over-time";
+
+type SortColumn = "name" | "value" | "price" | "shares";
+type Sort = { column: SortColumn; descending: boolean };
+type ChartPrefs = { ownBands: number; sort: Sort };
+
+const DEFAULT_PREFS: ChartPrefs = {
+  ownBands: DEFAULT_OWN_BANDS,
+  sort: { column: "value", descending: true },
+};
+const SORT_COLUMNS: SortColumn[] = ["name", "value", "price", "shares"];
+
+function clampOwnBands(value: number): number {
+  return Math.min(SERIES_COLORS, Math.max(MIN_OWN_BANDS, Math.round(value)));
+}
+
+function readPrefs(): ChartPrefs {
+  if (typeof window === "undefined") return DEFAULT_PREFS;
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
+    if (typeof stored !== "object" || stored === null) return DEFAULT_PREFS;
+    const { ownBands, sort } = stored as {
+      ownBands?: unknown;
+      sort?: { column?: unknown; descending?: unknown };
+    };
+    const column = SORT_COLUMNS.find((candidate) => candidate === sort?.column);
+    return {
+      ownBands:
+        typeof ownBands === "number" && Number.isFinite(ownBands)
+          ? clampOwnBands(ownBands)
+          : DEFAULT_PREFS.ownBands,
+      sort: column
+        ? { column, descending: sort?.descending !== false }
+        : DEFAULT_PREFS.sort,
+    };
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
 const MAX_LISTED_GAPS = 8;
 const OTHER_PREVIEW_COUNT = 4;
 const TOOLTIP_OTHER_MEMBERS = 3;
@@ -256,26 +305,39 @@ export function ValueOverTime({
   // Open by default: the list is how you see what "Other" is made of.
   const [otherOpen, setOtherOpen] = useState(true);
   const [drill, setDrill] = useState(0);
+  // Remembered per browser, so the chart reopens the way it was left.
+  const [prefs, setPrefs] = useState<ChartPrefs>(readPrefs);
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    } catch {
+      // Storage can be unavailable (private mode); the setting then lasts
+      // for this visit only.
+    }
+  }, [prefs]);
+  const { ownBands, sort } = prefs;
+  // One more slot than bands: the last one is the shared "Other" band.
+  const maxSlots = ownBands + 1;
 
   // Every holding, largest first. Drilling into "Other" drops the leading
   // holdings that already have a band of their own at the level above.
   const ranked = useMemo(
     () =>
-      buildTimeline(points, { windowStart, today, maxSlots: MAX_SLOTS }).series,
-    [points, today, windowStart],
+      buildTimeline(points, { windowStart, today, maxSlots }).series,
+    [maxSlots, points, today, windowStart],
   );
   const maxDrill = Math.max(
     0,
-    Math.ceil((ranked.length - MAX_SLOTS) / (MAX_SLOTS - 1)),
+    Math.ceil((ranked.length - maxSlots) / ownBands),
   );
   const level = Math.min(drill, maxDrill);
 
   const timeline = useMemo(() => {
     if (level === 0) {
-      return buildTimeline(points, { windowStart, today, maxSlots: MAX_SLOTS });
+      return buildTimeline(points, { windowStart, today, maxSlots });
     }
     const scope = new Set(
-      ranked.slice(level * (MAX_SLOTS - 1)).map((series) => series.key),
+      ranked.slice(level * ownBands).map((series) => series.key),
     );
     return buildTimeline(
       points.map((point) => ({
@@ -284,9 +346,9 @@ export function ValueOverTime({
           scope.has(holding.ticker.trim().toUpperCase()),
         ),
       })),
-      { windowStart, today, maxSlots: MAX_SLOTS },
+      { windowStart, today, maxSlots },
     );
-  }, [level, points, ranked, today, windowStart]);
+  }, [level, maxSlots, ownBands, points, ranked, today, windowStart]);
 
   const effectsByKey = useMemo(() => {
     const inWindow = points
@@ -378,8 +440,27 @@ export function ValueOverTime({
     }));
   }, [domainEnd, domainStart, plotWidth]);
 
+  // Bands are always chosen and stacked by latest value. The sort only
+  // reorders the rows of the table, within each of its two groups.
+  const sortRows = (rows: TimelineSeries[]) => {
+    const measure = (series: TimelineSeries) =>
+      sort.column === "price"
+        ? (effectsByKey.get(series.key)?.priceEffect ?? 0)
+        : sort.column === "shares"
+          ? (effectsByKey.get(series.key)?.quantityEffect ?? 0)
+          : series.latestValue;
+    return [...rows].sort((a, b) => {
+      const order =
+        sort.column === "name"
+          ? a.label.localeCompare(b.label)
+          : measure(a) - measure(b);
+      return (sort.descending ? -order : order) || a.label.localeCompare(b.label);
+    });
+  };
   const ownSeries = timeline.series.filter((series) => series.slot !== null);
   const otherSeries = timeline.series.filter((series) => series.slot === null);
+  const ownRows = sortRows(ownSeries);
+  const otherRows = sortRows(otherSeries);
   const visibleSeries = timeline.series.filter(
     (series) => !hidden.has(series.key),
   );
@@ -545,6 +626,50 @@ export function ValueOverTime({
       </button>
     );
   };
+
+  const sortHeader = (column: SortColumn, label: string, hint: string) => {
+    const active = sort.column === column;
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          setPrefs((current) => ({
+            ...current,
+            sort: {
+              column,
+              // Names start A to Z; amounts start largest first.
+              descending: active ? !sort.descending : column !== "name",
+            },
+          }))
+        }
+        aria-pressed={active}
+        title={`${hint}\nClick to sort${active ? " the other way" : ""}`}
+        className={`flex items-center gap-0.5 uppercase tracking-wide hover:text-foreground ${
+          column === "name" ? "" : "justify-end"
+        } ${active ? "font-semibold text-foreground" : ""}`}
+      >
+        {label}
+        <span aria-hidden className="w-2 text-[9px]">
+          {active ? (sort.descending ? "▼" : "▲") : ""}
+        </span>
+      </button>
+    );
+  };
+
+  const setOwnBands = (next: number) =>
+    setPrefs((current) => ({ ...current, ownBands: clampOwnBands(next) }));
+  const stepButton = (label: string, next: number, glyph: ReactNode) => (
+    <button
+      type="button"
+      onClick={() => setOwnBands(next)}
+      disabled={clampOwnBands(next) === ownBands}
+      aria-label={label}
+      title={label}
+      className="flex h-5 w-5 items-center justify-center rounded text-(--muted) hover:bg-(--hover) hover:text-foreground disabled:opacity-35 disabled:hover:bg-transparent"
+    >
+      {glyph}
+    </button>
+  );
 
   const otherEffects = effectsFor(otherSeries);
   const otherValue = otherSeries.reduce(
@@ -981,7 +1106,7 @@ export function ValueOverTime({
                 </button>
                 {Array.from({ length: level }, (_, index) => {
                   const depth = index + 1;
-                  const count = ranked.length - depth * (MAX_SLOTS - 1);
+                  const count = ranked.length - depth * ownBands;
                   return (
                     <span key={depth} className="flex items-center gap-1">
                       <span className="text-(--muted)">›</span>
@@ -1001,6 +1126,15 @@ export function ValueOverTime({
                 })}
               </nav>
             )}
+            <div
+              className="order-last ml-auto flex shrink-0 items-center gap-0.5"
+              title="How many holdings get a band of their own before the rest are grouped as Other. Remembered on this browser."
+            >
+              <span className="mr-1 text-(--muted)">Bands</span>
+              {stepButton("Fewer bands", ownBands - 1, "−")}
+              <span className="w-4 text-center font-semibold">{ownBands}</span>
+              {stepButton("More bands", ownBands + 1, "+")}
+            </div>
             {hiddenCount > 0 ? (
               <>
                 <span className="text-(--muted)">· {hiddenCount} hidden</span>
@@ -1017,20 +1151,18 @@ export function ValueOverTime({
           <div
             className={`${ROW_GRID} border-b border-(--card-border) py-1 pl-3 pr-3 text-[11px] uppercase tracking-wide text-(--muted)`}
           >
-            <span>Holding</span>
-            <span className="text-right">Value</span>
-            <span
-              className="text-right"
-              title="Change in value caused by the price moving"
-            >
-              Price
-            </span>
-            <span
-              className="text-right"
-              title="Change in value caused by the share count changing: buys, sells, exercises, transfers"
-            >
-              Shares
-            </span>
+            {sortHeader("name", "Holding", "Sort by ticker")}
+            {sortHeader("value", "Value", "Value in the latest snapshot")}
+            {sortHeader(
+              "price",
+              "Price",
+              "Change in value caused by the price moving",
+            )}
+            {sortHeader(
+              "shares",
+              "Shares",
+              "Change in value caused by the share count changing: buys, sells, exercises, transfers",
+            )}
             <span
               className="text-right"
               title="Top bar: price move. Bottom bar: share change. Each is drawn relative to the holding's own size, on a square-root scale so small moves stay visible."
@@ -1039,7 +1171,7 @@ export function ValueOverTime({
             </span>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {ownSeries.map((series) => renderRow(series, false))}
+            {ownRows.map((series) => renderRow(series, false))}
             {otherSeries.length > 0 ? (
               <div
                 className="border-t border-(--card-border)"
@@ -1114,7 +1246,7 @@ export function ValueOverTime({
                   </button>
                 </div>
                 {otherOpen
-                  ? otherSeries.map((series) => renderRow(series, true))
+                  ? otherRows.map((series) => renderRow(series, true))
                   : null}
               </div>
             ) : null}
