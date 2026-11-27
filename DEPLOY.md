@@ -22,6 +22,12 @@ build command (`npx convex deploy --cmd 'npm run build'`) with
 Next.js application and the production Convex schema/functions. Convex does not
 need a separate GitHub Actions workflow.
 
+Only `main` deploys. `vercel.json` turns off Vercel's Git deployments for every
+other branch, because a preview build pushes to a brand-new Convex preview
+deployment that has none of the required environment variables (the push fails
+on `HOMEPAGE_OAUTH_CLIENT_ID`), and GitHub OAuth sign-in cannot work on a
+per-preview Convex URL anyway. Pull requests are checked by the `CI` workflow.
+
 The repository's `Deploy homepage` GitHub Actions workflow is separate. It
 deploys only the Cloudflare homepage Worker under `homepage/`; it is not
 evidence for or against a Convex deployment. Check the commit's **Vercel**
