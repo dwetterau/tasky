@@ -8,9 +8,12 @@ import type { TreemapNode } from "recharts/types/chart/Treemap";
 import { api } from "../../../convex/_generated/api";
 import { Navigation } from "@/components/Navigation";
 import { SignIn } from "@/components/SignIn";
+import { applyLiveQuotes, isSessionLive } from "@/lib/portfolioLive";
 import { colorForReturn, RETURN_LEGEND } from "@/lib/portfolioMapColors";
+import { useLivePortfolio } from "@/lib/useLivePortfolio";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { ReturnBars, type ChartDatum } from "./ReturnBars";
+import { IntradayChart } from "./IntradayChart";
 import { ValueOverTime } from "./ValueOverTime";
 
 type Portfolio = FunctionReturnType<typeof api.portfolios.list>[number];
@@ -436,6 +439,45 @@ function PortfolioContent() {
     };
   }, [getHistory, getSnapshot, readArgs, refreshVersion]);
 
+  // The 1D horizon runs on live prices; the snapshot stays as the source of
+  // share counts and as the fallback when no live price is available.
+  const liveTickers = useMemo(
+    () =>
+      snapshot?.status === "ok"
+        ? snapshot.holdings.flatMap((holding) =>
+            holding.ticker && holding.shares > 0 ? [holding.ticker] : [],
+          )
+        : [],
+    [snapshot],
+  );
+  const liveSession = useLivePortfolio(liveTickers, horizon === "1d");
+  const view = useMemo<Snapshot | null>(() => {
+    if (snapshot?.status !== "ok" || !liveSession) return snapshot;
+    const live = applyLiveQuotes(
+      snapshot.holdings,
+      liveSession,
+      (snapshot.summary.latestPriceDate ?? "") >= liveSession.sessionDate,
+    );
+    const gainLoss = live.totalCurrentValue - snapshot.summary.totalCost;
+    return {
+      ...snapshot,
+      holdings: live.holdings,
+      summary: {
+        ...snapshot.summary,
+        totalCurrentValue: live.totalCurrentValue,
+        gainLoss,
+        gainLossPercent:
+          snapshot.summary.totalCost > 0
+            ? (gainLoss / snapshot.summary.totalCost) * 100
+            : 0,
+        dayReturnDate: liveSession.sessionDate,
+        dayReturn: live.dayReturn,
+        dayReturnPercent: live.dayReturnPercent,
+      },
+    };
+  }, [liveSession, snapshot]);
+  const isLive = liveSession !== null && isSessionLive(liveSession);
+
   const baselinePoint = useMemo(() => {
     if (
       horizon === "1d" ||
@@ -458,14 +500,14 @@ function PortfolioContent() {
   }, [history, horizon, snapshot?.summary.latestPriceDate]);
 
   const holdingsWithReturns = useMemo(() => {
-    if (snapshot?.status !== "ok") return [];
+    if (view?.status !== "ok") return [];
     const baselineByTicker = new Map(
       baselinePoint?.holdings.map((holding) => [
         holding.ticker.trim().toUpperCase(),
         holding,
       ]) ?? [],
     );
-    return snapshot.holdings
+    return view.holdings
       .filter((holding) => holding.currentValue > 0)
       .map((holding) => {
         let returnPercent: number | null;
@@ -524,11 +566,11 @@ function PortfolioContent() {
           b.holding.currentValue - a.holding.currentValue ||
           a.holding.ticker.localeCompare(b.holding.ticker),
       );
-  }, [baselinePoint, horizon, snapshot]);
+  }, [baselinePoint, horizon, view]);
 
   const holdingDetails = useMemo<HoldingDetail[]>(() => {
     const totalValue =
-      snapshot?.status === "ok" ? snapshot.summary.totalCurrentValue : 0;
+      view?.status === "ok" ? view.summary.totalCurrentValue : 0;
     const startTotalValue =
       totalValue -
       holdingsWithReturns.reduce(
@@ -564,7 +606,7 @@ function PortfolioContent() {
         };
       },
     );
-  }, [holdingsWithReturns, snapshot]);
+  }, [holdingsWithReturns, view]);
 
   const chartData = useMemo<ChartDatum[]>(
     () =>
@@ -582,25 +624,25 @@ function PortfolioContent() {
   );
 
   const selectedReturn = useMemo(() => {
-    if (snapshot?.status !== "ok") {
+    if (view?.status !== "ok") {
       return { percent: null, amount: null };
     }
     if (horizon === "1d") {
-      return snapshot.summary.dayReturnPercent !== null &&
-        snapshot.summary.dayReturn !== null
+      return view.summary.dayReturnPercent !== null &&
+        view.summary.dayReturn !== null
         ? {
-            percent: snapshot.summary.dayReturnPercent,
-            amount: snapshot.summary.dayReturn,
+            percent: view.summary.dayReturnPercent,
+            amount: view.summary.dayReturn,
           }
         : {
-            percent: snapshot.summary.gainLossPercent,
-            amount: snapshot.summary.gainLoss,
+            percent: view.summary.gainLossPercent,
+            amount: view.summary.gainLoss,
           };
     }
     if (horizon === "total") {
       return {
-        percent: snapshot.summary.gainLossPercent,
-        amount: snapshot.summary.gainLoss,
+        percent: view.summary.gainLossPercent,
+        amount: view.summary.gainLoss,
       };
     }
     const included = holdingsWithReturns.filter(
@@ -619,12 +661,13 @@ function PortfolioContent() {
           amount,
         }
       : {
-          percent: snapshot.summary.gainLossPercent,
-          amount: snapshot.summary.gainLoss,
+          percent: view.summary.gainLossPercent,
+          amount: view.summary.gainLoss,
         };
-  }, [holdingsWithReturns, horizon, snapshot]);
+  }, [holdingsWithReturns, horizon, view]);
 
-  // A single day is not a trend, so the 1D horizon charts the past week.
+  // Without live prices a single day is not a trend, so the 1D horizon
+  // falls back to charting the past week of snapshots.
   const timeWindowStart =
     horizon === "total"
       ? null
@@ -633,7 +676,9 @@ function PortfolioContent() {
     horizon === "total"
       ? "all recorded snapshots"
       : horizon === "1d"
-        ? "the past week (1D is too short to chart)"
+        ? liveSession
+          ? "today's move since the previous close, for the total and each holding"
+          : "the past week (live prices are unavailable)"
         : `snapshots since ${timeWindowStart}`;
 
   const activeEntry =
@@ -750,9 +795,11 @@ function PortfolioContent() {
 
   const horizonDescription =
     horizon === "1d"
-      ? snapshot?.summary.dayReturnDate
-        ? `Previous market close to ${snapshot.summary.dayReturnDate}`
-        : "Previous market close"
+      ? isLive
+        ? "Previous market close to now"
+        : view?.summary.dayReturnDate
+          ? `Previous market close to ${view.summary.dayReturnDate}`
+          : "Previous market close"
       : horizon === "total"
         ? "Return against cost basis"
         : baselinePoint
@@ -802,6 +849,42 @@ function PortfolioContent() {
             ) : null}
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
+            {liveSession ? (
+              <p
+                className="inline-flex items-center gap-1.5 text-xs text-(--muted)"
+                title={
+                  isLive
+                    ? "1D values use live prices and refresh every 15 seconds"
+                    : "The market is closed; 1D values use the last session's prices"
+                }
+              >
+                <span className="relative flex h-2 w-2">
+                  {isLive ? (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+                  ) : null}
+                  <span
+                    className={`relative inline-flex h-2 w-2 rounded-full ${
+                      isLive ? "bg-emerald-500" : "bg-(--muted)"
+                    }`}
+                  />
+                </span>
+                {isLive ? (
+                  <>
+                    Live{" "}
+                    <time
+                      dateTime={new Date(liveSession.lastTradeAt).toISOString()}
+                      className="font-medium tabular-nums text-foreground"
+                    >
+                      {new Intl.DateTimeFormat(undefined, {
+                        timeStyle: "medium",
+                      }).format(new Date(liveSession.lastTradeAt))}
+                    </time>
+                  </>
+                ) : (
+                  "Market closed"
+                )}
+              </p>
+            ) : null}
             {snapshot?.status === "ok" ? (
               <p className="text-xs text-(--muted)">
                 {snapshot.summary.snapshotCapturedAt === null ? (
@@ -903,7 +986,9 @@ function PortfolioContent() {
               <div className="px-3 py-2">
                 <dt className={STAT_LABEL}>Value</dt>
                 <dd className="text-lg font-semibold leading-tight tabular-nums">
-                  {formatCurrency(snapshot.summary.totalCurrentValue)}
+                  {formatCurrency(
+                    (view ?? snapshot).summary.totalCurrentValue,
+                  )}
                   {selectedReturn.amount === null ? null : (
                     <span
                       className={`ml-1.5 text-sm font-medium ${toneClass(selectedReturn.amount)}`}
@@ -1007,7 +1092,14 @@ function PortfolioContent() {
                   ))}
                 </div>
               </div>
-              {chartView === "time" ? (
+              {chartView === "time" && horizon === "1d" && liveSession ? (
+                <IntradayChart
+                  holdings={snapshot.holdings}
+                  session={liveSession}
+                  hidden={hiddenTickers}
+                  onHiddenChange={setHiddenTickers}
+                />
+              ) : chartView === "time" ? (
                 history?.status === "ok" ? (
                   <ValueOverTime
                     points={history.points}

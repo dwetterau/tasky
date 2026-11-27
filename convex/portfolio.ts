@@ -259,7 +259,7 @@ function getTodayDate(timezone: string): string {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
-function getAlpacaCredentials(): AlpacaCredentials | null {
+export function getAlpacaCredentials(): AlpacaCredentials | null {
   const apiKey = process.env.ALPACA_API_KEY?.trim();
   const secretKey = process.env.ALPACA_SECRET_KEY?.trim();
   if (!apiKey || !secretKey) {
