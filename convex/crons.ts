@@ -25,4 +25,10 @@ crons.daily(
   internal.journalImport.dispatch,
   {},
 );
+crons.daily(
+  "clean webhook deliveries",
+  { hourUTC: 8, minuteUTC: 50 },
+  internal.webhookForwards.cleanupDeliveries,
+  {},
+);
 export default crons;

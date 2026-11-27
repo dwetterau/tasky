@@ -57,6 +57,7 @@ convex/
   events.ts               # Event logging helper + time-range query for dashboard
   tags.ts                 # Tag CRUD with recursive hierarchy management
   http.ts                 # HTTP routes for auth callbacks
+  webhookForwards.ts      # Per-user inbound webhooks forwarded to Claude routines (docs/webhook-forwards.md)
 ```
 
 ## Data model (convex/schema.ts)

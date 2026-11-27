@@ -287,6 +287,21 @@ export const signalEntryOperation = v.union(
   }),
 );
 
+export const webhookForwardSource = v.union(
+  v.literal("generic"),
+  v.literal("strava"),
+);
+export const stravaAspectType = v.union(
+  v.literal("create"),
+  v.literal("update"),
+  v.literal("delete"),
+);
+export const webhookDeliveryStatus = v.union(
+  v.literal("pending"),
+  v.literal("delivered"),
+  v.literal("failed"),
+);
+
 // Note: better-auth manages its own tables (users, sessions, accounts, verifications)
 // through the component. Our app tables use string userId to reference better-auth users.
 export default defineSchema({
@@ -450,6 +465,57 @@ export default defineSchema({
     .index("by_user_task", ["userId", "taskId"])
     .index("by_user_url", ["userId", "url"])
     .index("by_user_task_url", ["userId", "taskId", "url"]),
+
+  // Per-user inbound webhook endpoints that forward to a destination (see
+  // convex/webhookForwards.ts). Secrets are encrypted with the apiKeys cipher.
+  webhookForwards: defineTable({
+    userId: v.string(),
+    name: v.string(),
+    source: webhookForwardSource,
+    enabled: v.boolean(),
+    // The inbound URL token: hash for lookup, ciphertext so the URL can be shown again.
+    tokenHash: v.string(),
+    encryptedToken: v.string(),
+    tokenIv: v.string(),
+    destination: v.object({
+      kind: v.literal("claude_routine"),
+      routineId: v.string(), // trig_...
+      encryptedToken: v.string(),
+      iv: v.string(),
+    }),
+    strava: v.optional(
+      v.object({
+        clientId: v.string(),
+        encryptedClientSecret: v.string(),
+        iv: v.string(),
+        aspectTypes: v.array(stravaAspectType), // activity events to forward
+        subscriptionId: v.optional(v.number()),
+        athleteId: v.optional(v.number()), // set once the athlete authorizes the app
+        oauthStateHash: v.optional(v.string()),
+      }),
+    ),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_token_hash", ["tokenHash"])
+    .index("by_strava_oauth_state", ["strava.oauthStateHash"]),
+
+  webhookDeliveries: defineTable({
+    userId: v.string(),
+    forwardId: v.id("webhookForwards"),
+    receivedAt: v.number(),
+    status: webhookDeliveryStatus,
+    summary: v.string(), // short non-secret description of the event
+    dedupeKey: v.optional(v.string()),
+    text: v.optional(v.string()), // payload to send; cleared once delivery settles
+    attempts: v.number(),
+    responseStatus: v.optional(v.number()),
+    sessionUrl: v.optional(v.string()),
+    error: v.optional(v.string()),
+  })
+    .index("by_forward_received", ["forwardId", "receivedAt"])
+    .index("by_forward_dedupe", ["forwardId", "dedupeKey"])
+    .index("by_received", ["receivedAt"]),
 
   apiKeys: defineTable({
     userId: v.string(),
