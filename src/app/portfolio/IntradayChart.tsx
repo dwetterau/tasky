@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   buildIntradaySeries,
+  stackDiverging,
   isSessionLive,
   type IntradaySeries,
   type LiveHoldingInput,
@@ -239,23 +240,21 @@ export function IntradayChart({
   // In dollars each holding is a band: gains pile up above the previous
   // close and losses below it, so the outer edges are the day's total gain
   // and total loss.
-  const bands = useMemo(() => {
-    if (!stacked) return [];
-    const gains = times.map(() => 0);
-    const losses = times.map(() => 0);
-    return lines.map((line) => {
-      const lower: number[] = [];
-      const upper: number[] = [];
-      line.points.forEach((point, index) => {
-        const side = point >= 0 ? gains : losses;
-        const from = side[index]!;
-        side[index] = from + point;
-        lower.push(Math.min(from, side[index]!));
-        upper.push(Math.max(from, side[index]!));
-      });
-      return { line, lower, upper };
-    });
+  const stack = useMemo(() => {
+    const stackedLines = stacked ? lines : [];
+    const result = stackDiverging(
+      times,
+      stackedLines.map((line) => line.points),
+    );
+    return {
+      times: result.times,
+      bands: result.bands.map((band, index) => ({
+        ...band,
+        line: stackedLines[index]!,
+      })),
+    };
   }, [lines, stacked, times]);
+  const bands = stack.bands;
 
   const allPoints = stacked
     ? [
@@ -342,11 +341,17 @@ export function IntradayChart({
     if (stacked) {
       const value =
         yMax - ((pointerY - MARGIN.top) / plotHeight) * (yMax - yMin);
+      // The stack has extra times where a holding crosses zero.
+      let at = 0;
+      stack.times.forEach((candidate, index) => {
+        if (Math.abs(candidate - time) < Math.abs(stack.times[at]! - time)) {
+          at = index;
+        }
+      });
       closest =
         time >= times[0]! && time <= times.at(-1)!
           ? (bands.find(
-              (band) =>
-                value >= band.lower[nearest]! && value < band.upper[nearest]!,
+              (band) => value >= band.lower[at]! && value < band.upper[at]!,
             )?.line.series.key ?? null)
           : null;
     } else if (time >= times[0]! - span && time <= times.at(-1)! + span) {
@@ -598,41 +603,41 @@ export function IntradayChart({
 
               <g pointerEvents="none">
                 {stacked ? (
-                  bands.map(({ line, lower, upper }) => {
-                    const indexes = times.map((_, index) => index);
-                    const path = [
-                      ...indexes.map(
-                        (index) =>
-                          `${index === 0 ? "M" : "L"}${xFor(times[index]!).toFixed(1)},${yFor(upper[index]!).toFixed(1)}`,
-                      ),
-                      ...indexes
-                        .reverse()
-                        .map(
-                          (index) =>
-                            `L${xFor(times[index]!).toFixed(1)},${yFor(lower[index]!).toFixed(1)}`,
-                        ),
-                      "Z",
-                    ].join(" ");
+                  bands.map(({ line, lower, upper, runs }) => {
+                    const lastAt = stack.times.length - 1;
                     const isActive = activeKey === line.series.key;
                     return (
                       <g
                         key={line.series.key}
                         opacity={activeKey !== null && !isActive ? 0.25 : 1}
                       >
-                        <path
-                          d={path}
-                          fill={line.color}
-                          stroke="var(--card-bg)"
-                          strokeWidth={1}
-                          strokeLinejoin="round"
-                        />
+                        {runs.map((run) => (
+                          <path
+                            key={run[0]!.time}
+                            d={[
+                              ...run.map(
+                                (point, index) =>
+                                  `${index === 0 ? "M" : "L"}${xFor(point.time).toFixed(1)},${yFor(point.upper).toFixed(1)}`,
+                              ),
+                              ...[...run]
+                                .reverse()
+                                .map(
+                                  (point) =>
+                                    `L${xFor(point.time).toFixed(1)},${yFor(point.lower).toFixed(1)}`,
+                                ),
+                              "Z",
+                            ].join(" ")}
+                            fill={line.color}
+                            stroke="var(--card-bg)"
+                            strokeWidth={1}
+                            strokeLinejoin="round"
+                          />
+                        ))}
                         {isActive ? (
                           <text
                             x={xFor(times[lastIndex]!) + 9}
                             y={
-                              (yFor(lower[lastIndex]!) +
-                                yFor(upper[lastIndex]!)) /
-                              2
+                              (yFor(lower[lastAt]!) + yFor(upper[lastAt]!)) / 2
                             }
                             dominantBaseline="middle"
                             fill="var(--foreground)"

@@ -3,6 +3,7 @@ import {
   applyLiveQuotes,
   buildIntradaySeries,
   isSessionLive,
+  stackDiverging,
   type LiveHoldingInput,
   type LiveSession,
 } from "./portfolioLive";
@@ -88,7 +89,11 @@ describe("live portfolio quotes", () => {
 
   it("builds value paths, flat where there is no quote", () => {
     const series = buildIntradaySeries([cash, fund, holding({})], session);
-    expect(series.map((entry) => entry.label)).toEqual(["AAA", "FUNDX", "Cash"]);
+    expect(series.map((entry) => entry.label)).toEqual([
+      "AAA",
+      "FUNDX",
+      "Cash",
+    ]);
     expect(series[0]).toMatchObject({
       live: true,
       baseline: 1000,
@@ -102,5 +107,50 @@ describe("live portfolio quotes", () => {
     expect(
       isSessionLive({ ...session, asOf: session.lastTradeAt + 11 * 60_000 }),
     ).toBe(false);
+  });
+});
+
+describe("diverging stack", () => {
+  it("tapers a series to nothing where it crosses zero", () => {
+    const { times, bands } = stackDiverging(
+      [0, 10, 20],
+      [
+        [5, 5, 5],
+        [4, -4, -4],
+      ],
+    );
+
+    // The second series crosses zero halfway between the first two times.
+    expect(times).toEqual([0, 5, 10, 20]);
+    expect(bands[1]!.runs).toEqual([
+      [
+        { time: 0, lower: 5, upper: 9 },
+        // Ends empty on top of the first series, not down at the losses.
+        { time: 5, lower: 5, upper: 5 },
+      ],
+      [
+        { time: 5, lower: 0, upper: 0 },
+        { time: 10, lower: -4, upper: 0 },
+        { time: 20, lower: -4, upper: 0 },
+      ],
+    ]);
+    expect(bands[0]!.runs).toHaveLength(1);
+    expect(bands[0]!.upper).toEqual([5, 5, 5, 5]);
+  });
+
+  it("piles gains up and losses down in order", () => {
+    const { bands } = stackDiverging(
+      [0, 10],
+      [
+        [1, 2],
+        [-3, -1],
+        [2, 2],
+      ],
+    );
+    expect(bands.map((band) => [band.lower[1], band.upper[1]])).toEqual([
+      [0, 2],
+      [-1, 0],
+      [2, 4],
+    ]);
   });
 });
