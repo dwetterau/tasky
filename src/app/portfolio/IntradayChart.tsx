@@ -88,7 +88,7 @@ const MODES: Array<{ value: Mode; label: string; caption: string }> = [
     value: "dollars",
     label: "$ change",
     caption:
-      "Dollars gained or lost since the previous close, stacked: gains above the line, losses below.",
+      "Dollars gained or lost since the previous close, stacked: gains above the line, losses below, and the net as a line.",
   },
 ];
 
@@ -258,7 +258,10 @@ export function IntradayChart({
   }, [lines, stacked, times]);
 
   const allPoints = stacked
-    ? bands.flatMap((band) => [...band.lower, ...band.upper])
+    ? [
+        ...total.points,
+        ...bands.flatMap((band) => [...band.lower, ...band.upper]),
+      ]
     : [...total.points, ...lines.flatMap((line) => line.points)];
   const rawMin = Math.min(0, ...allPoints);
   const rawMax = Math.max(0, ...allPoints);
@@ -660,53 +663,6 @@ export function IntradayChart({
                         />
                       );
                     })}
-                    <path
-                      d={pathFor(total.points)}
-                      fill="none"
-                      stroke="var(--card-bg)"
-                      strokeWidth={6}
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d={pathFor(total.points)}
-                      fill="none"
-                      stroke="var(--foreground)"
-                      strokeWidth={2.5}
-                      strokeLinejoin="round"
-                      opacity={activeKey === null ? 1 : 0.35}
-                    />
-                    {live ? (
-                      <circle
-                        cx={xFor(times[lastIndex]!)}
-                        cy={yFor(total.points[lastIndex]!)}
-                        r={9}
-                        fill="var(--foreground)"
-                        opacity={0.18}
-                        className="animate-ping"
-                        style={{
-                          transformBox: "fill-box",
-                          transformOrigin: "center",
-                        }}
-                      />
-                    ) : null}
-                    <circle
-                      cx={xFor(times[lastIndex]!)}
-                      cy={yFor(total.points[lastIndex]!)}
-                      r={4}
-                      fill="var(--foreground)"
-                      stroke="var(--card-bg)"
-                      strokeWidth={2}
-                    />
-                    <text
-                      x={xFor(times[lastIndex]!) + 9}
-                      y={yFor(total.points[lastIndex]!)}
-                      dominantBaseline="middle"
-                      fill="var(--foreground)"
-                      fontSize={11}
-                      fontWeight={700}
-                    >
-                      {`Total ${formatPoint(total.points[lastIndex]!)}`}
-                    </text>
                     {lines
                       .filter((line) => line.series.key === activeKey)
                       .map((line) => (
@@ -729,6 +685,53 @@ export function IntradayChart({
                       ))}
                   </>
                 )}
+                <path
+                  d={pathFor(total.points)}
+                  fill="none"
+                  stroke="var(--card-bg)"
+                  strokeWidth={6}
+                  strokeLinejoin="round"
+                />
+                <path
+                  d={pathFor(total.points)}
+                  fill="none"
+                  stroke="var(--foreground)"
+                  strokeWidth={2.5}
+                  strokeLinejoin="round"
+                  opacity={activeKey === null ? 1 : 0.35}
+                />
+                {live ? (
+                  <circle
+                    cx={xFor(times[lastIndex]!)}
+                    cy={yFor(total.points[lastIndex]!)}
+                    r={9}
+                    fill="var(--foreground)"
+                    opacity={0.18}
+                    className="animate-ping"
+                    style={{
+                      transformBox: "fill-box",
+                      transformOrigin: "center",
+                    }}
+                  />
+                ) : null}
+                <circle
+                  cx={xFor(times[lastIndex]!)}
+                  cy={yFor(total.points[lastIndex]!)}
+                  r={4}
+                  fill="var(--foreground)"
+                  stroke="var(--card-bg)"
+                  strokeWidth={2}
+                />
+                <text
+                  x={xFor(times[lastIndex]!) + 9}
+                  y={yFor(total.points[lastIndex]!)}
+                  dominantBaseline="middle"
+                  fill="var(--foreground)"
+                  fontSize={11}
+                  fontWeight={700}
+                >
+                  {`${stacked ? "Net" : "Total"} ${formatPoint(total.points[lastIndex]!)}`}
+                </text>
                 {hoverX !== null ? (
                   <line
                     x1={hoverX}
