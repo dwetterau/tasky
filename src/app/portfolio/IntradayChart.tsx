@@ -323,9 +323,6 @@ export function IntradayChart({
         b.change - a.change ||
         a.series.key.localeCompare(b.series.key),
     );
-  const unpriced = allSeries.filter(
-    (series) => !series.live && series.key !== "",
-  );
   const hiddenCount = allSeries.filter((series) =>
     hidden.has(series.key),
   ).length;
@@ -603,7 +600,7 @@ export function IntradayChart({
         </div>
         <p className="border-t border-(--card-border) px-3 py-2 text-xs text-(--muted)">
           {live
-            ? `Live · prices as of ${formatTime(session.lastTradeAt, true)} ET, refreshed every 5 seconds.`
+            ? `Live · latest trade ${formatTime(session.lastTradeAt, true)} ET, refreshed every 5 seconds.`
             : `Market closed · showing the ${new Intl.DateTimeFormat("en-US", {
                 weekday: "short",
                 month: "short",
@@ -612,13 +609,7 @@ export function IntradayChart({
               }).format(
                 new Date(`${session.sessionDate}T12:00:00Z`),
               )} session.`}{" "}
-          Prices are from the IEX exchange and can differ slightly from the
-          consolidated tape.
-          {unpriced.length > 0
-            ? ` No live price for ${unpriced
-                .map((series) => series.label)
-                .join(", ")}; held at the last snapshot value.`
-            : ""}
+          Last fetched {formatTime(session.asOf, true)} ET.
         </p>
       </div>
 
