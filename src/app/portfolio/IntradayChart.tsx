@@ -219,11 +219,17 @@ export function IntradayChart({
   );
   const yMin = rawMin - padding;
   const yMax = rawMax + padding;
+  // The axis spans regular hours while they are running, so the line grows
+  // toward the close; pre-market and after-hours activity widen it, and once
+  // the market has closed it ends at the last activity.
+  const domainStart = Math.min(session.sessionOpen, times[0] ?? Infinity);
+  const domainEnd =
+    session.asOf <= session.sessionClose
+      ? session.sessionClose
+      : Math.max(session.sessionClose, times.at(-1) ?? 0);
   const xFor = (time: number) =>
     MARGIN.left +
-    ((time - session.sessionOpen) /
-      (session.sessionClose - session.sessionOpen)) *
-      plotWidth;
+    ((time - domainStart) / (domainEnd - domainStart)) * plotWidth;
   const yFor = (percent: number) =>
     MARGIN.top + ((yMax - percent) / (yMax - yMin)) * plotHeight;
   const pathFor = (points: number[]) =>
@@ -235,25 +241,33 @@ export function IntradayChart({
       .join(" ");
 
   const hourTicks = useMemo(() => {
-    const ticks = [session.sessionOpen];
+    const hours = (domainEnd - domainStart) / HOUR_MS;
+    const step = hours > 0 && plotWidth / hours < 64 ? 2 * HOUR_MS : HOUR_MS;
+    const ticks: number[] = [];
     for (
-      let tick = Math.ceil(session.sessionOpen / HOUR_MS) * HOUR_MS;
-      tick <= session.sessionClose;
-      tick += HOUR_MS
+      let tick = Math.ceil(domainStart / step) * step;
+      tick <= domainEnd;
+      tick += step
     ) {
-      // Skip the first full hour: its label would collide with the open's.
-      if (tick - session.sessionOpen >= HOUR_MS) ticks.push(tick);
+      ticks.push(tick);
     }
     return ticks;
-  }, [session.sessionClose, session.sessionOpen]);
+  }, [domainEnd, domainStart, plotWidth]);
+  const sessionMarkers = [
+    { time: session.sessionOpen, label: "Open", extendsLeft: true },
+    { time: session.sessionClose, label: "Close", extendsLeft: false },
+  ].filter(({ time, extendsLeft }) =>
+    // Only worth marking where the chart runs past it into extended hours.
+    extendsLeft ? time > domainStart : time < domainEnd,
+  );
 
   const handleMove = (event: MouseEvent<SVGSVGElement>) => {
     if (times.length === 0 || plotWidth <= 0) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const time =
-      session.sessionOpen +
+      domainStart +
       ((event.clientX - bounds.left - MARGIN.left) / plotWidth) *
-        (session.sessionClose - session.sessionOpen);
+        (domainEnd - domainStart);
     let nearest = 0;
     times.forEach((candidate, index) => {
       if (Math.abs(candidate - time) < Math.abs(times[nearest]! - time)) {
@@ -416,12 +430,48 @@ export function IntradayChart({
                   </text>
                 </g>
               ))}
-              {hourTicks.map((tick, index) => (
+              {sessionMarkers.map(({ time, label, extendsLeft }) => {
+                const x = xFor(time);
+                const edge = extendsLeft
+                  ? MARGIN.left
+                  : MARGIN.left + plotWidth;
+                return (
+                  <g key={label} pointerEvents="none">
+                    <rect
+                      x={Math.min(x, edge)}
+                      y={MARGIN.top}
+                      width={Math.abs(edge - x)}
+                      height={plotHeight}
+                      fill="var(--muted)"
+                      opacity={0.07}
+                    />
+                    <line
+                      x1={x}
+                      x2={x}
+                      y1={MARGIN.top - 4}
+                      y2={MARGIN.top + plotHeight}
+                      stroke="var(--muted)"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={x + (extendsLeft ? 5 : -5)}
+                      y={MARGIN.top + 6}
+                      textAnchor={extendsLeft ? "start" : "end"}
+                      fill="var(--muted)"
+                      fontSize={10}
+                      fontWeight={600}
+                    >
+                      {`${label} ${formatTime(time)}`}
+                    </text>
+                  </g>
+                );
+              })}
+              {hourTicks.map((tick) => (
                 <text
                   key={tick}
                   x={xFor(tick)}
                   y={height - MARGIN.bottom + 16}
-                  textAnchor={index === 0 ? "start" : "middle"}
+                  textAnchor="middle"
                   fill="var(--muted)"
                   fontSize={11}
                 >
@@ -600,7 +650,13 @@ export function IntradayChart({
         </div>
         <p className="border-t border-(--card-border) px-3 py-2 text-xs text-(--muted)">
           {live
-            ? `Live · latest trade ${formatTime(session.lastTradeAt, true)} ET, refreshed every 5 seconds.`
+            ? `${
+                session.asOf < session.sessionOpen
+                  ? "Live · pre-market"
+                  : session.asOf > session.sessionClose
+                    ? "Live · after hours"
+                    : "Live"
+              } · latest trade ${formatTime(session.lastTradeAt, true)} ET, refreshed every 5 seconds.`
             : `Market closed · showing the ${new Intl.DateTimeFormat("en-US", {
                 weekday: "short",
                 month: "short",

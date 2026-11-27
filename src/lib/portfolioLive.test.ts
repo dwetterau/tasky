@@ -97,11 +97,8 @@ describe("live portfolio quotes", () => {
     expect(series[1]).toMatchObject({ live: false, values: [500, 500, 500] });
   });
 
-  it("is live only in session with a recent trade", () => {
+  it("is live only with a recent trade", () => {
     expect(isSessionLive(session)).toBe(true);
-    expect(
-      isSessionLive({ ...session, asOf: session.sessionClose + 1 }),
-    ).toBe(false);
     expect(
       isSessionLive({ ...session, asOf: session.lastTradeAt + 11 * 60_000 }),
     ).toBe(false);

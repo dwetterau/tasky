@@ -20,6 +20,7 @@ export type IntradayQuote = {
 export type IntradaySession = {
   /** Trading date in New York, YYYY-MM-DD. */
   sessionDate: string;
+  /** Regular trading hours; `times` can run before and after them. */
   sessionOpen: number;
   sessionClose: number;
   asOf: number;
@@ -30,33 +31,83 @@ export type IntradaySession = {
 };
 
 export const INTRADAY_BAR_MS = 5 * 60_000;
-// Daily bars are stamped at midnight New York time, so the regular session is
-// a fixed offset from them whatever the daylight-saving state.
-const OPEN_OFFSET_MS = 9.5 * 3_600_000;
-const CLOSE_OFFSET_MS = 16 * 3_600_000;
+const HOUR_MS = 3_600_000;
+
+export type SessionHours = {
+  /** Midnight in New York on the trading date. */
+  sessionStart: number;
+  extendedOpen: number;
+  sessionOpen: number;
+  sessionClose: number;
+  extendedClose: number;
+};
+
+/** A market calendar day, with times as New York wall-clock "HH:MM" or "HHMM". */
+export type CalendarDay = {
+  open?: string;
+  close?: string;
+  session_open?: string;
+  session_close?: string;
+};
 
 function positive(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function clockOffset(value: string | undefined, fallbackHours: number): number {
+  const match = /^(\d{2}):?(\d{2})$/.exec(value ?? "");
+  return match
+    ? Number(match[1]) * HOUR_MS + Number(match[2]) * 60_000
+    : fallbackHours * HOUR_MS;
+}
+
+function dailyBarTime(snapshot: AlpacaSnapshot | null | undefined): number {
+  return Date.parse(snapshot?.dailyBar?.t ?? "");
+}
+
+/**
+ * The trading day the snapshots belong to. Daily bars are stamped at midnight
+ * New York time, so session times are fixed offsets from them whatever the
+ * daylight-saving state. Without a calendar day, a full-length session is
+ * assumed.
+ */
+export function sessionHours(
+  snapshots: Record<string, AlpacaSnapshot | null | undefined>,
+  calendar?: CalendarDay | null,
+): SessionHours | null {
+  const starts = Object.values(snapshots)
+    .map(dailyBarTime)
+    .filter(Number.isFinite);
+  if (starts.length === 0) return null;
+  const sessionStart = Math.max(...starts);
+  return {
+    sessionStart,
+    extendedOpen: sessionStart + clockOffset(calendar?.session_open, 4),
+    sessionOpen: sessionStart + clockOffset(calendar?.open, 9.5),
+    sessionClose: sessionStart + clockOffset(calendar?.close, 16),
+    extendedClose: sessionStart + clockOffset(calendar?.session_close, 20),
+  };
+}
+
+export function sessionDateOf(hours: SessionHours): string {
+  return new Date(hours.sessionStart).toISOString().slice(0, 10);
 }
 
 export function buildIntradaySession(
   snapshots: Record<string, AlpacaSnapshot | null | undefined>,
   bars: Record<string, IntradayBar[] | undefined>,
   now: number,
+  calendar?: CalendarDay | null,
 ): IntradaySession | null {
-  const usable = Object.entries(snapshots).flatMap(([ticker, snapshot]) => {
-    const dailyAt = Date.parse(snapshot?.dailyBar?.t ?? "");
-    return snapshot?.dailyBar && Number.isFinite(dailyAt)
-      ? [{ ticker, snapshot, dailyBar: snapshot.dailyBar, dailyAt }]
-      : [];
-  });
-  if (usable.length === 0) return null;
+  const hours = sessionHours(snapshots, calendar);
+  if (!hours) return null;
+  const { sessionStart, extendedOpen, sessionOpen, sessionClose } = hours;
+  const extendedClose = Math.max(hours.extendedClose, sessionClose);
 
-  const sessionStart = Math.max(...usable.map((entry) => entry.dailyAt));
-  const sessionOpen = sessionStart + OPEN_OFFSET_MS;
-  const sessionClose = sessionStart + CLOSE_OFFSET_MS;
-
-  const priced = usable.flatMap(({ ticker, snapshot, dailyBar, dailyAt }) => {
+  const priced = Object.entries(snapshots).flatMap(([ticker, snapshot]) => {
+    const dailyBar = snapshot?.dailyBar;
+    const dailyAt = dailyBarTime(snapshot);
+    if (!snapshot || !dailyBar || !Number.isFinite(dailyAt)) return [];
     // A thinly traded ticker may not have printed yet today; its newest daily
     // bar is then the previous session, which makes it today's baseline.
     const tradedThisSession = dailyAt === sessionStart;
@@ -69,7 +120,7 @@ export function buildIntradaySession(
       positive(snapshot.latestTrade?.p) &&
       Number.isFinite(tradeAt) &&
       tradeAt >= sessionStart &&
-      tradeAt <= sessionClose;
+      tradeAt <= extendedClose;
     const price = hasLiveTrade ? snapshot.latestTrade!.p : dailyBar.c;
     if (!positive(previousClose) || !positive(price)) return [];
     return [
@@ -87,53 +138,73 @@ export function buildIntradaySession(
   });
   if (priced.length === 0) return null;
 
+  const barsByTicker = new Map(
+    priced.map((quote) => [
+      quote.ticker,
+      new Map(
+        (bars[quote.ticker] ?? []).flatMap((bar) => {
+          const start = Date.parse(bar.t);
+          return start >= extendedOpen && start < extendedClose
+            ? [[start, bar] as const]
+            : [];
+        }),
+      ),
+    ]),
+  );
+  const barStarts = [...barsByTicker.values()].flatMap((byStart) => [
+    ...byStart.keys(),
+  ]);
   const lastTradeAt = Math.max(...priced.map((quote) => quote.priceAt));
-  const end = Math.min(now, sessionClose);
+
+  // The path covers extended hours only where something actually traded: it
+  // starts at the first pre-market bar and, once the regular session is over,
+  // stops at the last after-hours activity instead of running on flat.
+  const gridStart = Math.min(sessionOpen, ...barStarts);
+  const lastActivity = Math.max(
+    lastTradeAt,
+    ...barStarts.map((start) => start + INTRADAY_BAR_MS),
+  );
+  const end = Math.min(
+    now,
+    extendedClose,
+    now > sessionClose ? Math.max(sessionClose, lastActivity) : now,
+  );
   const times: number[] = [];
-  if (end >= sessionOpen) {
-    times.push(sessionOpen);
-    for (
-      let barEnd = sessionOpen + INTRADAY_BAR_MS;
-      barEnd <= end;
-      barEnd += INTRADAY_BAR_MS
-    ) {
-      times.push(barEnd);
+  if (end >= gridStart) {
+    for (let time = gridStart; time <= end; time += INTRADAY_BAR_MS) {
+      times.push(time);
     }
     // The tip carries the latest trade, between bar boundaries.
     const tip = Math.min(end, Math.max(lastTradeAt, times.at(-1)!));
     if (tip > times.at(-1)!) times.push(tip);
   }
   const barSlots = times.filter(
-    (time) => (time - sessionOpen) % INTRADAY_BAR_MS === 0,
+    (time) => (time - gridStart) % INTRADAY_BAR_MS === 0,
   ).length;
-  const hasTip = times.length > barSlots;
 
   const quotes = priced.map((quote) => {
-    const byStart = new Map(
-      (bars[quote.ticker] ?? []).map((bar) => [Date.parse(bar.t), bar]),
-    );
+    const byStart = barsByTicker.get(quote.ticker)!;
     const prices: number[] = [];
     if (barSlots > 0) {
-      const openingBar = byStart.get(sessionOpen);
-      let running = positive(openingBar?.o)
-        ? openingBar.o
-        : quote.previousClose;
+      const firstBar = byStart.get(gridStart);
+      let running = positive(firstBar?.o) ? firstBar.o : quote.previousClose;
       prices.push(running);
       for (let slot = 1; slot < barSlots; slot += 1) {
         // IEX skips bars with no trades, so the last price carries forward.
-        const bar = byStart.get(sessionOpen + (slot - 1) * INTRADAY_BAR_MS);
+        const bar = byStart.get(gridStart + (slot - 1) * INTRADAY_BAR_MS);
         if (positive(bar?.c)) running = bar.c;
         prices.push(running);
       }
-      if (hasTip) prices.push(quote.price);
-      // After the close there is no tip; end on the session's last price.
-      else if (end >= sessionClose) prices[prices.length - 1] = quote.price;
+      // The path always ends on the latest price, at the tip when there is
+      // one and otherwise on the last bar boundary.
+      if (times.length > barSlots) prices.push(quote.price);
+      else prices[prices.length - 1] = quote.price;
     }
     return { ...quote, prices };
   });
 
   return {
-    sessionDate: new Date(sessionStart).toISOString().slice(0, 10),
+    sessionDate: sessionDateOf(hours),
     sessionOpen,
     sessionClose,
     asOf: now,

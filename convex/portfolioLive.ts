@@ -4,7 +4,10 @@ import { getAuthUserId } from "./auth";
 import { getAlpacaCredentials, supportsMarketPriceLookup } from "./portfolio";
 import {
   buildIntradaySession,
+  sessionDateOf,
+  sessionHours,
   type AlpacaSnapshot,
+  type CalendarDay,
   type IntradayBar,
 } from "./lib/intradayQuotes";
 
@@ -34,6 +37,48 @@ async function alpacaGet<T>(
     throw new Error(`Alpaca API error (${response.status})`);
   }
   return (await response.json()) as T;
+}
+
+// Market hours for a date never change once the day has started, so one
+// lookup per date is enough for as long as this isolate lives.
+const calendarCache = new Map<string, CalendarDay>();
+
+/**
+ * The day's real trading hours, so early closes are not drawn as full days.
+ * The calendar lives on the trading API, which is keyed by account type.
+ */
+async function fetchCalendarDay(
+  date: string,
+  credentials: AlpacaCredentials,
+): Promise<CalendarDay | null> {
+  const cached = calendarCache.get(date);
+  if (cached) return cached;
+  try {
+    const host = credentials.apiKey.startsWith("PK")
+      ? "paper-api.alpaca.markets"
+      : "api.alpaca.markets";
+    const response = await fetch(
+      `https://${host}/v2/calendar?start=${date}&end=${date}`,
+      {
+        headers: {
+          "APCA-API-KEY-ID": credentials.apiKey,
+          "APCA-API-SECRET-KEY": credentials.secretKey,
+          Accept: "application/json",
+        },
+      },
+    );
+    if (!response.ok) return null;
+    const days = (await response.json()) as Array<
+      CalendarDay & { date?: string }
+    >;
+    const day = days.find((entry) => entry.date === date);
+    if (!day) return null;
+    calendarCache.set(date, day);
+    return day;
+  } catch {
+    // Standard hours are assumed when the calendar cannot be read.
+    return null;
+  }
 }
 
 const unavailable = (message: string) => ({
@@ -102,11 +147,20 @@ export const getIntraday = action({
       ) as Record<string, AlpacaSnapshot | null>;
 
       const now = Date.now();
-      const preview = buildIntradaySession(snapshots, {}, now);
+      const standardHours = sessionHours(snapshots);
+      if (!standardHours) {
+        return unavailable("No live prices for these holdings.");
+      }
+      const calendar = await fetchCalendarDay(
+        sessionDateOf(standardHours),
+        credentials,
+      );
+      const hours = sessionHours(snapshots, calendar)!;
+      const preview = buildIntradaySession(snapshots, {}, now, calendar);
       if (!preview) return unavailable("No live prices for these holdings.");
 
       const bars: Record<string, IntradayBar[]> = {};
-      if (preview.times.length > 0) {
+      if (now >= hours.extendedOpen) {
         let pageToken: string | undefined;
         do {
           const page = await alpacaGet<{
@@ -117,8 +171,8 @@ export const getIntraday = action({
             {
               symbols: preview.quotes.map((quote) => quote.ticker).join(","),
               timeframe: "5Min",
-              start: new Date(preview.sessionOpen).toISOString(),
-              end: new Date(preview.sessionClose).toISOString(),
+              start: new Date(hours.extendedOpen).toISOString(),
+              end: new Date(hours.extendedClose).toISOString(),
               limit: "10000",
               adjustment: "split",
               feed: FEED,
@@ -135,7 +189,7 @@ export const getIntraday = action({
 
       return {
         status: "ok" as const,
-        session: buildIntradaySession(snapshots, bars, now),
+        session: buildIntradaySession(snapshots, bars, now, calendar),
       };
     } catch (error) {
       console.warn("Live portfolio prices unavailable:", error);

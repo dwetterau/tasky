@@ -49,11 +49,14 @@ bars for the tickers on screen and stores nothing. Share counts still come from
 Airtable `Positions`; each holding is repriced at the latest trade and measured
 from the previous close.
 
-- Polling runs every 5 seconds while the market is open and the tab is
-  visible, every two minutes when the market is closed, and stops in a
+- Polling runs every 5 seconds while trades are arriving and the tab is
+  visible, every two minutes otherwise, and stops in a
   background tab.
 - Prices use Alpaca's IEX feed (the free plan), so they can differ by a few
   cents from the consolidated tape.
 - Holdings Alpaca cannot price (cash, mutual funds) keep their snapshot value.
 - If Alpaca is unreachable or returns nothing, the page falls back to the
   snapshot-based 1D figures.
+- The latest price includes pre-market and after-hours trades, so 1D figures
+  keep moving outside regular hours. Regular and extended hours come from
+  Alpaca's market calendar, which also handles early-close days.

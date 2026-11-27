@@ -2,6 +2,7 @@
 
 export type LiveSession = {
   sessionDate: string;
+  /** Regular trading hours; `times` can run before and after them. */
   sessionOpen: number;
   sessionClose: number;
   asOf: number;
@@ -31,13 +32,12 @@ export type LiveHoldingInput = {
 
 const STALE_TRADE_MS = 10 * 60_000;
 
-/** Whether prices are still moving: in session, with a recent trade. */
+/**
+ * Whether prices are still moving. Judged by the latest trade rather than the
+ * clock so that pre-market and after-hours trading count too.
+ */
 export function isSessionLive(session: LiveSession): boolean {
-  return (
-    session.asOf >= session.sessionOpen &&
-    session.asOf <= session.sessionClose &&
-    session.asOf - session.lastTradeAt < STALE_TRADE_MS
-  );
+  return session.asOf - session.lastTradeAt < STALE_TRADE_MS;
 }
 
 function quotesByTicker(session: LiveSession) {
