@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   buildIntradaySeries,
   isSessionLive,
@@ -11,7 +11,10 @@ import {
 import { niceTicks, useElementSize } from "./ReturnBars";
 
 const MARGIN = { top: 16, right: 76, bottom: 24, left: 52 };
-const OWN_COLORS = 9;
+// One per colour defined in globals.css; holdings past that share the grey.
+const OWN_COLORS = 20;
+const LINE_HOVER_PX = 12;
+const MODE_KEY = "tasky-portfolio-intraday-mode";
 const TOOLTIP_ROWS = 8;
 const HOUR_MS = 3_600_000;
 const NEW_YORK = "America/New_York";
@@ -73,11 +76,45 @@ function percentChange(value: number, baseline: number): number {
   return baseline > 0 ? (value / baseline - 1) * 100 : 0;
 }
 
+type Mode = "percent" | "dollars";
+
+const MODES: Array<{ value: Mode; label: string; caption: string }> = [
+  {
+    value: "percent",
+    label: "% change",
+    caption: "Percent change since the previous close.",
+  },
+  {
+    value: "dollars",
+    label: "$ change",
+    caption:
+      "Dollars gained or lost since the previous close: shares held × price move.",
+  },
+];
+
+function readMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === "dollars" ? "dollars" : "percent";
+  } catch {
+    return "percent";
+  }
+}
+
+function formatCompactSignedCurrency(value: number): string {
+  const formatted = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(Math.abs(value));
+  return `${value > 0 ? "+" : value < 0 ? "-" : ""}${formatted}`;
+}
+
 type Line = {
   series: IntradaySeries;
   rank: number;
   color: string;
-  percents: number[];
+  points: number[];
 };
 
 export function IntradayChart({
@@ -94,6 +131,33 @@ export function IntradayChart({
   const [containerRef, { width, height }] = useElementSize<HTMLDivElement>();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [highlightKey, setHighlightKey] = useState<string | null>(null);
+  // The line under the pointer, as opposed to the table row under it.
+  const [pointedKey, setPointedKey] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>(readMode);
+  const listRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const activeKey = pointedKey ?? highlightKey;
+  const selectMode = (next: Mode) => {
+    setMode(next);
+    try {
+      localStorage.setItem(MODE_KEY, next);
+    } catch {
+      // Storage can be unavailable; the choice then lasts for this visit.
+    }
+  };
+  const formatPoint = mode === "percent" ? formatPercent : formatSignedCurrency;
+
+  // Bring the pointed line's row into view without scrolling the page.
+  useEffect(() => {
+    const list = listRef.current;
+    const row = pointedKey === null ? null : rowRefs.current.get(pointedKey);
+    if (!list || !row) return;
+    const top = row.offsetTop - list.offsetTop;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (top + row.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTop = top + row.offsetHeight - list.clientHeight;
+    }
+  }, [pointedKey]);
 
   const allSeries = useMemo(
     () => buildIntradaySeries(holdings, session),
@@ -121,8 +185,10 @@ export function IntradayChart({
             series,
             rank,
             color: colorFor(rank),
-            percents: series.values.map((value) =>
-              percentChange(value, series.baseline),
+            points: series.values.map((value) =>
+              mode === "percent"
+                ? percentChange(value, series.baseline)
+                : value - series.baseline,
             ),
           }),
         ),
@@ -133,20 +199,24 @@ export function IntradayChart({
           (sum, { series }) => sum + series.latestValue,
           0,
         ),
-        percents: values.map((value) => percentChange(value, baseline)),
+        points: values.map((value) =>
+          mode === "percent"
+            ? percentChange(value, baseline)
+            : value - baseline,
+        ),
       },
     };
-  }, [allSeries, hidden, times]);
+  }, [allSeries, hidden, mode, times]);
 
   const plotWidth = Math.max(0, width - MARGIN.left - MARGIN.right);
   const plotHeight = Math.max(0, height - MARGIN.top - MARGIN.bottom);
-  const allPercents = [
-    ...total.percents,
-    ...lines.flatMap((line) => line.percents),
-  ];
-  const rawMin = Math.min(0, ...allPercents);
-  const rawMax = Math.max(0, ...allPercents);
-  const padding = Math.max(0.05, (rawMax - rawMin) * 0.08);
+  const allPoints = [...total.points, ...lines.flatMap((line) => line.points)];
+  const rawMin = Math.min(0, ...allPoints);
+  const rawMax = Math.max(0, ...allPoints);
+  const padding = Math.max(
+    mode === "percent" ? 0.05 : 1,
+    (rawMax - rawMin) * 0.08,
+  );
   const yMin = rawMin - padding;
   const yMax = rawMax + padding;
   const xFor = (time: number) =>
@@ -156,8 +226,8 @@ export function IntradayChart({
       plotWidth;
   const yFor = (percent: number) =>
     MARGIN.top + ((yMax - percent) / (yMax - yMin)) * plotHeight;
-  const pathFor = (percents: number[]) =>
-    percents
+  const pathFor = (points: number[]) =>
+    points
       .map(
         (percent, index) =>
           `${index === 0 ? "M" : "L"}${xFor(times[index]!).toFixed(1)},${yFor(percent).toFixed(1)}`,
@@ -191,6 +261,30 @@ export function IntradayChart({
       }
     });
     setHoverIndex(nearest);
+
+    // Find the line passing closest under the pointer, reading each line's
+    // height at the pointer's own time rather than at the nearest point.
+    const after = times.findIndex((candidate) => candidate >= time);
+    const right = after < 0 ? times.length - 1 : after;
+    const left = Math.max(0, right - 1);
+    const span = times[right]! - times[left]!;
+    const mix =
+      span > 0 ? Math.min(1, Math.max(0, (time - times[left]!) / span)) : 0;
+    const pointerY = event.clientY - bounds.top;
+    let closest: string | null = null;
+    let closestDistance = LINE_HOVER_PX;
+    if (time >= times[0]! - span && time <= times.at(-1)! + span) {
+      for (const line of lines) {
+        const value =
+          line.points[left]! + (line.points[right]! - line.points[left]!) * mix;
+        const distance = Math.abs(yFor(value) - pointerY);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closest = line.series.key;
+        }
+      }
+    }
+    setPointedKey(closest);
   };
 
   const toggle = (event: MouseEvent<HTMLButtonElement>, key: string) => {
@@ -242,19 +336,51 @@ export function IntradayChart({
       : [...lines]
           .sort(
             (a, b) =>
-              Math.abs(b.percents[hoverIndex]!) -
-              Math.abs(a.percents[hoverIndex]!),
+              Math.abs(b.points[hoverIndex]!) - Math.abs(a.points[hoverIndex]!),
           )
-          .slice(0, TOOLTIP_ROWS)
-          .sort((a, b) => b.percents[hoverIndex]! - a.percents[hoverIndex]!);
+          .filter(
+            (line, index) =>
+              index < TOOLTIP_ROWS || line.series.key === pointedKey,
+          )
+          .sort((a, b) => b.points[hoverIndex]! - a.points[hoverIndex]!);
 
   return (
     <div className="flex flex-col lg:flex-row">
       <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-3 border-b border-(--card-border) px-3 py-1.5">
+          <div
+            className="inline-flex shrink-0 rounded-md border border-(--card-border) bg-background p-0.5"
+            role="tablist"
+            aria-label="What the chart measures"
+          >
+            {MODES.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={mode === option.value}
+                onClick={() => selectMode(option.value)}
+                className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                  mode === option.value
+                    ? "bg-(--accent)/15 text-accent"
+                    : "text-(--muted) hover:text-foreground"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <p className="min-w-0 truncate text-xs text-(--muted)">
+            {MODES.find((option) => option.value === mode)!.caption}
+          </p>
+        </div>
         <div
           ref={containerRef}
           className="relative h-[52vh] min-h-[380px] w-full"
-          onMouseLeave={() => setHoverIndex(null)}
+          onMouseLeave={() => {
+            setHoverIndex(null);
+            setPointedKey(null);
+          }}
         >
           {times.length === 0 ? (
             <div className="flex h-full items-center justify-center px-6 text-center text-sm text-(--muted)">
@@ -267,7 +393,7 @@ export function IntradayChart({
               height={height}
               onMouseMove={handleMove}
               role="img"
-              aria-label="Percent change since the previous close, for the portfolio and each holding, through the trading day"
+              aria-label="Change since the previous close, for the portfolio and each holding, through the trading day"
             >
               {niceTicks(yMin, yMax, 6).map((tick) => (
                 <g key={tick}>
@@ -287,7 +413,9 @@ export function IntradayChart({
                     fill="var(--muted)"
                     fontSize={11}
                   >
-                    {`${tick > 0 ? "+" : ""}${Number(tick.toFixed(2))}%`}
+                    {mode === "percent"
+                      ? `${tick > 0 ? "+" : ""}${Number(tick.toFixed(2))}%`
+                      : formatCompactSignedCurrency(tick)}
                   </text>
                 </g>
               ))}
@@ -325,12 +453,12 @@ export function IntradayChart({
               <g pointerEvents="none">
                 {lines.map((line) => {
                   const dimmed =
-                    highlightKey !== null && highlightKey !== line.series.key;
-                  const emphasized = highlightKey === line.series.key;
+                    activeKey !== null && activeKey !== line.series.key;
+                  const emphasized = activeKey === line.series.key;
                   return (
                     <path
                       key={line.series.key}
-                      d={pathFor(line.percents)}
+                      d={pathFor(line.points)}
                       fill="none"
                       stroke={line.color}
                       strokeWidth={emphasized ? 2.5 : 1.25}
@@ -340,34 +468,37 @@ export function IntradayChart({
                   );
                 })}
                 <path
-                  d={pathFor(total.percents)}
+                  d={pathFor(total.points)}
                   fill="none"
                   stroke="var(--card-bg)"
                   strokeWidth={6}
                   strokeLinejoin="round"
                 />
                 <path
-                  d={pathFor(total.percents)}
+                  d={pathFor(total.points)}
                   fill="none"
                   stroke="var(--foreground)"
                   strokeWidth={2.5}
                   strokeLinejoin="round"
-                  opacity={highlightKey === null ? 1 : 0.35}
+                  opacity={activeKey === null ? 1 : 0.35}
                 />
                 {live ? (
                   <circle
                     cx={xFor(times[lastIndex]!)}
-                    cy={yFor(total.percents[lastIndex]!)}
+                    cy={yFor(total.points[lastIndex]!)}
                     r={9}
                     fill="var(--foreground)"
                     opacity={0.18}
                     className="animate-ping"
-                    style={{ transformBox: "fill-box", transformOrigin: "center" }}
+                    style={{
+                      transformBox: "fill-box",
+                      transformOrigin: "center",
+                    }}
                   />
                 ) : null}
                 <circle
                   cx={xFor(times[lastIndex]!)}
-                  cy={yFor(total.percents[lastIndex]!)}
+                  cy={yFor(total.points[lastIndex]!)}
                   r={4}
                   fill="var(--foreground)"
                   stroke="var(--card-bg)"
@@ -375,24 +506,23 @@ export function IntradayChart({
                 />
                 <text
                   x={xFor(times[lastIndex]!) + 9}
-                  y={yFor(total.percents[lastIndex]!)}
+                  y={yFor(total.points[lastIndex]!)}
                   dominantBaseline="middle"
                   fill="var(--foreground)"
                   fontSize={11}
                   fontWeight={700}
                 >
-                  {`Total ${formatPercent(total.percents[lastIndex]!)}`}
+                  {`Total ${formatPoint(total.points[lastIndex]!)}`}
                 </text>
                 {lines
-                  .filter((line) => line.series.key === highlightKey)
+                  .filter((line) => line.series.key === activeKey)
                   .map((line) => (
                     <text
                       key={line.series.key}
                       x={xFor(times[lastIndex]!) + 9}
                       y={
-                        yFor(line.percents[lastIndex]!) +
-                        (line.percents[lastIndex]! >=
-                        total.percents[lastIndex]!
+                        yFor(line.points[lastIndex]!) +
+                        (line.points[lastIndex]! >= total.points[lastIndex]!
                           ? -12
                           : 12)
                       }
@@ -437,8 +567,8 @@ export function IntradayChart({
                 </span>
                 <span className="tabular-nums">
                   {formatCurrency(total.values[hoverIndex]!)}{" "}
-                  <span className={toneClass(total.percents[hoverIndex]!)}>
-                    {formatPercent(total.percents[hoverIndex]!)}
+                  <span className={toneClass(total.points[hoverIndex]!)}>
+                    {formatPoint(total.points[hoverIndex]!)}
                   </span>
                 </span>
               </div>
@@ -446,7 +576,9 @@ export function IntradayChart({
                 {tooltipLines.map((line) => (
                   <div
                     key={line.series.key}
-                    className="flex items-center gap-2"
+                    className={`flex items-center gap-2 ${
+                      line.series.key === pointedKey ? "font-bold" : ""
+                    }`}
                   >
                     <span
                       className="h-0.5 w-3 shrink-0 rounded"
@@ -456,13 +588,13 @@ export function IntradayChart({
                       {line.series.label}
                     </span>
                     <span className="tabular-nums">
-                      {formatPercent(line.percents[hoverIndex]!)}
+                      {formatPoint(line.points[hoverIndex]!)}
                     </span>
                   </div>
                 ))}
                 {lines.length > tooltipLines.length ? (
                   <p className="text-(--muted)">
-                    Biggest {tooltipLines.length} moves of {lines.length}
+                    Biggest moves of {lines.length} holdings
                   </p>
                 ) : null}
               </div>
@@ -522,11 +654,15 @@ export function IntradayChart({
           <span>Holding</span>
           <span className="text-right">Price</span>
           <span className="text-right">Day</span>
-          <span className="text-right" title="Sorted by dollar change today, biggest gain first">
+          <span
+            className="text-right"
+            title="Sorted by dollar change today, biggest gain first"
+          >
             Day $ ↓
           </span>
         </div>
         <div
+          ref={listRef}
           className="max-h-[calc(52vh-3rem)] min-h-[320px] overflow-y-auto py-1"
           onMouseLeave={() => setHighlightKey(null)}
         >
@@ -535,6 +671,10 @@ export function IntradayChart({
             return (
               <button
                 key={series.key}
+                ref={(element) => {
+                  if (element) rowRefs.current.set(series.key, element);
+                  else rowRefs.current.delete(series.key);
+                }}
                 type="button"
                 aria-pressed={!isHidden}
                 onClick={(event) => toggle(event, series.key)}
@@ -544,6 +684,10 @@ export function IntradayChart({
                 title={`${series.name || series.label}\nClick to ${isHidden ? "show" : "hide"}; Shift-click to show only this`}
                 className={`grid w-full grid-cols-[minmax(0,1fr)_4.5rem_4rem_4.75rem] items-center gap-x-2 px-3 py-1 text-left text-xs hover:bg-(--hover) ${
                   isHidden ? "opacity-45" : ""
+                } ${
+                  pointedKey === series.key
+                    ? "bg-(--hover) shadow-[inset_3px_0_0_var(--foreground)]"
+                    : ""
                 }`}
               >
                 <span className="flex min-w-0 items-center gap-1.5">
