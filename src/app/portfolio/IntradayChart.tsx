@@ -223,7 +223,11 @@ export function IntradayChart({
     }))
     .sort(
       (a, b) =>
-        b.change - a.change || a.series.key.localeCompare(b.series.key),
+        // Holdings without a live price have no day move; keeping them last
+        // stops them splitting the gainers from the losers.
+        Number(b.series.live) - Number(a.series.live) ||
+        b.change - a.change ||
+        a.series.key.localeCompare(b.series.key),
     );
   const unpriced = allSeries.filter(
     (series) => !series.live && series.key !== "",
@@ -518,7 +522,9 @@ export function IntradayChart({
           <span>Holding</span>
           <span className="text-right">Price</span>
           <span className="text-right">Day</span>
-          <span className="text-right">Day $</span>
+          <span className="text-right" title="Sorted by dollar change today, biggest gain first">
+            Day $ ↓
+          </span>
         </div>
         <div
           className="max-h-[calc(52vh-3rem)] min-h-[320px] overflow-y-auto py-1"
