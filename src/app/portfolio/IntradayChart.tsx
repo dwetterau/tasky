@@ -467,7 +467,7 @@ export function IntradayChart({
         </div>
         <p className="border-t border-(--card-border) px-3 py-2 text-xs text-(--muted)">
           {live
-            ? `Live · prices as of ${formatTime(session.lastTradeAt, true)} ET, refreshed every 15 seconds.`
+            ? `Live · prices as of ${formatTime(session.lastTradeAt, true)} ET, refreshed every 5 seconds.`
             : `Market closed · showing the ${new Intl.DateTimeFormat("en-US", {
                 weekday: "short",
                 month: "short",

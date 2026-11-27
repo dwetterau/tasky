@@ -854,7 +854,7 @@ function PortfolioContent() {
                 className="inline-flex items-center gap-1.5 text-xs text-(--muted)"
                 title={
                   isLive
-                    ? "1D values use live prices and refresh every 15 seconds"
+                    ? "1D values use live prices and refresh every 5 seconds"
                     : "The market is closed; 1D values use the last session's prices"
                 }
               >

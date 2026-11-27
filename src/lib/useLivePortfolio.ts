@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { isSessionLive, type LiveSession } from "./portfolioLive";
 
-const LIVE_POLL_MS = 15_000;
+const LIVE_POLL_MS = 5_000;
 const IDLE_POLL_MS = 120_000;
 
 /**
