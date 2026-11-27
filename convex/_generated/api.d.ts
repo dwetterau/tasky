@@ -58,6 +58,7 @@ import type * as signals from "../signals.js";
 import type * as tags from "../tags.js";
 import type * as tasks from "../tasks.js";
 import type * as users from "../users.js";
+import type * as webhookForwards from "../webhookForwards.js";
 import type * as widgetData from "../widgetData.js";
 
 import type {
@@ -117,6 +118,7 @@ declare const fullApi: ApiFromModules<{
   tags: typeof tags;
   tasks: typeof tasks;
   users: typeof users;
+  webhookForwards: typeof webhookForwards;
   widgetData: typeof widgetData;
 }>;
 

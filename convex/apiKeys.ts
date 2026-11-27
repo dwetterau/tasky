@@ -40,7 +40,7 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-async function encryptApiKey(plaintext: string): Promise<{ encryptedValue: string; iv: string }> {
+export async function encryptApiKey(plaintext: string): Promise<{ encryptedValue: string; iv: string }> {
   const secret = getEncryptionSecret();
   const key = await deriveAesKey(secret);
   const iv = crypto.getRandomValues(new Uint8Array(AES_GCM_IV_BYTES));

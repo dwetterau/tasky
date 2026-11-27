@@ -8,6 +8,7 @@ import { Navigation } from "../../components/Navigation";
 import { SignIn } from "../../components/SignIn";
 import { useAuthSession } from "@/lib/useAuthSession";
 import { useTrackedMutation } from "@/lib/useTrackedMutation";
+import { WebhookForwardsSettings } from "../../components/WebhookForwardsSettings";
 
 type ApiKeyType =
   | "github"
@@ -400,6 +401,8 @@ function SettingsContent() {
             </div>
           )}
         </div>
+
+        <WebhookForwardsSettings />
 
         <div className="bg-(--card-bg) border border-(--card-border) rounded-xl p-5 mt-6">
           <h2 className="text-base font-medium mb-2">Cursor MCP Config</h2>

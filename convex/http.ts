@@ -15,6 +15,12 @@ import {
   oauthProtectedResourceMetadataGetHandler,
   oauthProtectedResourceMetadataOptionsHandler,
 } from "./mcp";
+import {
+  INBOUND_PATH_PREFIX,
+  STRAVA_OAUTH_CALLBACK_PATH,
+  inboundHandler,
+  stravaOauthCallbackHandler,
+} from "./webhookForwards";
 
 const http = httpRouter();
 
@@ -22,6 +28,13 @@ const http = httpRouter();
 authComponent.registerRoutes(http, createAuth, { cors: true });
 http.route({ path: "/api/homepage/enroll", method: "POST", handler: homepageService });
 http.route({ path: "/api/homepage/sync-prices", method: "POST", handler: homepageService });
+http.route({ pathPrefix: INBOUND_PATH_PREFIX, method: "GET", handler: inboundHandler });
+http.route({ pathPrefix: INBOUND_PATH_PREFIX, method: "POST", handler: inboundHandler });
+http.route({
+  path: STRAVA_OAUTH_CALLBACK_PATH,
+  method: "GET",
+  handler: stravaOauthCallbackHandler,
+});
 
 http.route({
   path: "/",
