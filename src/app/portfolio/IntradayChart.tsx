@@ -14,7 +14,7 @@ const MARGIN = { top: 16, right: 76, bottom: 24, left: 52 };
 // One per colour defined in globals.css; holdings past that share the grey.
 const OWN_COLORS = 20;
 const LINE_HOVER_PX = 12;
-const MODE_KEY = "tasky-portfolio-intraday-mode";
+const PREFS_KEY = "tasky-portfolio-intraday";
 const TOOLTIP_ROWS = 8;
 const HOUR_MS = 3_600_000;
 const NEW_YORK = "America/New_York";
@@ -88,15 +88,37 @@ const MODES: Array<{ value: Mode; label: string; caption: string }> = [
     value: "dollars",
     label: "$ change",
     caption:
-      "Dollars gained or lost since the previous close: shares held × price move.",
+      "Dollars gained or lost since the previous close, stacked: gains above the line, losses below.",
   },
 ];
 
-function readMode(): Mode {
+type SortColumn = "name" | "price" | "percent" | "change";
+type Sort = { column: SortColumn; descending: boolean };
+type Prefs = { mode: Mode; sort: Sort };
+
+const SORT_COLUMNS: SortColumn[] = ["name", "price", "percent", "change"];
+const DEFAULT_PREFS: Prefs = {
+  mode: "percent",
+  sort: { column: "change", descending: true },
+};
+
+function readPrefs(): Prefs {
   try {
-    return localStorage.getItem(MODE_KEY) === "dollars" ? "dollars" : "percent";
+    const stored = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as {
+      mode?: unknown;
+      sort?: { column?: unknown; descending?: unknown };
+    };
+    const column = SORT_COLUMNS.find(
+      (candidate) => candidate === stored.sort?.column,
+    );
+    return {
+      mode: stored.mode === "dollars" ? "dollars" : "percent",
+      sort: column
+        ? { column, descending: stored.sort?.descending !== false }
+        : DEFAULT_PREFS.sort,
+    };
   } catch {
-    return "percent";
+    return DEFAULT_PREFS;
   }
 }
 
@@ -133,18 +155,22 @@ export function IntradayChart({
   const [highlightKey, setHighlightKey] = useState<string | null>(null);
   // The line under the pointer, as opposed to the table row under it.
   const [pointedKey, setPointedKey] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>(readMode);
+  // Remembered per browser, so the chart reopens the way it was left.
+  const [prefs, setPrefs] = useState<Prefs>(readPrefs);
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    } catch {
+      // Storage can be unavailable; the settings then last for this visit.
+    }
+  }, [prefs]);
+  const { mode, sort } = prefs;
+  const stacked = mode === "dollars";
   const listRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const activeKey = pointedKey ?? highlightKey;
-  const selectMode = (next: Mode) => {
-    setMode(next);
-    try {
-      localStorage.setItem(MODE_KEY, next);
-    } catch {
-      // Storage can be unavailable; the choice then lasts for this visit.
-    }
-  };
+  const selectMode = (next: Mode) =>
+    setPrefs((current) => ({ ...current, mode: next }));
   const formatPoint = mode === "percent" ? formatPercent : formatSignedCurrency;
 
   // Bring the pointed line's row into view without scrolling the page.
@@ -210,7 +236,30 @@ export function IntradayChart({
 
   const plotWidth = Math.max(0, width - MARGIN.left - MARGIN.right);
   const plotHeight = Math.max(0, height - MARGIN.top - MARGIN.bottom);
-  const allPoints = [...total.points, ...lines.flatMap((line) => line.points)];
+  // In dollars each holding is a band: gains pile up above the previous
+  // close and losses below it, so the outer edges are the day's total gain
+  // and total loss.
+  const bands = useMemo(() => {
+    if (!stacked) return [];
+    const gains = times.map(() => 0);
+    const losses = times.map(() => 0);
+    return lines.map((line) => {
+      const lower: number[] = [];
+      const upper: number[] = [];
+      line.points.forEach((point, index) => {
+        const side = point >= 0 ? gains : losses;
+        const from = side[index]!;
+        side[index] = from + point;
+        lower.push(Math.min(from, side[index]!));
+        upper.push(Math.max(from, side[index]!));
+      });
+      return { line, lower, upper };
+    });
+  }, [lines, stacked, times]);
+
+  const allPoints = stacked
+    ? bands.flatMap((band) => [...band.lower, ...band.upper])
+    : [...total.points, ...lines.flatMap((line) => line.points)];
   const rawMin = Math.min(0, ...allPoints);
   const rawMax = Math.max(0, ...allPoints);
   const padding = Math.max(
@@ -287,7 +336,17 @@ export function IntradayChart({
     const pointerY = event.clientY - bounds.top;
     let closest: string | null = null;
     let closestDistance = LINE_HOVER_PX;
-    if (time >= times[0]! - span && time <= times.at(-1)! + span) {
+    if (stacked) {
+      const value =
+        yMax - ((pointerY - MARGIN.top) / plotHeight) * (yMax - yMin);
+      closest =
+        time >= times[0]! && time <= times.at(-1)!
+          ? (bands.find(
+              (band) =>
+                value >= band.lower[nearest]! && value < band.upper[nearest]!,
+            )?.line.series.key ?? null)
+          : null;
+    } else if (time >= times[0]! - span && time <= times.at(-1)! + span) {
       for (const line of lines) {
         const value =
           line.points[left]! + (line.points[right]! - line.points[left]!) * mix;
@@ -329,14 +388,51 @@ export function IntradayChart({
       change: series.latestValue - series.baseline,
       percent: percentChange(series.latestValue, series.baseline),
     }))
-    .sort(
-      (a, b) =>
+    .sort((a, b) => {
+      const order =
+        sort.column === "name"
+          ? a.series.label.localeCompare(b.series.label)
+          : sort.column === "price"
+            ? (a.series.latestPrice ?? 0) - (b.series.latestPrice ?? 0)
+            : sort.column === "percent"
+              ? a.percent - b.percent
+              : a.change - b.change;
+      return (
         // Holdings without a live price have no day move; keeping them last
         // stops them splitting the gainers from the losers.
         Number(b.series.live) - Number(a.series.live) ||
-        b.change - a.change ||
-        a.series.key.localeCompare(b.series.key),
+        (sort.descending ? -order : order) ||
+        a.series.key.localeCompare(b.series.key)
+      );
+    });
+  const sortHeader = (column: SortColumn, label: string) => {
+    const active = sort.column === column;
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          setPrefs((current) => ({
+            ...current,
+            sort: {
+              column,
+              // Names start A to Z; amounts start largest first.
+              descending: active ? !sort.descending : column !== "name",
+            },
+          }))
+        }
+        aria-pressed={active}
+        title={`Click to sort${active ? " the other way" : ""}`}
+        className={`flex items-center gap-0.5 uppercase tracking-wide hover:text-foreground ${
+          column === "name" ? "" : "justify-end"
+        } ${active ? "font-semibold text-foreground" : ""}`}
+      >
+        {label}
+        <span aria-hidden className="w-2 text-[9px]">
+          {active ? (sort.descending ? "▼" : "▲") : ""}
+        </span>
+      </button>
     );
+  };
   const hiddenCount = allSeries.filter((series) =>
     hidden.has(series.key),
   ).length;
@@ -498,89 +594,141 @@ export function IntradayChart({
               </text>
 
               <g pointerEvents="none">
-                {lines.map((line) => {
-                  const dimmed =
-                    activeKey !== null && activeKey !== line.series.key;
-                  const emphasized = activeKey === line.series.key;
-                  return (
+                {stacked ? (
+                  bands.map(({ line, lower, upper }) => {
+                    const indexes = times.map((_, index) => index);
+                    const path = [
+                      ...indexes.map(
+                        (index) =>
+                          `${index === 0 ? "M" : "L"}${xFor(times[index]!).toFixed(1)},${yFor(upper[index]!).toFixed(1)}`,
+                      ),
+                      ...indexes
+                        .reverse()
+                        .map(
+                          (index) =>
+                            `L${xFor(times[index]!).toFixed(1)},${yFor(lower[index]!).toFixed(1)}`,
+                        ),
+                      "Z",
+                    ].join(" ");
+                    const isActive = activeKey === line.series.key;
+                    return (
+                      <g
+                        key={line.series.key}
+                        opacity={activeKey !== null && !isActive ? 0.25 : 1}
+                      >
+                        <path
+                          d={path}
+                          fill={line.color}
+                          stroke="var(--card-bg)"
+                          strokeWidth={1}
+                          strokeLinejoin="round"
+                        />
+                        {isActive ? (
+                          <text
+                            x={xFor(times[lastIndex]!) + 9}
+                            y={
+                              (yFor(lower[lastIndex]!) +
+                                yFor(upper[lastIndex]!)) /
+                              2
+                            }
+                            dominantBaseline="middle"
+                            fill="var(--foreground)"
+                            fontSize={11}
+                            fontWeight={600}
+                          >
+                            {`${line.series.label} ${formatPoint(line.points[lastIndex]!)}`}
+                          </text>
+                        ) : null}
+                      </g>
+                    );
+                  })
+                ) : (
+                  <>
+                    {lines.map((line) => {
+                      const dimmed =
+                        activeKey !== null && activeKey !== line.series.key;
+                      const emphasized = activeKey === line.series.key;
+                      return (
+                        <path
+                          key={line.series.key}
+                          d={pathFor(line.points)}
+                          fill="none"
+                          stroke={line.color}
+                          strokeWidth={emphasized ? 2.5 : 1.25}
+                          strokeLinejoin="round"
+                          opacity={dimmed ? 0.15 : emphasized ? 1 : 0.8}
+                        />
+                      );
+                    })}
                     <path
-                      key={line.series.key}
-                      d={pathFor(line.points)}
+                      d={pathFor(total.points)}
                       fill="none"
-                      stroke={line.color}
-                      strokeWidth={emphasized ? 2.5 : 1.25}
+                      stroke="var(--card-bg)"
+                      strokeWidth={6}
                       strokeLinejoin="round"
-                      opacity={dimmed ? 0.15 : emphasized ? 1 : 0.8}
                     />
-                  );
-                })}
-                <path
-                  d={pathFor(total.points)}
-                  fill="none"
-                  stroke="var(--card-bg)"
-                  strokeWidth={6}
-                  strokeLinejoin="round"
-                />
-                <path
-                  d={pathFor(total.points)}
-                  fill="none"
-                  stroke="var(--foreground)"
-                  strokeWidth={2.5}
-                  strokeLinejoin="round"
-                  opacity={activeKey === null ? 1 : 0.35}
-                />
-                {live ? (
-                  <circle
-                    cx={xFor(times[lastIndex]!)}
-                    cy={yFor(total.points[lastIndex]!)}
-                    r={9}
-                    fill="var(--foreground)"
-                    opacity={0.18}
-                    className="animate-ping"
-                    style={{
-                      transformBox: "fill-box",
-                      transformOrigin: "center",
-                    }}
-                  />
-                ) : null}
-                <circle
-                  cx={xFor(times[lastIndex]!)}
-                  cy={yFor(total.points[lastIndex]!)}
-                  r={4}
-                  fill="var(--foreground)"
-                  stroke="var(--card-bg)"
-                  strokeWidth={2}
-                />
-                <text
-                  x={xFor(times[lastIndex]!) + 9}
-                  y={yFor(total.points[lastIndex]!)}
-                  dominantBaseline="middle"
-                  fill="var(--foreground)"
-                  fontSize={11}
-                  fontWeight={700}
-                >
-                  {`Total ${formatPoint(total.points[lastIndex]!)}`}
-                </text>
-                {lines
-                  .filter((line) => line.series.key === activeKey)
-                  .map((line) => (
+                    <path
+                      d={pathFor(total.points)}
+                      fill="none"
+                      stroke="var(--foreground)"
+                      strokeWidth={2.5}
+                      strokeLinejoin="round"
+                      opacity={activeKey === null ? 1 : 0.35}
+                    />
+                    {live ? (
+                      <circle
+                        cx={xFor(times[lastIndex]!)}
+                        cy={yFor(total.points[lastIndex]!)}
+                        r={9}
+                        fill="var(--foreground)"
+                        opacity={0.18}
+                        className="animate-ping"
+                        style={{
+                          transformBox: "fill-box",
+                          transformOrigin: "center",
+                        }}
+                      />
+                    ) : null}
+                    <circle
+                      cx={xFor(times[lastIndex]!)}
+                      cy={yFor(total.points[lastIndex]!)}
+                      r={4}
+                      fill="var(--foreground)"
+                      stroke="var(--card-bg)"
+                      strokeWidth={2}
+                    />
                     <text
-                      key={line.series.key}
                       x={xFor(times[lastIndex]!) + 9}
-                      y={
-                        yFor(line.points[lastIndex]!) +
-                        (line.points[lastIndex]! >= total.points[lastIndex]!
-                          ? -12
-                          : 12)
-                      }
+                      y={yFor(total.points[lastIndex]!)}
                       dominantBaseline="middle"
                       fill="var(--foreground)"
                       fontSize={11}
-                      fontWeight={600}
+                      fontWeight={700}
                     >
-                      {line.series.label}
+                      {`Total ${formatPoint(total.points[lastIndex]!)}`}
                     </text>
-                  ))}
+                    {lines
+                      .filter((line) => line.series.key === activeKey)
+                      .map((line) => (
+                        <text
+                          key={line.series.key}
+                          x={xFor(times[lastIndex]!) + 9}
+                          y={
+                            yFor(line.points[lastIndex]!) +
+                            (line.points[lastIndex]! >= total.points[lastIndex]!
+                              ? -12
+                              : 12)
+                          }
+                          dominantBaseline="middle"
+                          fill="var(--foreground)"
+                          fontSize={11}
+                          fontWeight={600}
+                        >
+                          {line.series.label}
+                        </text>
+                      ))}
+                  </>
+                )}
                 {hoverX !== null ? (
                   <line
                     x1={hoverX}
@@ -698,15 +846,10 @@ export function IntradayChart({
           </span>
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4rem_4.75rem] gap-x-2 px-3 pt-2 text-[11px] uppercase tracking-wide text-(--muted)">
-          <span>Holding</span>
-          <span className="text-right">Price</span>
-          <span className="text-right">Day</span>
-          <span
-            className="text-right"
-            title="Sorted by dollar change today, biggest gain first"
-          >
-            Day $ ↓
-          </span>
+          {sortHeader("name", "Holding")}
+          {sortHeader("price", "Price")}
+          {sortHeader("percent", "Day")}
+          {sortHeader("change", "Day $")}
         </div>
         <div
           ref={listRef}
