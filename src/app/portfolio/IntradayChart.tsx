@@ -727,16 +727,19 @@ export function IntradayChart({
                   stroke="var(--card-bg)"
                   strokeWidth={2}
                 />
-                <text
-                  x={xFor(times[lastIndex]!) + 9}
-                  y={yFor(total.points[lastIndex]!)}
-                  dominantBaseline="middle"
-                  fill="var(--foreground)"
-                  fontSize={11}
-                  fontWeight={700}
-                >
-                  {`${stacked ? "Net" : "Total"} ${formatPoint(total.points[lastIndex]!)}`}
-                </text>
+                {/* A highlighted holding labels itself in the same spot. */}
+                {lines.some((line) => line.series.key === activeKey) ? null : (
+                  <text
+                    x={xFor(times[lastIndex]!) + 9}
+                    y={yFor(total.points[lastIndex]!)}
+                    dominantBaseline="middle"
+                    fill="var(--foreground)"
+                    fontSize={11}
+                    fontWeight={700}
+                  >
+                    {`${stacked ? "Net" : "Total"} ${formatPoint(total.points[lastIndex]!)}`}
+                  </text>
+                )}
                 {hoverX !== null ? (
                   <line
                     x1={hoverX}
