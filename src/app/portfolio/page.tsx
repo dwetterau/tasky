@@ -769,6 +769,14 @@ function PortfolioContent() {
     }
   };
 
+  // Success confirmations clear themselves; failures stay until dismissed or
+  // the next sync so they can't be missed.
+  useEffect(() => {
+    if (!syncMessage?.success) return;
+    const timeout = setTimeout(() => setSyncMessage(null), 5000);
+    return () => clearTimeout(timeout);
+  }, [syncMessage]);
+
   if (portfolios === undefined) return <LoadingState />;
 
   if (portfolios.length === 0) {
@@ -966,13 +974,21 @@ function PortfolioContent() {
 
         {syncMessage ? (
           <div
-            className={`mb-2 rounded-md border px-3 py-2 text-xs ${
+            className={`mb-2 flex items-start justify-between gap-3 rounded-md border px-3 py-2 text-xs ${
               syncMessage.success
                 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                 : "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
             }`}
           >
-            {syncMessage.text}
+            <span>{syncMessage.text}</span>
+            <button
+              type="button"
+              onClick={() => setSyncMessage(null)}
+              aria-label="Dismiss sync message"
+              className="-my-0.5 shrink-0 cursor-pointer text-sm leading-none opacity-60 hover:opacity-100"
+            >
+              ×
+            </button>
           </div>
         ) : null}
 
