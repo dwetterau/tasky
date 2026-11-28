@@ -20,10 +20,8 @@ const TOOLTIP_ROWS = 8;
 const HOUR_MS = 3_600_000;
 const NEW_YORK = "America/New_York";
 
-function colorFor(rank: number): string {
-  return rank < OWN_COLORS
-    ? `var(--series-${rank + 1})`
-    : "var(--series-other)";
+function colorFor(rank: number, ownBands = OWN_COLORS): string {
+  return rank < ownBands ? `var(--series-${rank + 1})` : "var(--series-other)";
 }
 
 function formatCurrency(value: number): string {
@@ -230,10 +228,14 @@ export function IntradayChart({
     const values = times.map((_, index) =>
       visible.reduce((sum, { series }) => sum + series.values[index]!, 0),
     );
-    // Only holdings with a live price have a path worth drawing. The largest
-    // get one each; the rest would be slivers, so they share one.
+    // Only holdings with a live price have a path worth drawing. Stacked,
+    // the smaller ones would be slivers, so they share one band; as lines
+    // they all stay, in grey past the chosen number of colours.
     const drawable = visible.filter(({ rank }) => rank !== null);
-    const combine = drawable.filter(({ rank }) => rank! >= ownBands);
+    const combine =
+      mode === "dollars"
+        ? drawable.filter(({ rank }) => rank! >= ownBands)
+        : [];
     const own =
       combine.length > 1
         ? drawable.filter((entry) => !combine.includes(entry))
@@ -267,7 +269,9 @@ export function IntradayChart({
     return {
       lines: [
         ...own.map(({ series, rank }) =>
-          lineFor(series.key, series.label, colorFor(rank!), [series]),
+          lineFor(series.key, series.label, colorFor(rank!, ownBands), [
+            series,
+          ]),
         ),
         ...(combine.length > 1
           ? [
@@ -471,7 +475,7 @@ export function IntradayChart({
       series,
       color: otherKeys.has(series.key)
         ? "var(--series-other)"
-        : colorFor(liveRanks.get(series.key) ?? 0),
+        : colorFor(liveRanks.get(series.key) ?? 0, ownBands),
       change: series.latestValue - series.baseline,
       percent: percentChange(series.latestValue, series.baseline),
     }))
@@ -568,7 +572,7 @@ export function IntradayChart({
           </p>
           <div
             className="flex shrink-0 items-center gap-1 text-xs text-(--muted)"
-            title="How many of the largest holdings get their own colour; the rest are combined into Other"
+            title="How many of the largest holdings get their own colour. The rest are grey: separate lines in % change, one combined Other band in $ change."
           >
             <span style={{ order: 0 }}>Own colour</span>
             {(
