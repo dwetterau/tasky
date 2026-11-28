@@ -93,20 +93,29 @@ const MODES: Array<{ value: Mode; label: string; caption: string }> = [
   },
 ];
 
+const MIN_OWN_BANDS = 3;
+const OTHER_KEY = "\u0000other";
+
+function clampOwnBands(value: number): number {
+  return Math.min(OWN_COLORS, Math.max(MIN_OWN_BANDS, Math.round(value)));
+}
+
 type SortColumn = "name" | "price" | "percent" | "change";
 type Sort = { column: SortColumn; descending: boolean };
-type Prefs = { mode: Mode; sort: Sort };
+type Prefs = { mode: Mode; sort: Sort; ownBands: number };
 
 const SORT_COLUMNS: SortColumn[] = ["name", "price", "percent", "change"];
 const DEFAULT_PREFS: Prefs = {
   mode: "percent",
   sort: { column: "change", descending: true },
+  ownBands: 12,
 };
 
 function readPrefs(): Prefs {
   try {
     const stored = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as {
       mode?: unknown;
+      ownBands?: unknown;
       sort?: { column?: unknown; descending?: unknown };
     };
     const column = SORT_COLUMNS.find(
@@ -114,6 +123,10 @@ function readPrefs(): Prefs {
     );
     return {
       mode: stored.mode === "dollars" ? "dollars" : "percent",
+      ownBands:
+        typeof stored.ownBands === "number" && Number.isFinite(stored.ownBands)
+          ? clampOwnBands(stored.ownBands)
+          : DEFAULT_PREFS.ownBands,
       sort: column
         ? { column, descending: stored.sort?.descending !== false }
         : DEFAULT_PREFS.sort,
@@ -134,9 +147,11 @@ function formatCompactSignedCurrency(value: number): string {
 }
 
 type Line = {
-  series: IntradaySeries;
-  rank: number;
+  /** A holding's ticker, or OTHER_KEY for the combined smaller holdings. */
+  key: string;
+  label: string;
   color: string;
+  members: IntradaySeries[];
   points: number[];
 };
 
@@ -165,7 +180,7 @@ export function IntradayChart({
       // Storage can be unavailable; the settings then last for this visit.
     }
   }, [prefs]);
-  const { mode, sort } = prefs;
+  const { mode, sort, ownBands } = prefs;
   const stacked = mode === "dollars";
   const listRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -190,12 +205,24 @@ export function IntradayChart({
     () => buildIntradaySeries(holdings, session),
     [holdings, session],
   );
+  // Colours go to holdings with a live price, largest first, so they are not
+  // spent on ones that have no line to draw.
+  const liveRanks = useMemo(
+    () =>
+      new Map(
+        allSeries
+          .filter((series) => series.live)
+          .map((series, rank) => [series.key, rank]),
+      ),
+    [allSeries],
+  );
   const live = isSessionLive(session);
   const { times } = session;
 
   const { lines, total } = useMemo(() => {
-    const ranked = allSeries.map((series, rank) => ({ series, rank }));
-    const visible = ranked.filter(({ series }) => !hidden.has(series.key));
+    const visible = allSeries
+      .map((series) => ({ series, rank: liveRanks.get(series.key) ?? null }))
+      .filter(({ series }) => !hidden.has(series.key));
     const baseline = visible.reduce(
       (sum, { series }) => sum + series.baseline,
       0,
@@ -203,22 +230,56 @@ export function IntradayChart({
     const values = times.map((_, index) =>
       visible.reduce((sum, { series }) => sum + series.values[index]!, 0),
     );
+    // Only holdings with a live price have a path worth drawing. The largest
+    // get one each; the rest would be slivers, so they share one.
+    const drawable = visible.filter(({ rank }) => rank !== null);
+    const combine = drawable.filter(({ rank }) => rank! >= ownBands);
+    const own =
+      combine.length > 1
+        ? drawable.filter((entry) => !combine.includes(entry))
+        : drawable;
+    const lineFor = (
+      key: string,
+      label: string,
+      color: string,
+      members: IntradaySeries[],
+    ): Line => {
+      const memberBaseline = members.reduce(
+        (sum, member) => sum + member.baseline,
+        0,
+      );
+      return {
+        key,
+        label,
+        color,
+        members,
+        points: times.map((_, index) => {
+          const value = members.reduce(
+            (sum, member) => sum + member.values[index]!,
+            0,
+          );
+          return mode === "percent"
+            ? percentChange(value, memberBaseline)
+            : value - memberBaseline;
+        }),
+      };
+    };
     return {
-      // Only holdings with a live price have a path worth drawing.
-      lines: visible
-        .filter(({ series }) => series.live)
-        .map(
-          ({ series, rank }): Line => ({
-            series,
-            rank,
-            color: colorFor(rank),
-            points: series.values.map((value) =>
-              mode === "percent"
-                ? percentChange(value, series.baseline)
-                : value - series.baseline,
-            ),
-          }),
+      lines: [
+        ...own.map(({ series, rank }) =>
+          lineFor(series.key, series.label, colorFor(rank!), [series]),
         ),
+        ...(combine.length > 1
+          ? [
+              lineFor(
+                OTHER_KEY,
+                `Other (${combine.length})`,
+                "var(--series-other)",
+                combine.map(({ series }) => series),
+              ),
+            ]
+          : []),
+      ],
       total: {
         baseline,
         values,
@@ -233,7 +294,23 @@ export function IntradayChart({
         ),
       },
     };
-  }, [allSeries, hidden, mode, times]);
+  }, [allSeries, hidden, liveRanks, mode, ownBands, times]);
+
+  // The drawn line a highlighted holding belongs to, which for the smaller
+  // holdings is the shared "Other" line.
+  const activeLineKey =
+    lines.find(
+      (line) =>
+        line.key === activeKey ||
+        line.members.some((member) => member.key === activeKey),
+    )?.key ?? null;
+  const otherKeys = new Set(
+    lines
+      .find((line) => line.key === OTHER_KEY)
+      ?.members.map((member) => member.key),
+  );
+  const setOwnBands = (next: number) =>
+    setPrefs((current) => ({ ...current, ownBands: clampOwnBands(next) }));
 
   const plotWidth = Math.max(0, width - MARGIN.left - MARGIN.right);
   const plotHeight = Math.max(0, height - MARGIN.top - MARGIN.bottom);
@@ -352,7 +429,7 @@ export function IntradayChart({
         time >= times[0]! && time <= times.at(-1)!
           ? (bands.find(
               (band) => value >= band.lower[at]! && value < band.upper[at]!,
-            )?.line.series.key ?? null)
+            )?.line.key ?? null)
           : null;
     } else if (time >= times[0]! - span && time <= times.at(-1)! + span) {
       for (const line of lines) {
@@ -361,7 +438,7 @@ export function IntradayChart({
         const distance = Math.abs(yFor(value) - pointerY);
         if (distance < closestDistance) {
           closestDistance = distance;
-          closest = line.series.key;
+          closest = line.key;
         }
       }
     }
@@ -390,9 +467,11 @@ export function IntradayChart({
   const totalChange = total.latestValue - total.baseline;
   const totalPercent = percentChange(total.latestValue, total.baseline);
   const rows = allSeries
-    .map((series, rank) => ({
+    .map((series) => ({
       series,
-      rank,
+      color: otherKeys.has(series.key)
+        ? "var(--series-other)"
+        : colorFor(liveRanks.get(series.key) ?? 0),
       change: series.latestValue - series.baseline,
       percent: percentChange(series.latestValue, series.baseline),
     }))
@@ -454,8 +533,7 @@ export function IntradayChart({
               Math.abs(b.points[hoverIndex]!) - Math.abs(a.points[hoverIndex]!),
           )
           .filter(
-            (line, index) =>
-              index < TOOLTIP_ROWS || line.series.key === pointedKey,
+            (line, index) => index < TOOLTIP_ROWS || line.key === pointedKey,
           )
           .sort((a, b) => b.points[hoverIndex]! - a.points[hoverIndex]!);
 
@@ -485,9 +563,40 @@ export function IntradayChart({
               </button>
             ))}
           </div>
-          <p className="min-w-0 truncate text-xs text-(--muted)">
+          <p className="min-w-0 flex-1 truncate text-xs text-(--muted)">
             {MODES.find((option) => option.value === mode)!.caption}
           </p>
+          <div
+            className="flex shrink-0 items-center gap-1 text-xs text-(--muted)"
+            title="How many of the largest holdings get their own colour; the rest are combined into Other"
+          >
+            <span style={{ order: 0 }}>Own colour</span>
+            {(
+              [
+                ["Fewer holdings with their own colour", ownBands - 1, "−"],
+                ["More holdings with their own colour", ownBands + 1, "+"],
+              ] as const
+            ).map(([label, next, glyph], index) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setOwnBands(next)}
+                disabled={clampOwnBands(next) === ownBands}
+                aria-label={label}
+                title={label}
+                style={{ order: index === 0 ? 1 : 3 }}
+                className="flex h-5 w-5 items-center justify-center rounded hover:bg-(--hover) hover:text-foreground disabled:opacity-35 disabled:hover:bg-transparent"
+              >
+                {glyph}
+              </button>
+            ))}
+            <span
+              className="w-5 text-center font-semibold text-foreground"
+              style={{ order: 2 }}
+            >
+              {ownBands}
+            </span>
+          </div>
         </div>
         <div
           ref={containerRef}
@@ -605,11 +714,11 @@ export function IntradayChart({
                 {stacked ? (
                   bands.map(({ line, lower, upper, runs }) => {
                     const lastAt = stack.times.length - 1;
-                    const isActive = activeKey === line.series.key;
+                    const isActive = activeLineKey === line.key;
                     return (
                       <g
-                        key={line.series.key}
-                        opacity={activeKey !== null && !isActive ? 0.25 : 1}
+                        key={line.key}
+                        opacity={activeLineKey !== null && !isActive ? 0.25 : 1}
                       >
                         {runs.map((run) => (
                           <path
@@ -644,7 +753,7 @@ export function IntradayChart({
                             fontSize={11}
                             fontWeight={600}
                           >
-                            {`${line.series.label} ${formatPoint(line.points[lastIndex]!)}`}
+                            {`${line.label} ${formatPoint(line.points[lastIndex]!)}`}
                           </text>
                         ) : null}
                       </g>
@@ -654,11 +763,11 @@ export function IntradayChart({
                   <>
                     {lines.map((line) => {
                       const dimmed =
-                        activeKey !== null && activeKey !== line.series.key;
-                      const emphasized = activeKey === line.series.key;
+                        activeLineKey !== null && activeLineKey !== line.key;
+                      const emphasized = activeLineKey === line.key;
                       return (
                         <path
-                          key={line.series.key}
+                          key={line.key}
                           d={pathFor(line.points)}
                           fill="none"
                           stroke={line.color}
@@ -669,10 +778,10 @@ export function IntradayChart({
                       );
                     })}
                     {lines
-                      .filter((line) => line.series.key === activeKey)
+                      .filter((line) => line.key === activeLineKey)
                       .map((line) => (
                         <text
-                          key={line.series.key}
+                          key={line.key}
                           x={xFor(times[lastIndex]!) + 9}
                           y={
                             yFor(line.points[lastIndex]!) +
@@ -685,7 +794,7 @@ export function IntradayChart({
                           fontSize={11}
                           fontWeight={600}
                         >
-                          {line.series.label}
+                          {line.label}
                         </text>
                       ))}
                   </>
@@ -703,7 +812,7 @@ export function IntradayChart({
                   stroke="var(--foreground)"
                   strokeWidth={2.5}
                   strokeLinejoin="round"
-                  opacity={activeKey === null ? 1 : 0.35}
+                  opacity={activeLineKey === null ? 1 : 0.35}
                 />
                 {live ? (
                   <circle
@@ -728,7 +837,7 @@ export function IntradayChart({
                   strokeWidth={2}
                 />
                 {/* A highlighted holding labels itself in the same spot. */}
-                {lines.some((line) => line.series.key === activeKey) ? null : (
+                {activeLineKey !== null ? null : (
                   <text
                     x={xFor(times[lastIndex]!) + 9}
                     y={yFor(total.points[lastIndex]!)}
@@ -781,9 +890,9 @@ export function IntradayChart({
               <div className="mt-1.5 space-y-1">
                 {tooltipLines.map((line) => (
                   <div
-                    key={line.series.key}
+                    key={line.key}
                     className={`flex items-center gap-2 ${
-                      line.series.key === pointedKey ? "font-bold" : ""
+                      line.key === pointedKey ? "font-bold" : ""
                     }`}
                   >
                     <span
@@ -791,7 +900,7 @@ export function IntradayChart({
                       style={{ backgroundColor: line.color }}
                     />
                     <span className="min-w-0 flex-1 truncate">
-                      {line.series.label}
+                      {line.label}
                     </span>
                     <span className="tabular-nums">
                       {formatPoint(line.points[hoverIndex]!)}
@@ -867,7 +976,7 @@ export function IntradayChart({
           className="max-h-[calc(52vh-3rem)] min-h-[320px] overflow-y-auto py-1"
           onMouseLeave={() => setHighlightKey(null)}
         >
-          {rows.map(({ series, rank, change, percent }) => {
+          {rows.map(({ series, color, change, percent }) => {
             const isHidden = hidden.has(series.key);
             return (
               <button
@@ -886,7 +995,8 @@ export function IntradayChart({
                 className={`grid w-full grid-cols-[minmax(0,1fr)_4.5rem_4rem_4.75rem] items-center gap-x-2 px-3 py-1 text-left text-xs hover:bg-(--hover) ${
                   isHidden ? "opacity-45" : ""
                 } ${
-                  pointedKey === series.key
+                  pointedKey === series.key ||
+                  (pointedKey === OTHER_KEY && otherKeys.has(series.key))
                     ? "bg-(--hover) shadow-[inset_3px_0_0_var(--foreground)]"
                     : ""
                 }`}
@@ -895,9 +1005,7 @@ export function IntradayChart({
                   <span
                     className="h-0.5 w-3 shrink-0 rounded"
                     style={{
-                      backgroundColor: series.live
-                        ? colorFor(rank)
-                        : "transparent",
+                      backgroundColor: series.live ? color : "transparent",
                       outline: series.live
                         ? undefined
                         : "1px dashed var(--muted)",
