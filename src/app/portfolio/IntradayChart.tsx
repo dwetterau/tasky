@@ -313,6 +313,8 @@ export function IntradayChart({
       .find((line) => line.key === OTHER_KEY)
       ?.members.map((member) => member.key),
   );
+  // Pointing at the Other band, or at any holding inside it, marks them all.
+  const otherActive = activeLineKey === OTHER_KEY;
   const setOwnBands = (next: number) =>
     setPrefs((current) => ({ ...current, ownBands: clampOwnBands(next) }));
 
@@ -468,6 +470,30 @@ export function IntradayChart({
   };
 
   const lastIndex = times.length - 1;
+  // A label beside the latest point. When it would run off the right edge it
+  // sits to the left of the point instead, outlined so it reads over the chart.
+  const endLabel = (text: string, y: number, weight: number, key?: string) => {
+    const tipX = xFor(times[lastIndex]!);
+    const fits = tipX + 9 + text.length * 6.5 <= width - 2;
+    return (
+      <text
+        key={key}
+        x={fits ? tipX + 9 : tipX - 9}
+        y={y}
+        textAnchor={fits ? "start" : "end"}
+        dominantBaseline="middle"
+        fill="var(--foreground)"
+        fontSize={11}
+        fontWeight={weight}
+        stroke="var(--card-bg)"
+        strokeWidth={fits ? 0 : 3}
+        paintOrder="stroke"
+        strokeLinejoin="round"
+      >
+        {text}
+      </text>
+    );
+  };
   const totalChange = total.latestValue - total.baseline;
   const totalPercent = percentChange(total.latestValue, total.baseline);
   const rows = allSeries
@@ -746,20 +772,13 @@ export function IntradayChart({
                             strokeLinejoin="round"
                           />
                         ))}
-                        {isActive ? (
-                          <text
-                            x={xFor(times[lastIndex]!) + 9}
-                            y={
-                              (yFor(lower[lastAt]!) + yFor(upper[lastAt]!)) / 2
-                            }
-                            dominantBaseline="middle"
-                            fill="var(--foreground)"
-                            fontSize={11}
-                            fontWeight={600}
-                          >
-                            {`${line.label} ${formatPoint(line.points[lastIndex]!)}`}
-                          </text>
-                        ) : null}
+                        {isActive
+                          ? endLabel(
+                              `${line.label} ${formatPoint(line.points[lastIndex]!)}`,
+                              (yFor(lower[lastAt]!) + yFor(upper[lastAt]!)) / 2,
+                              600,
+                            )
+                          : null}
                       </g>
                     );
                   })
@@ -783,24 +802,17 @@ export function IntradayChart({
                     })}
                     {lines
                       .filter((line) => line.key === activeLineKey)
-                      .map((line) => (
-                        <text
-                          key={line.key}
-                          x={xFor(times[lastIndex]!) + 9}
-                          y={
-                            yFor(line.points[lastIndex]!) +
+                      .map((line) =>
+                        endLabel(
+                          line.label,
+                          yFor(line.points[lastIndex]!) +
                             (line.points[lastIndex]! >= total.points[lastIndex]!
                               ? -12
-                              : 12)
-                          }
-                          dominantBaseline="middle"
-                          fill="var(--foreground)"
-                          fontSize={11}
-                          fontWeight={600}
-                        >
-                          {line.label}
-                        </text>
-                      ))}
+                              : 12),
+                          600,
+                          line.key,
+                        ),
+                      )}
                   </>
                 )}
                 <path
@@ -841,18 +853,13 @@ export function IntradayChart({
                   strokeWidth={2}
                 />
                 {/* A highlighted holding labels itself in the same spot. */}
-                {activeLineKey !== null ? null : (
-                  <text
-                    x={xFor(times[lastIndex]!) + 9}
-                    y={yFor(total.points[lastIndex]!)}
-                    dominantBaseline="middle"
-                    fill="var(--foreground)"
-                    fontSize={11}
-                    fontWeight={700}
-                  >
-                    {`${stacked ? "Net" : "Total"} ${formatPoint(total.points[lastIndex]!)}`}
-                  </text>
-                )}
+                {activeLineKey !== null
+                  ? null
+                  : endLabel(
+                      `${stacked ? "Net" : "Total"} ${formatPoint(total.points[lastIndex]!)}`,
+                      yFor(total.points[lastIndex]!),
+                      700,
+                    )}
                 {hoverX !== null ? (
                   <line
                     x1={hoverX}
@@ -1000,7 +1007,7 @@ export function IntradayChart({
                   isHidden ? "opacity-45" : ""
                 } ${
                   pointedKey === series.key ||
-                  (pointedKey === OTHER_KEY && otherKeys.has(series.key))
+                  (otherActive && otherKeys.has(series.key))
                     ? "bg-(--hover) shadow-[inset_3px_0_0_var(--foreground)]"
                     : ""
                 }`}
